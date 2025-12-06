@@ -12,5 +12,5 @@ spec:
     metadata:
       creationTimestamp: null
       name: airflow-minio-connection
-      namespace: stackable-airflow
+      namespace: default
     type: Opaque
