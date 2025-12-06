@@ -4,10 +4,10 @@ kind: Application
 metadata:
   name: airflow-postgres
 spec:
-  project: airflow
+  project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: stackable-airflow
+    namespace: default
   sources:
     - repoURL: "registry-1.docker.io/bitnamicharts"
       path: postgresql

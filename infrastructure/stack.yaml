@@ -25,8 +25,14 @@ stacks:
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applicationsets/stackable-operators.yaml
 #      - helmChart: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/forgejo.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/forgejo-admin-secret.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/configure-forgejo.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/forgejo-admin-secret.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/configure-forgejo.yaml
+        ################################
+        # applicationset - demo
+        ################################
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/projects/dbt-openmetadata-demo.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow-postgres.yaml
     supportedNamespaces: []
     resourceRequests:
       cpu: 1750m

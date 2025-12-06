@@ -4,10 +4,10 @@ kind: Application
 metadata:
   name: airflow
 spec:
-  project: airflow
+  project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: stackable-airflow
+    namespace: default
   source:
     repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
     targetRevision: "main"
