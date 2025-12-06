@@ -1,0 +1,12 @@
+---
+releaseName: forgejo
+name: forgejo
+repo:
+  name: forgejo
+  url: oci://code.forgejo.org/forgejo-helm/
+version: 15.0.3
+options:
+  gitea:
+    admin:
+      existingSecret: forgejo-admin-secret
+

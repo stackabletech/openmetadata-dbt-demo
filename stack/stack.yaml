@@ -1,0 +1,49 @@
+---
+stacks:
+  forgejo:
+    description: Stack with Forgejo repository that configures mirroring of repo
+    stackableRelease: dev # This does not matter -> managed by ArgoCD
+    stackableOperators: ["argo-deploys-operators"]
+    labels:
+      - forgejo
+      - gitops
+    manifests:
+      ################################
+      # bootstrap argo
+      ################################
+      - helmChart: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/_templates/argo-cd.yaml
+      ################################
+      # prerequisites
+      ################################
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applications/sealed-secrets.yaml
+      ################################
+      # project - operators
+      ################################
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/projects/stackable-operators.yaml
+      ################################
+      # applicationset - operators
+      ################################
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applicationsets/stackable-operators.yaml
+#      - helmChart: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/forgejo.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/forgejo-admin-secret.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/configure-forgejo.yaml
+    supportedNamespaces: []
+    resourceRequests:
+      cpu: 1750m
+      memory: 1714Mi
+      pvc: 110Gi
+    parameters:
+      - name: forgejoAdminPassword
+        description: Password of the Forgejo admin user
+        default: stackable
+      - name: forgejoAdminUser
+        description: Username of the Forgejo admin user
+        default: stackable
+      - name: stackableReleaseVersion
+        description: The Stackable release to be installed via Argo. This replaces the demo `stackableRelease` parameter.
+        # TODO(@maltesander): Must be adapted in case of release !
+        default: 0.0.0-dev
+      - name: argocdAdminPassword
+        description: Password of the ArgoCD admin user.
+        # generated via: `htpasswd -nbBC 10 "" adminadmin | tr -d ':\n'`
+        default: $2y$10$HhJC3pGHTlk8RyBoS39N/.wC72mdWxV2X8QS1wROUwCFxl.2tGfky
