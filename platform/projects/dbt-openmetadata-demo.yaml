@@ -1,0 +1,15 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dbt-openmetadata-demo
+spec:
+  description: Project to manage a demo environment of how to integrate Stackable with dbt and OpenMetadata
+  sourceRepos:
+    - "*"
+  destinations:
+    - namespace: default
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
