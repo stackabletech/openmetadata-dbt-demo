@@ -1,0 +1,18 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  annotations:
+    sealedsecrets.bitnami.com/cluster-wide: "true"
+  creationTimestamp: null
+  name: airflow-minio-connection
+spec:
+  encryptedData:
+    airflow-minio-connection: AgB+dy5QXvxHB0NEKMV0HPehnnGncKTjJ4Vy1tzSpSWpb48TVH0wkCDSINuc3SRyZ/VLd3DvGj96nhkGBIFNQBwp7NXBAd2M3yA3It8WpACB08436oIFGVkKbz0if1cos1FKak+MMaMZdtysfQ3J9P9NE9kuoQ9JWIjOeJ0O3ioi/4v/664r7ieo8Ff/kHk1KV/59bQ3VLHM7Fpy9T2NMZu2CW6Y0Bufb0fuiEgi4ifpkYgzPB6AevEm+/9C7p0YeOziaMpQ3ftP3b/CGue8mExsSkuY9NhW/fBfTorsCvY4sV9Rj/6D0oabtlr7SuLKn0QPfC0oMZb6XhJhyq492GLjLF8tPWj/hynhVq+1wiBAffukmAQeBDur8pFY+4s8urnRHYWGCF/tuLq0MhUH04xIc7UKAc4P93aLSg8cd+43Kfn74rChi08ccaSitjRXG4zui4szSOu6ZIduwywZmYFlqT/tbcHa36LI0nUmV6KjW1TmMEeb61JeoAvJJBrVm/TVkOzMAkmNMLAEh9pjwGaSBVuTO9EQv8DYwzTNJe6XQShZ5w44rn6cpA2RnZlyB+3yCCcMOowP2REU8fbxnbde1VXFh4XqaXajUlSOvzW2kLEP1FA7BSO+ShHBZMGkh/O0mkIgSA0jHUtPNXUqSN3jHSWLgmh6Y1VrnOONEm2c5dtFArww7VgDpC0y/nT7ggCZmAEsbkbrMGNG/cdGuLxY+LwGZuy8LQcaEqXpYS0+hchtwbrnQLN5NQq5sxQlvDdtpQzKJmOdVJ8Y3wgjdPkDO7+u6hv74YR1l9t4U5lyEeKXdggD/iIr
+  template:
+    metadata:
+      annotations:
+        sealedsecrets.bitnami.com/cluster-wide: "true"
+      creationTimestamp: null
+      name: airflow-minio-connection
+    type: Opaque
