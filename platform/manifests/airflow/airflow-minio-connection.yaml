@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: airflow-minio-connection
+type: Opaque
+stringData:
+  airflow-minio-connection: aws://admin:adminadmin@/?endpoint_url=https%3A%2F%2Fminio.minio.svc.cluster.local%3A9000
