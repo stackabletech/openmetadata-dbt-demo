@@ -15,7 +15,7 @@ stacks:
       ################################
       # prerequisites
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applications/sealed-secrets.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/sealed-secrets.yaml
       ################################
       # project - operators
       ################################
