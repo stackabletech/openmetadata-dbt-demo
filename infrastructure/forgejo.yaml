@@ -11,9 +11,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: default
   sources:
-    - repoURL: "code.forgejo.org/forgejo-helm/"
+    - repoURL: code.forgejo.org/forgejo-helm
       # helm inspect chart oci://code.forgejo.org/forgejo-helm/
-      targetRevision: 15.0.3
+      targetRevision: *
       chart: forgejo
       helm:
         releaseName: forgejo
