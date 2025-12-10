@@ -1,12 +1,30 @@
 ---
-releaseName: forgejo
-name: forgejo
-repo:
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: forgejo
-  url: oci://code.forgejo.org/forgejo-helm/
-version: 15.0.3
-options:
-  gitea:
-    admin:
-      existingSecret: forgejo-admin-secret
-
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  sources:
+    - repoURL: "code.forgejo.org/forgejo-helm/"
+      # helm inspect chart oci://code.forgejo.org/forgejo-helm/
+      targetRevision: 15.0.3
+      chart: forgejo
+      helm:
+        releaseName: forgejo
+        valuesObject:
+          gitea:
+            admin:
+              existingSecret: forgejo-admin-secret
+    - repoURL: "https://github.com/stackabletech/openmetadata-dbt-demo.git"
+      targetRevision: "main"
+      path: "infrastructure/forgejo-manifests"
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
