@@ -3,6 +3,8 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: dbt-openmetadata-demo
   destination:
@@ -21,7 +23,7 @@ spec:
               existingSecret: forgejo-admin-secret
     - repoURL: "https://github.com/stackabletech/openmetadata-dbt-demo.git"
       targetRevision: "main"
-      path: "infrastructure/forgejo-manifests"
+      path: infrastructure/forgejo-manifests/
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
