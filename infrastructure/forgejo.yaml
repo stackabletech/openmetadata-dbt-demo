@@ -12,7 +12,7 @@ spec:
     namespace: default
   sources:
     - repoURL: code.forgejo.org/forgejo-helm
-      targetRevision: *
+      targetRevision: "*"
       chart: forgejo
       helm:
         releaseName: forgejo
