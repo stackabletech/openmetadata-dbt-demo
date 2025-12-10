@@ -12,7 +12,6 @@ spec:
     namespace: default
   sources:
     - repoURL: code.forgejo.org/forgejo-helm
-      # helm inspect chart oci://code.forgejo.org/forgejo-helm/
       targetRevision: *
       chart: forgejo
       helm:
