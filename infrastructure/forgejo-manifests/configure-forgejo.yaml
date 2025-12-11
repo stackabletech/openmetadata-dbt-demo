@@ -27,6 +27,7 @@ spec:
               cd /work
               cp /config/forgejo.tf .
               tofu init
+              tofu plan
               tofu apply -auto-approve
           volumeMounts:
             - mountPath: /config
