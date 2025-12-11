@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-apps
+  namespace: default
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git
+        revision: main
+        directories:
+          - path: platform/applications/*
+  template:
+    metadata:
+      name: '[[.path.basename]]'
+    spec:
+      project: dbt-openmetadata-demo
+      source:
+        repoURL: http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git
+        targetRevision: main
+        path: 'platform/manifests/[[.path.basename]]'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

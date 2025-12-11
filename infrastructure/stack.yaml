@@ -15,7 +15,7 @@ stacks:
       ################################
       # prerequisites
       ################################
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/sealed-secrets.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/sealed-secrets.yaml
       ################################
       # project - operators
       ################################
@@ -29,9 +29,10 @@ stacks:
         ################################
         # applicationset - demo
         ################################
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/projects/dbt-openmetadata-demo.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow-postgres.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/project.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/cluster-apps.yaml
+      #- plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow.yaml
+      #- plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow-postgres.yaml
     supportedNamespaces: []
     resourceRequests:
       cpu: 1750m

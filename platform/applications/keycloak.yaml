@@ -2,16 +2,25 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: airflow
+  name: keycloak
 spec:
   project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
     namespace: default
-  source:
-    repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
-    targetRevision: "main"
-    path: platform/manifests/airflow/
+  sources:
+    - repoURL: registry-1.docker.io/bitnamicharts
+      targetRevision: "*"
+      chart: keycloak
+      helm:
+        releaseName: keycloak
+        valuesObject:
+          gitea:
+            admin:
+              existingSecret: forgejo-admin-secret
+    - repoURL: "https://github.com/stackabletech/openmetadata-dbt-demo.git"
+      targetRevision: "main"
+      path: infrastructure/forgejo-manifests/
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
