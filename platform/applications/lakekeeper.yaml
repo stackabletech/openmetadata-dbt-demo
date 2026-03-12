@@ -9,10 +9,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: default
   sources:
-    - repoURL: "lakekeeper.github.io/lakekeeper-charts"
-      path: lakekeeper
-      # helm inspect chart oci://registry-1.docker.io/bitnamicharts/postgresql
-      chart: lakekeeper/lakekeeper
+    - repoURL: "https://lakekeeper.github.io/lakekeeper-charts"
+      chart: lakekeeper
       helm:
         releaseName: lakekeeper
   syncPolicy:
