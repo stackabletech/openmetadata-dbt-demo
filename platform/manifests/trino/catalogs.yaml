@@ -1,0 +1,56 @@
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  # The name of the catalog as it will appear in Trino
+  name: tpch
+  # TrinoCluster can use these labels to select which catalogs to include
+  labels:
+    trino: trino
+spec:
+  connector:
+    tpch: {} # No options needed
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  # The name of the catalog as it will appear in Trino
+  name: tpcds
+  # TrinoCluster can use these labels to select which catalogs to include
+  labels:
+    trino: trino
+spec:
+  connector:
+    tpcds: {} # No options needed
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: hive
+  labels:
+    trino: trino
+spec:
+  connector:
+    hive:
+      metastore:
+        configMap: hive-postgres-hdfs
+      hdfs:
+        configMap: simple-hdfs
+  configOverrides:
+    hive.metastore.username: trino
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: hive-iceberg
+  labels:
+    trino: trino
+spec:
+  connector:
+    iceberg:
+      metastore:
+        configMap: hive-postgres-iceberg
+      hdfs:
+        configMap: simple-hdfs
+  configOverrides:
+    hive.metastore.username: trino
