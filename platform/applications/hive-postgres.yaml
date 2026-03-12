@@ -31,6 +31,8 @@ spec:
               repository: bitnamilegacy/postgres-exporter
           commonLabels:
             stackable.tech/vendor: Stackable
+          primary:
+            extendedConfiguration: "password_encryption=md5"
           auth:
             database: hive
             username: hive
