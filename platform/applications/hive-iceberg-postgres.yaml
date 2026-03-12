@@ -34,8 +34,8 @@ spec:
           primary:
             extendedConfiguration: "password_encryption=md5"
           auth:
-            database: hive
-            username: hive
+            database: hiveiceberg
+            username: hiveiceberg
             existingSecret: hive-iceberg-postgresql-credentials
     - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "main"
