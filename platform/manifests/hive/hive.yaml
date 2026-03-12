@@ -2,7 +2,7 @@
 apiVersion: hive.stackable.tech/v1alpha1
 kind: HiveCluster
 metadata:
-  name: hive-postgres-s3
+  name: hive-postgres-hdfs
 spec:
   image:
     productVersion: 3.1.3

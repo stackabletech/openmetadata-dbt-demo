@@ -12,7 +12,7 @@ spec:
     - repoURL: "lakekeeper.github.io/lakekeeper-charts"
       path: lakekeeper
       # helm inspect chart oci://registry-1.docker.io/bitnamicharts/postgresql
-      targetRevision: 16.6.3 # 17.4.0
+      targetRevision: 0.9.0
       chart: lakekeeper/lakekeeper
       helm:
         releaseName: lakekeeper
