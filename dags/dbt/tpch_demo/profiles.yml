@@ -6,7 +6,7 @@ tpch_demo:
       method: none
       host: trino-coordinator
       port: 8443
-      user: trino
+      user: admin
       schema: demo
       catalog: hive-iceberg
       http_scheme: https
