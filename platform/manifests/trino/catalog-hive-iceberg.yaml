@@ -1,0 +1,16 @@
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: hive-iceberg
+  labels:
+    trino: trino
+spec:
+  connector:
+    iceberg:
+      metastore:
+        configMap: hive-postgres-iceberg
+      hdfs:
+        configMap: simple-hdfs
+  configOverrides:
+    hive.metastore.username: trino

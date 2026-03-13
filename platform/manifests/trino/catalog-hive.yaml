@@ -1,0 +1,16 @@
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: hive
+  labels:
+    trino: trino
+spec:
+  connector:
+    hive:
+      metastore:
+        configMap: hive-postgres-hdfs
+      hdfs:
+        configMap: simple-hdfs
+  configOverrides:
+    hive.metastore.username: trino

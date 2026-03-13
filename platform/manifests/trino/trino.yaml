@@ -12,7 +12,7 @@ spec:
         trino: trino
   coordinators:
     roleConfig:
-      listenerClass: cluster-internal
+      listenerClass: external-unstable
     roleGroups:
       default:
         replicas: 1
