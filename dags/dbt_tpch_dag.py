@@ -1,3 +1,4 @@
+# This file is an airflow DAG definition using Astronomer Cosmos for dbt orchestration.
 from datetime import datetime
 from pathlib import Path
 
