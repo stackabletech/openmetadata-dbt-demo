@@ -1,0 +1,34 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openmetadata-dependencies
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  sources:
+    - repoURL: "https://open-metadata.github.io/openmetadata-helm-charts"
+      chart: openmetadata-dependencies
+      targetRevision: "1.6.1"
+      helm:
+        releaseName: openmetadata-dependencies
+        valuesObject:
+          airflow:
+            dags:
+              persistence:
+                enabled: true
+                storageClassName: azurefile-csi-premium
+                size: 1Gi
+            logs:
+              persistence:
+                enabled: true
+                storageClassName: azurefile-csi-premium
+                size: 1Gi
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true

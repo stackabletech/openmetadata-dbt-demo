@@ -5,7 +5,6 @@ config-version: 2
 profile: tpch_demo
 
 model-paths: ["models"]
-source-paths: ["models"]
 target-path: "target"
 clean-targets:
   - "target"
