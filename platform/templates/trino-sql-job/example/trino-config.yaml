@@ -1,0 +1,34 @@
+# Strategic merge patch for Trino endpoint and authentication.
+# Activate by uncommenting the patches block in kustomization.yaml.
+#
+# Endpoint:
+#   Set TRINO_HOST and TRINO_PORT to match your Trino coordinator service.
+#   Defaults (if this patch is not used): trino-coordinator:8443
+#
+# Authentication:
+#   Set secretName to a Kubernetes Secret containing 'username' and 'password' keys.
+#   The runner script auto-detects the mounted credentials and uses them.
+#   Remove the credentials volume and volumeMount if no auth is needed.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trino-sql-job
+spec:
+  template:
+    spec:
+      containers:
+        - name: trino-sql
+          env:
+            - name: TRINO_HOST
+              value: "trino-coordinator"
+            - name: TRINO_PORT
+              value: "8443"
+          volumeMounts:
+            - name: credentials
+              mountPath: /credentials
+              readOnly: true
+      volumes:
+        - name: credentials
+          secret:
+            secretName: my-trino-credentials

@@ -1,0 +1,25 @@
+---
+# Patch to configure Trino endpoint and authentication.
+# Uncomment the patches reference in kustomization.yaml to activate.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trino-sql-job
+spec:
+  template:
+    spec:
+      containers:
+        - name: trino-sql
+          env:
+            - name: TRINO_HOST
+              value: "trino-coordinator"
+            - name: TRINO_PORT
+              value: "8443"
+          volumeMounts:
+            - name: credentials
+              mountPath: /credentials
+              readOnly: true
+      volumes:
+        - name: credentials
+          secret:
+            secretName: my-trino-credentials

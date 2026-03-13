@@ -1,0 +1,32 @@
+# Overlay template for a Trino SQL job.
+#
+# To create a new job:
+# 1. Copy this directory to platform/manifests/<your-job-name>/
+# 2. Set namePrefix to "<your-job-name>-"
+# 3. Add your .sql files under sql/, numbered for execution order (e.g. 001-foo.sql)
+# 4. List each .sql file in the configMapGenerator files list below
+# 5. Create an ArgoCD Application in platform/applications/<your-job-name>.yaml
+#    pointing to the new manifests directory
+# 6. (Optional) To customize the Trino endpoint or add authentication,
+#    uncomment the patches block and edit trino-config.yaml
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../templates/trino-sql-job
+
+# Set this to "<your-job-name>-" to give all resources a unique prefix.
+namePrefix: CHANGEME-
+
+configMapGenerator:
+  - name: trino-sql-files
+    files:
+      - sql/001-example.sql
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Uncomment to configure Trino endpoint and/or authentication.
+# patches:
+#   - path: trino-config.yaml
