@@ -13,4 +13,3 @@ tpch_demo:
       ssl_verify: false
       session_properties:
         query_max_run_time: 5m
-T
