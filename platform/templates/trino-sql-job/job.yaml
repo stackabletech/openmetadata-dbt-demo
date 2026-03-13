@@ -9,8 +9,8 @@ spec:
     spec:
       containers:
         - name: trino-sql
-          image: oci.stackable.tech/sdp/trino:477-stackable0.0.0-dev
-          command: ["bash", "/scripts/run.sh"]
+          image: oci.stackable.tech/sdp/testing-tools:0.2.0-stackable0.0.0-dev
+          command: ["python", "-u", "/scripts/run.py"]
           env:
             - name: TRINO_HOST
               value: "trino-coordinator"

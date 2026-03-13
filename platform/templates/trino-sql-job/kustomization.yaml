@@ -8,7 +8,7 @@ resources:
 configMapGenerator:
   - name: trino-sql-script
     files:
-      - run.sh
+      - run.py
 
 generatorOptions:
   disableNameSuffixHash: true
