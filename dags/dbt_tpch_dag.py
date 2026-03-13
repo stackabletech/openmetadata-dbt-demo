@@ -4,7 +4,7 @@ from pathlib import Path
 from cosmos import DbtDag, ProjectConfig, ProfileConfig, ExecutionConfig, RenderConfig
 from cosmos.constants import ExecutionMode
 
-DBT_PROJECT_PATH = Path("/stackable/app/git/sync/repo/dags/dbt/tpch_demo")
+DBT_PROJECT_PATH = Path("/stackable/app/git-0/current/dags/dbt/tpch_demo")
 
 dbt_tpch_dag = DbtDag(
     dag_id="dbt_tpch_demo",
