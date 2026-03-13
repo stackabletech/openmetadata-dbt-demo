@@ -16,6 +16,11 @@ spec:
       targetRevision: "1.12.1"
       helm:
         releaseName: openmetadata-dependencies
+        valuesObject:
+          airflow:
+            enabled: false
+          mysql:
+            fullnameOverride: mysql-secrets
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
