@@ -19,6 +19,10 @@ seal-secrets:
         kubeseal -n stackable-airflow --controller-namespace sealed-secrets --scope=cluster-wide --format=yaml < "$input_file" > "$output_file"
     done
 
+build-airflow-image:
+    docker build -t oci.stackable.tech/sandbox/airflow:3.0.6-stackable0.0.0-dev-cosmos docker/airflow
+    docker push oci.stackable.tech/sandbox/airflow:3.0.6-stackable0.0.0-dev-cosmos
+
 dbt-compile:
     #!/usr/bin/env bash
     cd dags/dbt/tpch_demo
