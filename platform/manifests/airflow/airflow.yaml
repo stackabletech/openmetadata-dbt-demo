@@ -53,10 +53,15 @@ spec:
       AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: minio
       # 20 seconds to reload the DAGS folder (default: 300)
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "20"
-      # Install astronomer-cosmos at startup for dbt DAG parsing (avoids custom image)
-      _PIP_ADDITIONAL_REQUIREMENTS: "astronomer-cosmos"
     podOverrides: &podOverrides
       spec:
+        initContainers:
+          - name: install-cosmos
+            image: oci.stackable.tech/sdp/airflow:3.0.6-stackable0.0.0-dev
+            command: ["pip", "install", "--target=/cosmos-packages", "astronomer-cosmos"]
+            volumeMounts:
+              - name: cosmos-packages
+                mountPath: /cosmos-packages
         containers:
           - name: airflow
             env:
@@ -65,6 +70,14 @@ spec:
                   secretKeyRef:
                     name: airflow-minio-connection
                     key: airflow-minio-connection
+              - name: PYTHONPATH
+                value: "/cosmos-packages:/stackable/app/log_config:/stackable/app/git-0/current/dags"
+            volumeMounts:
+              - name: cosmos-packages
+                mountPath: /cosmos-packages
+        volumes:
+          - name: cosmos-packages
+            emptyDir: {}
     config:
       gracefulShutdownTimeout: 30s
       resources:
@@ -85,6 +98,13 @@ spec:
     envOverrides: *envOverrides
     podOverrides:
       spec:
+        initContainers:
+          - name: install-cosmos
+            image: oci.stackable.tech/sdp/airflow:3.0.6-stackable0.0.0-dev
+            command: ["pip", "install", "--target=/cosmos-packages", "astronomer-cosmos"]
+            volumeMounts:
+              - name: cosmos-packages
+                mountPath: /cosmos-packages
         containers:
           - name: base
             env:
@@ -93,6 +113,14 @@ spec:
                   secretKeyRef:
                     name: airflow-minio-connection
                     key: airflow-minio-connection
+              - name: PYTHONPATH
+                value: "/cosmos-packages:/stackable/app/log_config:/stackable/app/git-0/current/dags"
+            volumeMounts:
+              - name: cosmos-packages
+                mountPath: /cosmos-packages
+        volumes:
+          - name: cosmos-packages
+            emptyDir: {}
   schedulers:
     envOverrides: *envOverrides
     podOverrides: *podOverrides
