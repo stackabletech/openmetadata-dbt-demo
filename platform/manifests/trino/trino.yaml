@@ -9,10 +9,10 @@ spec:
   clusterConfig:
     catalogLabelSelector:
       matchLabels:
-        trino: simple-trino
+        trino: trino
   coordinators:
     roleConfig:
-      listenerClass: external-unstable
+      listenerClass: cluster-internal
     roleGroups:
       default:
         replicas: 1
