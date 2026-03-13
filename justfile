@@ -18,3 +18,13 @@ seal-secrets:
         echo "Processing: $input_file -> $output_file"
         kubeseal -n stackable-airflow --controller-namespace sealed-secrets --scope=cluster-wide --format=yaml < "$input_file" > "$output_file"
     done
+
+dbt-compile:
+    #!/usr/bin/env bash
+    cd dags/dbt/tpch_demo
+    dbt compile --profiles-dir .
+
+dbt-run:
+    #!/usr/bin/env bash
+    cd dags/dbt/tpch_demo
+    dbt run --profiles-dir .

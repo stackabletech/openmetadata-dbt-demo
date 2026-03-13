@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: order_summary
+    description: >
+      Enriched order-level summary joining orders with customer, nation, region,
+      and aggregated line item metrics. One row per order.
+
+  - name: supplier_performance
+    description: >
+      Supplier-level performance metrics including revenue, quantity supplied,
+      and supply cost aggregates. One row per supplier.
+
+  - name: revenue_by_region
+    description: >
+      Revenue and order metrics aggregated by region and nation.
+      Useful for geographic analysis of sales performance.

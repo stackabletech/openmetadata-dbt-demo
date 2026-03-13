@@ -53,6 +53,8 @@ spec:
       AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: minio
       # 20 seconds to reload the DAGS folder (default: 300)
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "20"
+      # Install astronomer-cosmos at startup for dbt DAG parsing (avoids custom image)
+      _PIP_ADDITIONAL_REQUIREMENTS: "astronomer-cosmos"
     podOverrides: &podOverrides
       spec:
         containers:

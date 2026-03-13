@@ -1,0 +1,12 @@
+name: tpch_demo
+version: "1.0.0"
+config-version: 2
+
+profile: tpch_demo
+
+model-paths: ["models"]
+source-paths: ["models"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"

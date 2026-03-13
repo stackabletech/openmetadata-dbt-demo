@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: tpch
+    database: tpch
+    schema: tiny
+    tables:
+      - name: region
+      - name: nation
+      - name: supplier
+      - name: part
+      - name: partsupp
+      - name: customer
+      - name: orders
+      - name: lineitem
