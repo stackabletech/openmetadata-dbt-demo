@@ -5,6 +5,9 @@ metadata:
   name: garage
 spec:
   project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
   source:
     repoURL: https://git.deuxfleurs.fr/Deuxfleurs/garage
     targetRevision: main        # or a specific tag, e.g. v1.0.1
