@@ -10,7 +10,7 @@ spec:
     namespace: default
   source:
     repoURL: https://git.deuxfleurs.fr/Deuxfleurs/garage
-    targetRevision: main        # or a specific tag, e.g. v1.0.1
+    targetRevision: v1.3.1        # or a specific tag, e.g. v1.0.1
     path: script/helm/garage   # path to the chart within the repo
     helm:
       releaseName: garage
