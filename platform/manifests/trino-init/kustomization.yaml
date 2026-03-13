@@ -10,8 +10,9 @@ namePrefix: trino-init-
 configMapGenerator:
   - name: trino-sql-files
     files:
-      - sql/001-create-schemas.sql
+      - sql/001-create-hive-schema.sql
       - sql/002-create-tables.sql
+      - sql/003-create-iceberg-schema.sql
 
 generatorOptions:
   disableNameSuffixHash: true

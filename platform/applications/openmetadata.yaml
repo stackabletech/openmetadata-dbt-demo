@@ -1,0 +1,24 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openmetadata
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  sources:
+    - repoURL: "https://helm.open-metadata.org/"
+      chart: openmetadata
+      targetRevision: "1.12.1"
+      helm:
+        releaseName: openmetadata
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
