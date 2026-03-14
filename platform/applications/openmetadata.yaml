@@ -11,7 +11,7 @@ spec:
   sources:
     - repoURL: "https://open-metadata.github.io/openmetadata-helm-charts"
       chart: openmetadata
-      targetRevision: "1.6.1"
+      targetRevision: "1.10.11"
       helm:
         releaseName: openmetadata
     - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
