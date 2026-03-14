@@ -8,6 +8,7 @@ data:
     #!/usr/bin/env python3
     """Configure OpenMetadata: register Trino as a database service and trigger ingestion."""
 
+    import base64
     import json
     import os
     import sys
@@ -17,6 +18,9 @@ data:
 
     OM_HOST = os.environ.get("OM_HOST", "http://openmetadata:8585")
     API = f"{OM_HOST}/api/v1"
+
+    OM_ADMIN_EMAIL = os.environ.get("OM_ADMIN_EMAIL", "admin@open-metadata.org")
+    OM_ADMIN_PASSWORD = os.environ.get("OM_ADMIN_PASSWORD", "admin")
 
     TRINO_HOST = os.environ.get("TRINO_HOST", "trino-coordinator")
     TRINO_PORT = os.environ.get("TRINO_PORT", "8443")
@@ -62,15 +66,20 @@ data:
         sys.exit(1)
 
 
-    def get_bot_token():
-        """Retrieve the ingestion-bot JWT token."""
-        print("Fetching ingestion-bot JWT token ...")
-        bot = api_request("/bots/name/ingestion-bot")
-        token = bot.get("botUser", {}).get("authenticationMechanism", {}).get("config", {}).get("JWTToken")
+    def login():
+        """Log in with basic auth and return an access token."""
+        print(f"Logging in as {OM_ADMIN_EMAIL} ...")
+        password_b64 = base64.b64encode(OM_ADMIN_PASSWORD.encode()).decode()
+        result = api_request(
+            "/users/login",
+            method="POST",
+            data={"email": OM_ADMIN_EMAIL, "password": password_b64},
+        )
+        token = result.get("accessToken")
         if not token:
-            print("ERROR: Could not retrieve ingestion-bot JWT token.", file=sys.stderr)
+            print("ERROR: Login did not return an access token.", file=sys.stderr)
             sys.exit(1)
-        print("  Got JWT token.")
+        print("  Logged in successfully.")
         return token
 
 
@@ -143,7 +152,7 @@ data:
 
     def main():
         wait_for_api()
-        token = get_bot_token()
+        token = login()
         service = create_database_service(token)
         pipeline = create_ingestion_pipeline(token, service)
         trigger_ingestion(token, pipeline)
