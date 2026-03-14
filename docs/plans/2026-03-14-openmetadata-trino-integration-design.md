@@ -1,3 +1,84 @@
+# OpenMetadata Trino Integration — Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Add a Kubernetes Job that registers Trino as a database service in OpenMetadata and triggers metadata ingestion for all four catalogs (hive, hive-iceberg, tpch, tpcds).
+
+**Architecture:** A Kubernetes Job (deployed via a dedicated ArgoCD Application at sync wave 3) runs a Python script that calls the OpenMetadata REST API to create the Trino database service and an ingestion pipeline, then triggers it. Follows the existing trino/trino-init separation pattern.
+
+**Tech Stack:** Kubernetes Job, Python 3.12 + requests, OpenMetadata REST API v1, ArgoCD sync waves
+
+---
+
+### Task 1: Create the ArgoCD Application for openmetadata-init
+
+**Files:**
+- Create: `platform/applications/openmetadata-init.yaml`
+
+**Reference:** `platform/applications/trino-init.yaml` — copy this pattern exactly.
+
+**Step 1: Create the ArgoCD Application manifest**
+
+```yaml
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openmetadata-init
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  source:
+    repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
+    targetRevision: "main"
+    path: platform/manifests/openmetadata-init/
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+```
+
+Write this to `platform/applications/openmetadata-init.yaml`.
+
+**Step 2: Verify YAML validity**
+
+Run: `python3 -c "import yaml; yaml.safe_load(open('platform/applications/openmetadata-init.yaml'))"`
+Expected: No output (valid YAML)
+
+**Step 3: Commit**
+
+```bash
+git add platform/applications/openmetadata-init.yaml
+git commit -m "feat: add ArgoCD Application for openmetadata-init"
+```
+
+---
+
+### Task 2: Create the Python configuration script
+
+**Files:**
+- Create: `platform/manifests/openmetadata-init/configure-openmetadata.yaml`
+
+**Reference patterns:**
+- `infrastructure/forgejo-manifests/configure-forgejo.yaml` — ConfigMap + Job in one file
+- OpenMetadata API: `http://openmetadata:8585/api/v1/`
+- Trino coordinator: `trino-coordinator:8443` (HTTPS)
+
+**Step 1: Create the manifests directory**
+
+Run: `mkdir -p platform/manifests/openmetadata-init`
+
+**Step 2: Write the combined ConfigMap + Job manifest**
+
+Create `platform/manifests/openmetadata-init/configure-openmetadata.yaml` with:
+
+```yaml
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -8,7 +89,6 @@ data:
     #!/usr/bin/env python3
     """Configure OpenMetadata: register Trino as a database service and trigger ingestion."""
 
-    import base64
     import json
     import os
     import sys
@@ -18,9 +98,6 @@ data:
 
     OM_HOST = os.environ.get("OM_HOST", "http://openmetadata:8585")
     API = f"{OM_HOST}/api/v1"
-
-    OM_ADMIN_EMAIL = os.environ.get("OM_ADMIN_EMAIL", "admin@open-metadata.org")
-    OM_ADMIN_PASSWORD = os.environ.get("OM_ADMIN_PASSWORD", "admin")
 
     TRINO_HOST = os.environ.get("TRINO_HOST", "trino-coordinator")
     TRINO_PORT = os.environ.get("TRINO_PORT", "8443")
@@ -66,20 +143,15 @@ data:
         sys.exit(1)
 
 
-    def login():
-        """Log in with basic auth and return an access token."""
-        print(f"Logging in as {OM_ADMIN_EMAIL} ...")
-        password_b64 = base64.b64encode(OM_ADMIN_PASSWORD.encode()).decode()
-        result = api_request(
-            "/users/login",
-            method="POST",
-            data={"email": OM_ADMIN_EMAIL, "password": password_b64},
-        )
-        token = result.get("accessToken")
+    def get_bot_token():
+        """Retrieve the ingestion-bot JWT token."""
+        print("Fetching ingestion-bot JWT token ...")
+        bot = api_request("/bots/name/ingestion-bot")
+        token = bot.get("botUser", {}).get("authenticationMechanism", {}).get("config", {}).get("JWTToken")
         if not token:
-            print("ERROR: Login did not return an access token.", file=sys.stderr)
+            print("ERROR: Could not retrieve ingestion-bot JWT token.", file=sys.stderr)
             sys.exit(1)
-        print("  Logged in successfully.")
+        print("  Got JWT token.")
         return token
 
 
@@ -97,7 +169,7 @@ data:
                     "username": TRINO_USER,
                     "connectionArguments": {
                         "http_scheme": TRINO_SCHEME,
-                        "verify": False
+                        "verify": "false"
                     }
                 }
             }
@@ -138,57 +210,6 @@ data:
         return result
 
 
-    DBT_PIPELINE_NAME = f"{SERVICE_NAME}_dbt_ingestion"
-
-    S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "")
-    S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "")
-    S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://garage:3900")
-    S3_REGION = os.environ.get("S3_REGION", "garage")
-    DBT_BUCKET = os.environ.get("DBT_BUCKET", "dbt-artifacts")
-    DBT_PREFIX = os.environ.get("DBT_PREFIX", "tpch_demo")
-
-
-    def create_dbt_pipeline(token, service):
-        """Create or update a dbt ingestion pipeline for the Trino service."""
-        print(f"Creating/updating dbt pipeline '{DBT_PIPELINE_NAME}' ...")
-        service_ref = {
-            "id": service["id"],
-            "type": "databaseService"
-        }
-        payload = {
-            "name": DBT_PIPELINE_NAME,
-            "pipelineType": "dbt",
-            "service": service_ref,
-            "sourceConfig": {
-                "config": {
-                    "type": "DBT",
-                    "dbtConfigSource": {
-                        "dbtConfigType": "s3",
-                        "dbtSecurityConfig": {
-                            "awsAccessKeyId": S3_ACCESS_KEY,
-                            "awsSecretAccessKey": S3_SECRET_KEY,
-                            "awsRegion": S3_REGION,
-                            "endPointURL": S3_ENDPOINT
-                        },
-                        "dbtPrefixConfig": {
-                            "dbtBucketName": DBT_BUCKET,
-                            "dbtObjectPrefix": DBT_PREFIX
-                        }
-                    },
-                    "dbtUpdateDescriptions": True,
-                    "includeTags": True
-                }
-            },
-            "airflowConfig": {
-                "scheduleInterval": "0 */6 * * *"
-            }
-        }
-        result = api_request("/services/ingestionPipelines", method="PUT", data=payload, token=token)
-        pipeline_id = result["id"]
-        print(f"  dbt pipeline created/updated: {result['fullyQualifiedName']} (id={pipeline_id})")
-        return result
-
-
     def trigger_ingestion(token, pipeline):
         """Trigger the ingestion pipeline."""
         pipeline_id = pipeline["id"]
@@ -203,13 +224,11 @@ data:
 
     def main():
         wait_for_api()
-        token = login()
+        token = get_bot_token()
         service = create_database_service(token)
         pipeline = create_ingestion_pipeline(token, service)
         trigger_ingestion(token, pipeline)
-        dbt_pipeline = create_dbt_pipeline(token, service)
-        trigger_ingestion(token, dbt_pipeline)
-        print("Done — Trino is registered in OpenMetadata with metadata and dbt pipelines.")
+        print("Done — Trino is registered in OpenMetadata.")
 
 
     if __name__ == "__main__":
@@ -238,16 +257,6 @@ spec:
               value: "https"
             - name: TRINO_USER
               value: "admin"
-            - name: S3_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: garagefs-airflow-credentials
-                  key: accessKeyId
-            - name: S3_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: garagefs-airflow-credentials
-                  key: secretAccessKey
           volumeMounts:
             - name: script
               mountPath: /scripts
@@ -256,3 +265,55 @@ spec:
         - name: script
           configMap:
             name: openmetadata-init-script
+```
+
+**Step 3: Verify YAML validity**
+
+Run: `python3 -c "import yaml; [print(d['kind']) for d in yaml.safe_load_all(open('platform/manifests/openmetadata-init/configure-openmetadata.yaml')) if d]"`
+Expected: `ConfigMap` then `Job`
+
+**Step 4: Verify Python script syntax**
+
+Run: `python3 -c "import ast; ast.parse(open('platform/manifests/openmetadata-init/configure-openmetadata.yaml').read().split('configure.py: |')[1].split('---')[0])"`
+Or extract and run: `python3 -m py_compile` on the script portion.
+
+**Step 5: Commit**
+
+```bash
+git add platform/manifests/openmetadata-init/configure-openmetadata.yaml
+git commit -m "feat: add Job to register Trino in OpenMetadata and trigger ingestion"
+```
+
+---
+
+### Task 3: Validate the complete setup
+
+**Step 1: Verify directory structure**
+
+Run: `find platform/manifests/openmetadata-init platform/applications/openmetadata-init.yaml -type f`
+
+Expected:
+```
+platform/manifests/openmetadata-init/configure-openmetadata.yaml
+platform/applications/openmetadata-init.yaml
+```
+
+**Step 2: Verify sync wave ordering makes sense**
+
+Check that sync wave 3 comes after all dependencies:
+- OpenMetadata (no wave = 0)
+- Trino (wave 1 from `trino.yaml`)
+- Trino-init (wave 2)
+- openmetadata-init (wave 3) ← our new app
+
+**Step 3: Verify the Python script uses only stdlib (no pip needed)**
+
+The script uses only `json`, `os`, `sys`, `time`, `urllib.request`, `urllib.error` — all stdlib. No `requests` library needed, so `python:3.12-slim` works out of the box with no pip install step.
+
+**Step 4: Final commit with both files**
+
+If not already committed individually:
+```bash
+git add platform/applications/openmetadata-init.yaml platform/manifests/openmetadata-init/configure-openmetadata.yaml
+git commit -m "feat: add openmetadata-init to register Trino and trigger metadata ingestion"
+```

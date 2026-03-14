@@ -13,6 +13,12 @@ S3_BUCKET = "dbt-artifacts"
 S3_PREFIX = "tpch_demo"
 ARTIFACTS = ["manifest.json", "catalog.json", "run_results.json"]
 
+OM_HOST = "http://openmetadata:8585"
+OM_API = f"{OM_HOST}/api/v1"
+OM_ADMIN_EMAIL = "admin@open-metadata.org"
+OM_ADMIN_PASSWORD = "admin"
+DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
+
 
 def upload_dbt_artifacts(**context):
     """Upload dbt artifacts from the target directory to GarageFS S3."""
@@ -43,6 +49,42 @@ def upload_dbt_artifacts(**context):
     if not uploaded:
         raise FileNotFoundError(f"No dbt artifacts found in {DBT_TARGET_PATH}")
     print(f"Uploaded {len(uploaded)} artifacts to s3://{S3_BUCKET}/{S3_PREFIX}/")
+
+
+def trigger_om_dbt_ingestion(**context):
+    """Trigger the OpenMetadata dbt ingestion pipeline via REST API."""
+    import base64
+    import json
+    import urllib.request
+    import urllib.error
+
+    def om_request(path, method="GET", data=None, token=None):
+        url = f"{OM_API}{path}"
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        body = json.dumps(data).encode() if data else None
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+
+    # Login
+    password_b64 = base64.b64encode(OM_ADMIN_PASSWORD.encode()).decode()
+    result = om_request(
+        "/users/login", method="POST",
+        data={"email": OM_ADMIN_EMAIL, "password": password_b64},
+    )
+    token = result["accessToken"]
+    print("  Logged in to OpenMetadata.")
+
+    # Look up pipeline by FQN
+    pipeline = om_request(f"/services/ingestionPipelines/name/{DBT_PIPELINE_FQN}", token=token)
+    pipeline_id = pipeline["id"]
+    print(f"  Found dbt pipeline: {DBT_PIPELINE_FQN} (id={pipeline_id})")
+
+    # Trigger
+    om_request(f"/services/ingestionPipelines/trigger/{pipeline_id}", method="POST", token=token)
+    print("  dbt ingestion triggered successfully.")
 
 
 with DAG(
@@ -83,4 +125,9 @@ with DAG(
         python_callable=upload_dbt_artifacts,
     )
 
-    dbt_tasks >> upload_artifacts
+    trigger_om_ingestion = PythonOperator(
+        task_id="trigger_om_dbt_ingestion",
+        python_callable=trigger_om_dbt_ingestion,
+    )
+
+    dbt_tasks >> upload_artifacts >> trigger_om_ingestion
