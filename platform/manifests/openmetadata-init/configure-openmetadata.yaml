@@ -180,7 +180,7 @@ data:
                 }
             },
             "airflowConfig": {
-                "scheduleInterval": "0 */6 * * *"
+                "scheduleInterval": "* * * * *"
             }
         }
         result = api_request("/services/ingestionPipelines", method="PUT", data=payload, token=token)
