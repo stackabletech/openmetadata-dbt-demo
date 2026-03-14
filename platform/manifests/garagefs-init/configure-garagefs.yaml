@@ -103,6 +103,14 @@ data:
     echo "Granting key 'airflow' access to bucket..."
     $GARAGE_CMD bucket allow --read --write --owner airflow-logs --key airflow 2>/dev/null || echo "  Access may already be granted."
 
+    # Step 4b: Create dbt-artifacts bucket (idempotent)
+    echo "Creating bucket 'dbt-artifacts'..."
+    $GARAGE_CMD bucket create dbt-artifacts 2>/dev/null || echo "  Bucket may already exist, continuing."
+
+    # Step 5b: Grant access
+    echo "Granting key 'airflow' access to dbt-artifacts bucket..."
+    $GARAGE_CMD bucket allow --read --write --owner dbt-artifacts --key airflow 2>/dev/null || echo "  Access may already be granted."
+
     # Step 6: Store credentials in K8s Secret
     echo "Storing credentials in Secret 'garagefs-airflow-credentials'..."
     CONN_STRING="aws://${KEY_ID}:${KEY_SECRET}@/?endpoint_url=http%3A%2F%2Fgarage%3A3900&region_name=garage"
@@ -114,7 +122,7 @@ data:
       --dry-run=client -o yaml | kubectl apply -f -
 
     echo "=== GarageFS Init Complete ==="
-    echo "  Bucket: airflow-logs"
+    echo "  Buckets: airflow-logs, dbt-artifacts"
     echo "  S3 Endpoint: http://garage:3900"
     echo "  Region: garage"
 ---
