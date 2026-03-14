@@ -1,0 +1,186 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openmetadata-init-script
+data:
+  configure.py: |
+    #!/usr/bin/env python3
+    """Configure OpenMetadata: register Trino as a database service and trigger ingestion."""
+
+    import json
+    import os
+    import sys
+    import time
+    import urllib.request
+    import urllib.error
+
+    OM_HOST = os.environ.get("OM_HOST", "http://openmetadata:8585")
+    API = f"{OM_HOST}/api/v1"
+
+    TRINO_HOST = os.environ.get("TRINO_HOST", "trino-coordinator")
+    TRINO_PORT = os.environ.get("TRINO_PORT", "8443")
+    TRINO_SCHEME = os.environ.get("TRINO_SCHEME", "https")
+    TRINO_USER = os.environ.get("TRINO_USER", "admin")
+
+    MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "60"))
+    RETRY_INTERVAL = int(os.environ.get("RETRY_INTERVAL", "10"))
+
+    SERVICE_NAME = "trino"
+    PIPELINE_NAME = f"{SERVICE_NAME}_metadata_ingestion"
+
+
+    def api_request(path, method="GET", data=None, token=None):
+        """Make an API request to OpenMetadata."""
+        url = f"{API}{path}"
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        body = json.dumps(data).encode() if data else None
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else ""
+            print(f"  HTTP {e.code} for {method} {url}: {error_body}", file=sys.stderr)
+            raise
+
+
+    def wait_for_api():
+        """Wait until the OpenMetadata API is ready."""
+        print(f"Waiting for OpenMetadata API at {API} ...")
+        for i in range(MAX_RETRIES):
+            try:
+                api_request("/system/version")
+                print("  OpenMetadata API is ready.")
+                return
+            except Exception:
+                print(f"  Attempt {i+1}/{MAX_RETRIES} — not ready, retrying in {RETRY_INTERVAL}s ...")
+                time.sleep(RETRY_INTERVAL)
+        print("ERROR: OpenMetadata API did not become ready.", file=sys.stderr)
+        sys.exit(1)
+
+
+    def get_bot_token():
+        """Retrieve the ingestion-bot JWT token."""
+        print("Fetching ingestion-bot JWT token ...")
+        bot = api_request("/bots/name/ingestion-bot")
+        token = bot.get("botUser", {}).get("authenticationMechanism", {}).get("config", {}).get("JWTToken")
+        if not token:
+            print("ERROR: Could not retrieve ingestion-bot JWT token.", file=sys.stderr)
+            sys.exit(1)
+        print("  Got JWT token.")
+        return token
+
+
+    def create_database_service(token):
+        """Create or update the Trino database service."""
+        print(f"Creating/updating database service '{SERVICE_NAME}' ...")
+        payload = {
+            "name": SERVICE_NAME,
+            "serviceType": "Trino",
+            "connection": {
+                "config": {
+                    "type": "Trino",
+                    "scheme": "trino",
+                    "hostPort": f"{TRINO_HOST}:{TRINO_PORT}",
+                    "username": TRINO_USER,
+                    "connectionArguments": {
+                        "http_scheme": TRINO_SCHEME,
+                        "verify": "false"
+                    }
+                }
+            }
+        }
+        result = api_request("/services/databaseServices", method="PUT", data=payload, token=token)
+        service_id = result["id"]
+        fqn = result["fullyQualifiedName"]
+        print(f"  Service created/updated: {fqn} (id={service_id})")
+        return result
+
+
+    def create_ingestion_pipeline(token, service):
+        """Create or update a metadata ingestion pipeline for the Trino service."""
+        print(f"Creating/updating ingestion pipeline '{PIPELINE_NAME}' ...")
+        service_ref = {
+            "id": service["id"],
+            "type": "databaseService"
+        }
+        payload = {
+            "name": PIPELINE_NAME,
+            "pipelineType": "metadata",
+            "service": service_ref,
+            "sourceConfig": {
+                "config": {
+                    "type": "DatabaseMetadata",
+                    "markDeletedTables": True,
+                    "includeTables": True,
+                    "includeViews": True
+                }
+            },
+            "airflowConfig": {
+                "scheduleInterval": "0 */6 * * *"
+            }
+        }
+        result = api_request("/services/ingestionPipelines", method="PUT", data=payload, token=token)
+        pipeline_id = result["id"]
+        print(f"  Pipeline created/updated: {result['fullyQualifiedName']} (id={pipeline_id})")
+        return result
+
+
+    def trigger_ingestion(token, pipeline):
+        """Trigger the ingestion pipeline."""
+        pipeline_id = pipeline["id"]
+        print(f"Triggering ingestion pipeline {pipeline_id} ...")
+        try:
+            api_request(f"/services/ingestionPipelines/trigger/{pipeline_id}", method="POST", token=token)
+            print("  Ingestion triggered successfully.")
+        except Exception as e:
+            print(f"  Warning: Could not trigger ingestion (may need Airflow): {e}")
+            print("  The pipeline is registered and can be triggered from the UI.")
+
+
+    def main():
+        wait_for_api()
+        token = get_bot_token()
+        service = create_database_service(token)
+        pipeline = create_ingestion_pipeline(token, service)
+        trigger_ingestion(token, pipeline)
+        print("Done — Trino is registered in OpenMetadata.")
+
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-openmetadata
+spec:
+  backoffLimit: 50
+  template:
+    spec:
+      containers:
+        - name: configure
+          image: python:3.12-slim
+          command: ["python", "-u", "/scripts/configure.py"]
+          env:
+            - name: OM_HOST
+              value: "http://openmetadata:8585"
+            - name: TRINO_HOST
+              value: "trino-coordinator"
+            - name: TRINO_PORT
+              value: "8443"
+            - name: TRINO_SCHEME
+              value: "https"
+            - name: TRINO_USER
+              value: "admin"
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      restartPolicy: OnFailure
+      volumes:
+        - name: script
+          configMap:
+            name: openmetadata-init-script
