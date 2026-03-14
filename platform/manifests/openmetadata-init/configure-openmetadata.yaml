@@ -97,7 +97,7 @@ data:
                     "username": TRINO_USER,
                     "connectionArguments": {
                         "http_scheme": TRINO_SCHEME,
-                        "verify": "false"
+                        "verify": False
                     }
                 }
             }
