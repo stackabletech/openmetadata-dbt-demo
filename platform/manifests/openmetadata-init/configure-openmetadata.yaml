@@ -138,6 +138,57 @@ data:
         return result
 
 
+    DBT_PIPELINE_NAME = f"{SERVICE_NAME}_dbt_ingestion"
+
+    S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "")
+    S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "")
+    S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://garage:3900")
+    S3_REGION = os.environ.get("S3_REGION", "garage")
+    DBT_BUCKET = os.environ.get("DBT_BUCKET", "dbt-artifacts")
+    DBT_PREFIX = os.environ.get("DBT_PREFIX", "tpch_demo")
+
+
+    def create_dbt_pipeline(token, service):
+        """Create or update a dbt ingestion pipeline for the Trino service."""
+        print(f"Creating/updating dbt pipeline '{DBT_PIPELINE_NAME}' ...")
+        service_ref = {
+            "id": service["id"],
+            "type": "databaseService"
+        }
+        payload = {
+            "name": DBT_PIPELINE_NAME,
+            "pipelineType": "dbt",
+            "service": service_ref,
+            "sourceConfig": {
+                "config": {
+                    "type": "DBT",
+                    "dbtConfigSource": {
+                        "dbtConfigType": "s3",
+                        "dbtSecurityConfig": {
+                            "awsAccessKeyId": S3_ACCESS_KEY,
+                            "awsSecretAccessKey": S3_SECRET_KEY,
+                            "awsRegion": S3_REGION,
+                            "endPointURL": S3_ENDPOINT
+                        },
+                        "dbtPrefixConfig": {
+                            "dbtBucketName": DBT_BUCKET,
+                            "dbtObjectPrefix": DBT_PREFIX
+                        }
+                    },
+                    "dbtUpdateDescriptions": True,
+                    "includeTags": True
+                }
+            },
+            "airflowConfig": {
+                "scheduleInterval": "0 */6 * * *"
+            }
+        }
+        result = api_request("/services/ingestionPipelines", method="PUT", data=payload, token=token)
+        pipeline_id = result["id"]
+        print(f"  dbt pipeline created/updated: {result['fullyQualifiedName']} (id={pipeline_id})")
+        return result
+
+
     def trigger_ingestion(token, pipeline):
         """Trigger the ingestion pipeline."""
         pipeline_id = pipeline["id"]
@@ -156,7 +207,9 @@ data:
         service = create_database_service(token)
         pipeline = create_ingestion_pipeline(token, service)
         trigger_ingestion(token, pipeline)
-        print("Done — Trino is registered in OpenMetadata.")
+        dbt_pipeline = create_dbt_pipeline(token, service)
+        trigger_ingestion(token, dbt_pipeline)
+        print("Done — Trino is registered in OpenMetadata with metadata and dbt pipelines.")
 
 
     if __name__ == "__main__":
@@ -185,6 +238,16 @@ spec:
               value: "https"
             - name: TRINO_USER
               value: "admin"
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: garagefs-airflow-credentials
+                  key: accessKeyId
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: garagefs-airflow-credentials
+                  key: secretAccessKey
           volumeMounts:
             - name: script
               mountPath: /scripts
