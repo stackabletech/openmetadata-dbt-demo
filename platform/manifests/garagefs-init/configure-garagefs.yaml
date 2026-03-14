@@ -1,0 +1,142 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: garagefs-init
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: garagefs-init
+rules:
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "update", "patch", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: garagefs-init
+subjects:
+  - kind: ServiceAccount
+    name: garagefs-init
+roleRef:
+  kind: Role
+  name: garagefs-init
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garagefs-init-script
+data:
+  configure.sh: |
+    #!/bin/sh
+    set -e
+
+    GARAGE_POD="garage-0"
+    GARAGE_CMD="kubectl exec $GARAGE_POD -- /garage"
+
+    echo "=== GarageFS Init ==="
+
+    # Step 1: Wait for Garage to be ready
+    echo "Waiting for Garage to be ready..."
+    for i in $(seq 1 60); do
+      if $GARAGE_CMD status >/dev/null 2>&1; then
+        echo "  Garage is ready."
+        break
+      fi
+      if [ "$i" -eq 60 ]; then
+        echo "ERROR: Garage not ready after 60 attempts"
+        exit 1
+      fi
+      echo "  Attempt $i/60 - not ready, retrying in 5s..."
+      sleep 5
+    done
+
+    # Step 2: Assign layout to unassigned nodes
+    echo "Checking node layout..."
+    NODES=$($GARAGE_CMD status 2>/dev/null | grep "NO ROLE ASSIGNED" | awk '{print $1}')
+    if [ -n "$NODES" ]; then
+      for node_id in $NODES; do
+        echo "  Assigning node $node_id..."
+        $GARAGE_CMD layout assign -z dc1 -c 1G "$node_id"
+      done
+
+      # Get current version and apply
+      CURRENT_VERSION=$($GARAGE_CMD layout show 2>/dev/null | grep "Current cluster layout version:" | awk '{print $NF}')
+      NEXT_VERSION=$((CURRENT_VERSION + 1))
+      echo "  Applying layout version $NEXT_VERSION..."
+      $GARAGE_CMD layout apply --version "$NEXT_VERSION"
+    else
+      echo "  All nodes already have roles assigned."
+    fi
+
+    echo "Layout:"
+    $GARAGE_CMD layout show
+
+    # Step 3: Create API key (idempotent)
+    echo "Creating API key 'airflow'..."
+    # Try to get existing key first, create if not found
+    KEY_OUTPUT=$($GARAGE_CMD key info airflow 2>&1) || KEY_OUTPUT=$($GARAGE_CMD key create airflow 2>&1)
+    KEY_ID=$(echo "$KEY_OUTPUT" | grep "Key ID:" | awk '{print $NF}')
+    KEY_SECRET=$(echo "$KEY_OUTPUT" | grep "Secret key:" | awk '{print $NF}')
+
+    if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ]; then
+      echo "ERROR: Failed to extract key credentials"
+      echo "Output: $KEY_OUTPUT"
+      exit 1
+    fi
+    echo "  Key ID: $KEY_ID"
+
+    # Step 4: Create bucket (idempotent)
+    echo "Creating bucket 'airflow-logs'..."
+    $GARAGE_CMD bucket create airflow-logs 2>/dev/null || echo "  Bucket may already exist, continuing."
+
+    # Step 5: Grant access
+    echo "Granting key 'airflow' access to bucket..."
+    $GARAGE_CMD bucket allow --read --write --owner airflow-logs --key airflow 2>/dev/null || echo "  Access may already be granted."
+
+    # Step 6: Store credentials in K8s Secret
+    echo "Storing credentials in Secret 'garagefs-airflow-credentials'..."
+    CONN_STRING="aws://${KEY_ID}:${KEY_SECRET}@/?endpoint_url=http%3A%2F%2Fgarage%3A3900&region_name=garage"
+
+    kubectl create secret generic garagefs-airflow-credentials \
+      --from-literal=accessKeyId="$KEY_ID" \
+      --from-literal=secretAccessKey="$KEY_SECRET" \
+      --from-literal=airflow-connection="$CONN_STRING" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    echo "=== GarageFS Init Complete ==="
+    echo "  Bucket: airflow-logs"
+    echo "  S3 Endpoint: http://garage:3900"
+    echo "  Region: garage"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-garagefs
+spec:
+  backoffLimit: 50
+  template:
+    spec:
+      serviceAccountName: garagefs-init
+      containers:
+        - name: configure
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh", "/scripts/configure.sh"]
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      restartPolicy: OnFailure
+      volumes:
+        - name: script
+          configMap:
+            name: garagefs-init-script
+            defaultMode: 0755
