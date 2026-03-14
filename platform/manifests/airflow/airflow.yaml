@@ -5,8 +5,8 @@ metadata:
   name: airflow
 spec:
   image:
-    custom: oci.stackable.tech/sandbox/airflow:3.0.6-stackable0.0.0-dev-cosmos
-    productVersion: 3.0.6
+    custom: oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos
+    productVersion: 3.1.6
     pullPolicy: IfNotPresent
   clusterConfig:
     loadExamples: false

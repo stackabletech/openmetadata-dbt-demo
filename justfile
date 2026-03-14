@@ -20,8 +20,8 @@ seal-secrets:
     done
 
 build-airflow-image:
-    docker build -t oci.stackable.tech/sandbox/airflow:3.0.6-stackable0.0.0-dev-cosmos docker/airflow
-    docker push oci.stackable.tech/sandbox/airflow:3.0.6-stackable0.0.0-dev-cosmos
+    docker build -t oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos docker/airflow
+    docker push oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos
 
 dbt-compile:
     #!/usr/bin/env bash

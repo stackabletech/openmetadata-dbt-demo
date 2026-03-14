@@ -15,7 +15,7 @@ stacks:
       ################################
       # prerequisites
       ################################
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-dbt-demo/infrastructure/sealed-secrets.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/sealed-secrets.yaml
       ################################
       # project - operators
       ################################
@@ -25,12 +25,12 @@ stacks:
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applicationsets/stackable-operators.yaml
 #      - helmChart: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/forgejo.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-dbt-demo/infrastructure/forgejo.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/forgejo.yaml
         ################################
         # applicationset - demo
         ################################
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-dbt-demo/infrastructure/project.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-dbt-demo/infrastructure/cluster-apps.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/project.yaml
+      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/cluster-apps.yaml
       #- plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow.yaml
       #- plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow-postgres.yaml
     supportedNamespaces: []
