@@ -71,6 +71,13 @@ spec:
                   secretKeyRef:
                     name: garagefs-airflow-credentials
                     key: airflow-connection
+            volumeMounts:
+              - name: dbt-target
+                mountPath: /shared/dbt-target
+        volumes:
+          - name: dbt-target
+            persistentVolumeClaim:
+              claimName: dbt-target
   schedulers:
     envOverrides: *envOverrides
     podOverrides: *podOverrides

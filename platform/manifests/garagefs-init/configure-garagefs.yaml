@@ -113,7 +113,9 @@ data:
 
     # Step 6: Store credentials in K8s Secret
     echo "Storing credentials in Secret 'garagefs-airflow-credentials'..."
-    CONN_STRING="aws://${KEY_ID}:${KEY_SECRET}@/?endpoint_url=http%3A%2F%2Fgarage%3A3900&region_name=garage"
+    # URL-encode the secret key for the connection string (may contain URI-special chars)
+    ENCODED_SECRET=$(printf '%s' "$KEY_SECRET" | sed 's/+/%2B/g; s/\//%2F/g; s/@/%40/g; s/:/%3A/g; s/#/%23/g; s/\?/%3F/g; s/&/%26/g; s/=/%3D/g')
+    CONN_STRING="aws://${KEY_ID}:${ENCODED_SECRET}@/?endpoint_url=http%3A%2F%2Fgarage%3A3900&region_name=garage"
 
     kubectl create secret generic garagefs-airflow-credentials \
       --from-literal=accessKeyId="$KEY_ID" \
