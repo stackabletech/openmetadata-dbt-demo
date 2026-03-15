@@ -2,9 +2,7 @@ version: 2
 
 models:
   - name: order_summary
-    description: >
-      Enriched order-level summary joining orders with customer, nation, region,
-      and aggregated line item metrics. One row per order.
+    description: "Enriched order-level summary joining orders with customer, nation, region, and aggregated line item metrics. One row per order."
     columns:
       - name: order_id
         description: Unique order identifier.
@@ -36,9 +34,7 @@ models:
         description: Net revenue plus tax. sum(extended_price * (1 - discount) * (1 + tax)).
 
   - name: supplier_performance
-    description: >
-      Supplier-level performance metrics including revenue, quantity supplied,
-      and supply cost aggregates. One row per supplier.
+    description: "Supplier-level performance metrics including revenue, quantity supplied, and supply cost aggregates. One row per supplier."
     columns:
       - name: supplier_id
         description: Unique supplier identifier.
@@ -66,9 +62,7 @@ models:
         description: Total inventory available across all parts.
 
   - name: revenue_by_region
-    description: >
-      Revenue and order metrics aggregated by region and nation.
-      Useful for geographic analysis of sales performance.
+    description: "Revenue and order metrics aggregated by region and nation. Useful for geographic analysis of sales performance."
     columns:
       - name: region_name
         description: Geographic region name.
@@ -84,9 +78,7 @@ models:
         description: Average total_price per order.
 
   - name: customer_lifetime_value
-    description: >
-      Customer-level lifetime value metrics including total spend, order frequency,
-      and product diversity. One row per customer. Includes customers with zero orders.
+    description: "Customer-level lifetime value metrics including total spend, order frequency, and product diversity. One row per customer. Includes customers with zero orders."
     columns:
       - name: customer_id
         description: Unique customer identifier.
@@ -122,9 +114,7 @@ models:
         description: Number of unique suppliers that fulfilled this customer's orders.
 
   - name: shipping_analysis
-    description: >
-      Shipping and delivery performance metrics aggregated by ship mode, region,
-      and nation. Tracks delivery timeliness, late delivery rates, and return rates.
+    description: "Shipping and delivery performance metrics aggregated by ship mode, region, and nation. Tracks delivery timeliness, late delivery rates, and return rates."
     columns:
       - name: ship_mode
         description: Shipping mode (AIR, FOB, MAIL, RAIL, REG AIR, SHIP, TRUCK).
@@ -141,9 +131,7 @@ models:
       - name: avg_delivery_days
         description: Average days between ship date and receipt date (transit time).
       - name: avg_receipt_vs_commit_days
-        description: >
-          Average days between committed date and receipt date.
-          Negative = early, positive = late.
+        description: "Average days between committed date and receipt date. Negative = early, positive = late."
       - name: avg_days_to_ship
         description: Average days between order date and ship date (fulfillment speed).
       - name: late_deliveries
@@ -156,10 +144,7 @@ models:
         description: Fraction of line items returned (0.0 to 1.0).
 
   - name: part_pricing_analysis
-    description: >
-      Product pricing and supply chain metrics aggregated by part type, brand,
-      manufacturer, and container. Combines catalog pricing with sales data
-      and supply costs.
+    description: "Product pricing and supply chain metrics aggregated by part type, brand, manufacturer, and container. Combines catalog pricing with sales data and supply costs."
     columns:
       - name: part_type
         description: Part type category (e.g. STANDARD POLISHED BRASS).

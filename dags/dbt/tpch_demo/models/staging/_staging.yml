@@ -66,9 +66,7 @@ models:
         description: Free-text comment about the order.
 
   - name: stg_line_items
-    description: >
-      Cleaned line item records. One row per line item (order + line number).
-      The most granular fact table.
+    description: "Cleaned line item records. One row per line item (order + line number). The most granular fact table."
     columns:
       - name: order_id
         description: Foreign key to stg_orders.

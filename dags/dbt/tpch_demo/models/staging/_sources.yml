@@ -4,10 +4,7 @@ sources:
   - name: tpch
     database: tpch
     schema: tiny
-    description: >
-      TPC-H benchmark dataset (scale factor tiny) served by the Trino tpch catalog.
-      Contains 8 tables modeling a parts supplier business with customers, orders,
-      line items, parts, suppliers, nations, and regions.
+    description: "TPC-H benchmark dataset (scale factor tiny) served by the Trino tpch catalog. Contains 8 tables modeling a parts supplier business with customers, orders, line items, parts, suppliers, nations, and regions."
 
     tables:
       - name: region
@@ -73,9 +70,7 @@ sources:
             description: Free-text comment about the part.
 
       - name: partsupp
-        description: >
-          Part-supplier relationships (8,000 rows at tiny scale). Maps which suppliers
-          provide which parts, with cost and availability.
+        description: "Part-supplier relationships (8,000 rows at tiny scale). Maps which suppliers provide which parts, with cost and availability."
         columns:
           - name: partkey
             description: Foreign key to part.
@@ -104,8 +99,7 @@ sources:
           - name: acctbal
             description: Account balance in dollars. May be negative.
           - name: mktsegment
-            description: >
-              Market segment (AUTOMOBILE, BUILDING, FURNITURE, HOUSEHOLD, MACHINERY).
+            description: "Market segment (AUTOMOBILE, BUILDING, FURNITURE, HOUSEHOLD, MACHINERY)."
           - name: comment
             description: Free-text comment about the customer.
 
@@ -132,9 +126,7 @@ sources:
             description: Free-text comment about the order.
 
       - name: lineitem
-        description: >
-          Order line items (60,175 rows at tiny scale). Each line item is one part
-          on one order, supplied by one supplier. The most granular fact table.
+        description: "Order line items (60,175 rows at tiny scale). Each line item is one part on one order, supplied by one supplier. The most granular fact table."
         columns:
           - name: orderkey
             description: Foreign key to orders.
