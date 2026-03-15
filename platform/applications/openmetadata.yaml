@@ -11,9 +11,24 @@ spec:
   sources:
     - repoURL: "https://open-metadata.github.io/openmetadata-helm-charts"
       chart: openmetadata
-      targetRevision: "1.10.11"
+      targetRevision: "1.12.1"
       helm:
         releaseName: openmetadata
+        valuesObject:
+          pipelineServiceClientConfig:
+            enabled: true
+            type: "airflow"
+            metadataApiEndpoint: http://openmetadata:8585/api
+            airflow:
+              className: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
+              apiEndpoint: http://openmetadata-dependencies-web:8080
+              verifySsl: "no-ssl"
+              auth:
+                enabled: true
+                username: admin
+                password:
+                  secretRef: airflow-secrets
+                  secretKey: openmetadata-airflow-password
     - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "main"
       path: platform/manifests/openmetadata/

@@ -83,8 +83,12 @@ def trigger_om_dbt_ingestion(**context):
     print(f"  Found dbt pipeline: {DBT_PIPELINE_FQN} (id={pipeline_id})")
 
     # Trigger
-    om_request(f"/services/ingestionPipelines/trigger/{pipeline_id}", method="POST", token=token)
-    print("  dbt ingestion triggered successfully.")
+    try:
+        om_request(f"/services/ingestionPipelines/trigger/{pipeline_id}", method="POST", token=token)
+        print("  dbt ingestion triggered successfully.")
+    except Exception as e:
+        print(f"  Warning: Could not trigger dbt ingestion: {e}")
+        print("  The pipeline will run on its schedule or can be triggered from the OpenMetadata UI.")
 
 
 with DAG(
