@@ -1,19 +1,18 @@
 ---
-# Run Airflow DB migrations before the chart's pods start.
+# Run Airflow DB migrations alongside the chart's pods.
 #
 # The openmetadata-dependencies Helm chart defines its migration Job as a
 # post-install/post-upgrade Helm hook, which ArgoCD maps to PostSync.
 # This creates a deadlock: pods wait for migrations in an init container,
 # but PostSync only fires after pods are healthy.
 #
-# This Job runs in sync-wave -1, so ArgoCD applies it and waits for
-# completion before syncing the chart's pods (wave 0).
+# This Job runs in the same sync wave as all other chart resources.
+# The pods' wait-for-airflow-migrations init containers poll for 60 seconds,
+# giving this Job time to complete the migration.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: openmetadata-airflow-db-migrate
-  annotations:
-    argocd.argoproj.io/sync-wave: "-1"
 spec:
   ttlSecondsAfterFinished: 300
   template:
@@ -35,12 +34,24 @@ spec:
           env:
             - name: _PIP_ADDITIONAL_REQUIREMENTS
               value: "apache-airflow-providers-fab==2.4.4"
-            # The FAB auth manager must be set so db migrate discovers FAB provider migrations.
-            # We use an env var instead of mounting the chart's ConfigMap, which doesn't
-            # exist yet during PreSync (it's created during Sync).
             - name: AIRFLOW__CORE__AUTH_MANAGER
               value: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-              value: "mysql://airflow_user:airflow_pass@mysql:3306/airflow_db"
+              valueFrom:
+                secretKeyRef:
+                  name: openmetadata-dependencies-metadata
+                  key: connection
             - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
-              value: "mysql://airflow_user:airflow_pass@mysql:3306/airflow_db"
+              valueFrom:
+                secretKeyRef:
+                  name: openmetadata-dependencies-metadata
+                  key: connection
+          volumeMounts:
+            - name: config
+              mountPath: /opt/airflow/airflow.cfg
+              subPath: airflow.cfg
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: openmetadata-dependencies-config
