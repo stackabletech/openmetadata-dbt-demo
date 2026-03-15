@@ -5,13 +5,189 @@ models:
     description: >
       Enriched order-level summary joining orders with customer, nation, region,
       and aggregated line item metrics. One row per order.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+      - name: order_date
+        description: Date the order was placed.
+      - name: order_status
+        description: "Order status: F = fulfilled, O = open, P = partially fulfilled."
+      - name: order_priority
+        description: "Priority: 1-URGENT, 2-HIGH, 3-MEDIUM, 4-NOT SPECIFIED, 5-LOW."
+      - name: customer_name
+        description: Name of the customer who placed the order.
+      - name: market_segment
+        description: Market segment of the customer.
+      - name: customer_nation
+        description: Nation where the customer is located.
+      - name: customer_region
+        description: Geographic region where the customer is located.
+      - name: total_price
+        description: Total order price in dollars as recorded on the order.
+      - name: line_item_count
+        description: Number of line items in the order.
+      - name: total_quantity
+        description: Sum of quantities across all line items.
+      - name: gross_revenue
+        description: Sum of extended prices before discounts.
+      - name: net_revenue
+        description: Revenue after discount. sum(extended_price * (1 - discount)).
+      - name: total_with_tax
+        description: Net revenue plus tax. sum(extended_price * (1 - discount) * (1 + tax)).
 
   - name: supplier_performance
     description: >
       Supplier-level performance metrics including revenue, quantity supplied,
       and supply cost aggregates. One row per supplier.
+    columns:
+      - name: supplier_id
+        description: Unique supplier identifier.
+      - name: supplier_name
+        description: Name of the supplier.
+      - name: supplier_nation
+        description: Nation where the supplier is located.
+      - name: supplier_region
+        description: Geographic region where the supplier is located.
+      - name: orders_fulfilled
+        description: Count of distinct orders this supplier contributed to.
+      - name: total_quantity_supplied
+        description: Total quantity of items supplied across all orders.
+      - name: total_revenue
+        description: Gross revenue (sum of extended prices).
+      - name: net_revenue
+        description: Revenue after discounts.
+      - name: avg_item_price
+        description: Average extended price per line item.
+      - name: min_supply_cost
+        description: Lowest supply cost across all parts this supplier provides.
+      - name: avg_supply_cost
+        description: Average supply cost across all part-supplier relationships.
+      - name: total_available_quantity
+        description: Total inventory available across all parts.
 
   - name: revenue_by_region
     description: >
       Revenue and order metrics aggregated by region and nation.
       Useful for geographic analysis of sales performance.
+    columns:
+      - name: region_name
+        description: Geographic region name.
+      - name: nation_name
+        description: Nation name within the region.
+      - name: customer_count
+        description: Number of distinct customers with orders.
+      - name: order_count
+        description: Number of distinct orders.
+      - name: net_revenue
+        description: Total revenue after discounts.
+      - name: avg_order_value
+        description: Average total_price per order.
+
+  - name: customer_lifetime_value
+    description: >
+      Customer-level lifetime value metrics including total spend, order frequency,
+      and product diversity. One row per customer. Includes customers with zero orders.
+    columns:
+      - name: customer_id
+        description: Unique customer identifier.
+      - name: customer_name
+        description: Name of the customer.
+      - name: market_segment
+        description: Market segment the customer belongs to.
+      - name: customer_nation
+        description: Nation where the customer is located.
+      - name: customer_region
+        description: Geographic region where the customer is located.
+      - name: account_balance
+        description: Current account balance in dollars. May be negative.
+      - name: total_orders
+        description: Total number of orders placed by this customer.
+      - name: first_order_date
+        description: Date of the customer's earliest order.
+      - name: last_order_date
+        description: Date of the customer's most recent order.
+      - name: lifetime_net_revenue
+        description: Total revenue after discounts across all orders.
+      - name: lifetime_quantity
+        description: Total quantity of items ordered.
+      - name: avg_order_value
+        description: Average total_price per order.
+      - name: revenue_per_order
+        description: Lifetime net revenue divided by total orders.
+      - name: total_line_items
+        description: Total number of line items across all orders.
+      - name: distinct_parts_ordered
+        description: Number of unique parts this customer has ordered.
+      - name: distinct_suppliers_used
+        description: Number of unique suppliers that fulfilled this customer's orders.
+
+  - name: shipping_analysis
+    description: >
+      Shipping and delivery performance metrics aggregated by ship mode, region,
+      and nation. Tracks delivery timeliness, late delivery rates, and return rates.
+    columns:
+      - name: ship_mode
+        description: Shipping mode (AIR, FOB, MAIL, RAIL, REG AIR, SHIP, TRUCK).
+      - name: customer_region
+        description: Geographic region of the receiving customer.
+      - name: customer_nation
+        description: Nation of the receiving customer.
+      - name: shipment_count
+        description: Total number of line items shipped in this group.
+      - name: total_quantity_shipped
+        description: Total quantity of items shipped.
+      - name: net_revenue
+        description: Revenue after discounts for this group.
+      - name: avg_delivery_days
+        description: Average days between ship date and receipt date (transit time).
+      - name: avg_receipt_vs_commit_days
+        description: >
+          Average days between committed date and receipt date.
+          Negative = early, positive = late.
+      - name: avg_days_to_ship
+        description: Average days between order date and ship date (fulfillment speed).
+      - name: late_deliveries
+        description: Number of line items received after the committed date.
+      - name: late_delivery_rate
+        description: Fraction of line items delivered late (0.0 to 1.0).
+      - name: returned_items
+        description: Number of line items with return_flag = R.
+      - name: return_rate
+        description: Fraction of line items returned (0.0 to 1.0).
+
+  - name: part_pricing_analysis
+    description: >
+      Product pricing and supply chain metrics aggregated by part type, brand,
+      manufacturer, and container. Combines catalog pricing with sales data
+      and supply costs.
+    columns:
+      - name: part_type
+        description: Part type category (e.g. STANDARD POLISHED BRASS).
+      - name: brand
+        description: Brand name (format Brand#NN).
+      - name: manufacturer
+        description: Manufacturer name (format Manufacturer#N).
+      - name: container
+        description: Shipping container type (e.g. SM CASE, LG BOX).
+      - name: part_count
+        description: Number of distinct parts in this category.
+      - name: avg_retail_price
+        description: Average retail price across parts.
+      - name: min_retail_price
+        description: Lowest retail price.
+      - name: max_retail_price
+        description: Highest retail price.
+      - name: supplier_count
+        description: Number of distinct suppliers for this category.
+      - name: avg_supply_cost
+        description: Average cost per unit from suppliers.
+      - name: avg_margin
+        description: Average retail price minus supply cost (gross margin per unit).
+      - name: total_available_inventory
+        description: Total units available across all suppliers.
+      - name: total_quantity_sold
+        description: Total units sold. Zero if no sales.
+      - name: total_net_revenue
+        description: Total revenue after discounts. Zero if no sales.
+      - name: avg_discount_applied
+        description: Average discount rate on line items in this category.

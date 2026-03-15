@@ -9,3 +9,10 @@ target-path: "target"
 clean-targets:
   - "target"
   - "dbt_packages"
+
+models:
+  tpch_demo:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

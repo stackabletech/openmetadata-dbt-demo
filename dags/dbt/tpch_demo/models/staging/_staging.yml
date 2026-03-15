@@ -1,0 +1,158 @@
+version: 2
+
+models:
+  - name: stg_regions
+    description: Cleaned region records. One row per region (5 regions).
+    columns:
+      - name: region_id
+        description: Unique region identifier.
+      - name: region_name
+        description: Region name (AFRICA, AMERICA, ASIA, EUROPE, MIDDLE EAST).
+      - name: region_comment
+        description: Free-text comment about the region.
+
+  - name: stg_nations
+    description: Cleaned nation records. One row per nation (25 nations).
+    columns:
+      - name: nation_id
+        description: Unique nation identifier.
+      - name: nation_name
+        description: Nation name (e.g. UNITED STATES, GERMANY, CHINA).
+      - name: region_id
+        description: Foreign key to stg_regions.
+      - name: nation_comment
+        description: Free-text comment about the nation.
+
+  - name: stg_customers
+    description: Cleaned customer records. One row per customer.
+    columns:
+      - name: customer_id
+        description: Unique customer identifier.
+      - name: customer_name
+        description: Customer name (format Customer#NNNNNNNNN).
+      - name: customer_address
+        description: Street address of the customer.
+      - name: nation_id
+        description: Foreign key to stg_nations.
+      - name: customer_phone
+        description: Phone number (format NN-NNN-NNN-NNNN).
+      - name: account_balance
+        description: Account balance in dollars. May be negative.
+      - name: market_segment
+        description: Market segment (AUTOMOBILE, BUILDING, FURNITURE, HOUSEHOLD, MACHINERY).
+      - name: customer_comment
+        description: Free-text comment about the customer.
+
+  - name: stg_orders
+    description: Cleaned order records. One row per order.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+      - name: customer_id
+        description: Foreign key to stg_customers.
+      - name: order_status
+        description: "Order status: F = fulfilled, O = open, P = partially fulfilled."
+      - name: total_price
+        description: Total order price in dollars.
+      - name: order_date
+        description: Date the order was placed.
+      - name: order_priority
+        description: "Priority: 1-URGENT, 2-HIGH, 3-MEDIUM, 4-NOT SPECIFIED, 5-LOW."
+      - name: clerk
+        description: Clerk who processed the order.
+      - name: ship_priority
+        description: Shipping priority flag (integer).
+      - name: order_comment
+        description: Free-text comment about the order.
+
+  - name: stg_line_items
+    description: >
+      Cleaned line item records. One row per line item (order + line number).
+      The most granular fact table.
+    columns:
+      - name: order_id
+        description: Foreign key to stg_orders.
+      - name: line_number
+        description: Line number within the order (1-based).
+      - name: part_id
+        description: Foreign key to stg_parts.
+      - name: supplier_id
+        description: Foreign key to stg_suppliers.
+      - name: quantity
+        description: Quantity ordered (1 to 50).
+      - name: extended_price
+        description: Line item price before discount (quantity * retail price).
+      - name: discount
+        description: Discount percentage as a decimal (0.00 to 0.10).
+      - name: tax
+        description: Tax rate as a decimal (0.00 to 0.08).
+      - name: return_flag
+        description: "Return status: R = returned, A = accepted, N = not yet received."
+      - name: line_status
+        description: "Shipping status: F = shipped, O = not yet shipped."
+      - name: ship_date
+        description: Date the line item was shipped.
+      - name: commit_date
+        description: Committed delivery date.
+      - name: receipt_date
+        description: Actual date the customer received the item.
+      - name: ship_instructions
+        description: Shipping instruction (DELIVER IN PERSON, COLLECT COD, TAKE BACK RETURN, NONE).
+      - name: ship_mode
+        description: Shipping mode (AIR, FOB, MAIL, RAIL, REG AIR, SHIP, TRUCK).
+      - name: line_item_comment
+        description: Free-text comment about the line item.
+
+  - name: stg_suppliers
+    description: Cleaned supplier records. One row per supplier.
+    columns:
+      - name: supplier_id
+        description: Unique supplier identifier.
+      - name: supplier_name
+        description: Supplier name (format Supplier#NNNNNNNNN).
+      - name: supplier_address
+        description: Street address of the supplier.
+      - name: nation_id
+        description: Foreign key to stg_nations.
+      - name: supplier_phone
+        description: Phone number (format NN-NNN-NNN-NNNN).
+      - name: account_balance
+        description: Account balance in dollars.
+      - name: supplier_comment
+        description: Free-text comment about the supplier.
+
+  - name: stg_parts
+    description: Cleaned part records. One row per part.
+    columns:
+      - name: part_id
+        description: Unique part identifier.
+      - name: part_name
+        description: Part name composed of randomly generated words.
+      - name: manufacturer
+        description: Manufacturer name (format Manufacturer#N).
+      - name: brand
+        description: Brand name (format Brand#NN).
+      - name: part_type
+        description: Part type as a 3-word compound (e.g. STANDARD POLISHED BRASS).
+      - name: part_size
+        description: Part size as an integer from 1 to 50.
+      - name: container
+        description: Shipping container type (e.g. SM CASE, LG BOX, MED PKG).
+      - name: retail_price
+        description: Retail price per unit in dollars.
+      - name: part_comment
+        description: Free-text comment about the part.
+
+  - name: stg_part_suppliers
+    description: Cleaned part-supplier records. One row per part-supplier combination.
+    columns:
+      - name: part_id
+        description: Foreign key to stg_parts.
+      - name: supplier_id
+        description: Foreign key to stg_suppliers.
+      - name: available_quantity
+        description: Units available from this supplier for this part.
+      - name: supply_cost
+        description: Cost per unit from this supplier, in dollars.
+      - name: partsupplier_comment
+        description: Free-text comment about this part-supplier relationship.

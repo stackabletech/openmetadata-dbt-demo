@@ -4,12 +4,167 @@ sources:
   - name: tpch
     database: tpch
     schema: tiny
+    description: >
+      TPC-H benchmark dataset (scale factor tiny) served by the Trino tpch catalog.
+      Contains 8 tables modeling a parts supplier business with customers, orders,
+      line items, parts, suppliers, nations, and regions.
+
     tables:
       - name: region
+        description: Geographic regions (5 rows). Top-level grouping for nations.
+        columns:
+          - name: regionkey
+            description: Unique region identifier (surrogate key).
+          - name: name
+            description: Region name (e.g. AFRICA, AMERICA, ASIA, EUROPE, MIDDLE EAST).
+          - name: comment
+            description: Free-text comment about the region.
+
       - name: nation
+        description: Nations within regions (25 rows). Each nation belongs to one region.
+        columns:
+          - name: nationkey
+            description: Unique nation identifier (surrogate key).
+          - name: name
+            description: Nation name (e.g. UNITED STATES, GERMANY, CHINA).
+          - name: regionkey
+            description: Foreign key to region.
+          - name: comment
+            description: Free-text comment about the nation.
+
       - name: supplier
+        description: Parts suppliers (100 rows at tiny scale). Each supplier is in one nation.
+        columns:
+          - name: suppkey
+            description: Unique supplier identifier (surrogate key).
+          - name: name
+            description: Supplier name (format Supplier#NNNNNNNNN).
+          - name: address
+            description: Street address of the supplier.
+          - name: nationkey
+            description: Foreign key to nation.
+          - name: phone
+            description: Phone number (format NN-NNN-NNN-NNNN).
+          - name: acctbal
+            description: Account balance in dollars.
+          - name: comment
+            description: Free-text comment about the supplier.
+
       - name: part
+        description: Parts catalog (2,000 rows at tiny scale).
+        columns:
+          - name: partkey
+            description: Unique part identifier (surrogate key).
+          - name: name
+            description: Part name composed of randomly generated words.
+          - name: mfgr
+            description: Manufacturer name (format Manufacturer#N).
+          - name: brand
+            description: Brand name (format Brand#NN).
+          - name: type
+            description: Part type as a 3-word compound (e.g. STANDARD POLISHED BRASS).
+          - name: size
+            description: Part size as an integer from 1 to 50.
+          - name: container
+            description: Shipping container type (e.g. SM CASE, LG BOX, MED PKG).
+          - name: retailprice
+            description: Retail price in dollars.
+          - name: comment
+            description: Free-text comment about the part.
+
       - name: partsupp
+        description: >
+          Part-supplier relationships (8,000 rows at tiny scale). Maps which suppliers
+          provide which parts, with cost and availability.
+        columns:
+          - name: partkey
+            description: Foreign key to part.
+          - name: suppkey
+            description: Foreign key to supplier.
+          - name: availqty
+            description: Number of units available from this supplier for this part.
+          - name: supplycost
+            description: Cost per unit from this supplier, in dollars.
+          - name: comment
+            description: Free-text comment about this part-supplier relationship.
+
       - name: customer
+        description: Customers (1,500 rows at tiny scale). Each customer belongs to one nation.
+        columns:
+          - name: custkey
+            description: Unique customer identifier (surrogate key).
+          - name: name
+            description: Customer name (format Customer#NNNNNNNNN).
+          - name: address
+            description: Street address of the customer.
+          - name: nationkey
+            description: Foreign key to nation.
+          - name: phone
+            description: Phone number (format NN-NNN-NNN-NNNN).
+          - name: acctbal
+            description: Account balance in dollars. May be negative.
+          - name: mktsegment
+            description: >
+              Market segment (AUTOMOBILE, BUILDING, FURNITURE, HOUSEHOLD, MACHINERY).
+          - name: comment
+            description: Free-text comment about the customer.
+
       - name: orders
+        description: Customer orders (15,000 rows at tiny scale). Each order belongs to one customer.
+        columns:
+          - name: orderkey
+            description: Unique order identifier (surrogate key).
+          - name: custkey
+            description: Foreign key to customer.
+          - name: orderstatus
+            description: "Order status: F = fulfilled, O = open, P = partially fulfilled."
+          - name: totalprice
+            description: Total order price in dollars.
+          - name: orderdate
+            description: Date the order was placed.
+          - name: orderpriority
+            description: "Priority level: 1-URGENT, 2-HIGH, 3-MEDIUM, 4-NOT SPECIFIED, 5-LOW."
+          - name: clerk
+            description: Clerk who processed the order (format Clerk#NNNNNNNNN).
+          - name: shippriority
+            description: Shipping priority flag (integer).
+          - name: comment
+            description: Free-text comment about the order.
+
       - name: lineitem
+        description: >
+          Order line items (60,175 rows at tiny scale). Each line item is one part
+          on one order, supplied by one supplier. The most granular fact table.
+        columns:
+          - name: orderkey
+            description: Foreign key to orders.
+          - name: linenumber
+            description: Line number within the order (1-based).
+          - name: partkey
+            description: Foreign key to part.
+          - name: suppkey
+            description: Foreign key to supplier.
+          - name: quantity
+            description: Quantity ordered (1 to 50).
+          - name: extendedprice
+            description: Line item price before discount (quantity * retail price).
+          - name: discount
+            description: Discount percentage as a decimal (0.00 to 0.10).
+          - name: tax
+            description: Tax rate as a decimal (0.00 to 0.08).
+          - name: returnflag
+            description: "Return status: R = returned, A = accepted, N = not yet received."
+          - name: linestatus
+            description: "Shipping status: F = shipped, O = not yet shipped."
+          - name: shipdate
+            description: Date the line item was shipped.
+          - name: commitdate
+            description: Committed delivery date.
+          - name: receiptdate
+            description: Actual date the customer received the item.
+          - name: shipinstruct
+            description: Shipping instruction (DELIVER IN PERSON, COLLECT COD, TAKE BACK RETURN, NONE).
+          - name: shipmode
+            description: Shipping mode (AIR, FOB, MAIL, RAIL, REG AIR, SHIP, TRUCK).
+          - name: comment
+            description: Free-text comment about the line item.
