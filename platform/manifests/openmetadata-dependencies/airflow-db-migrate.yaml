@@ -41,12 +41,6 @@ spec:
             - name: AIRFLOW__CORE__AUTH_MANAGER
               value: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-              valueFrom:
-                secretKeyRef:
-                  name: openmetadata-dependencies-metadata
-                  key: connection
+              value: "mysql://airflow_user:airflow_pass@mysql:3306/airflow_db"
             - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
-              valueFrom:
-                secretKeyRef:
-                  name: openmetadata-dependencies-metadata
-                  key: connection
+              value: "mysql://airflow_user:airflow_pass@mysql:3306/airflow_db"
