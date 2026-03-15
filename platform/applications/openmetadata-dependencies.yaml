@@ -19,12 +19,12 @@ spec:
             dags:
               persistence:
                 enabled: true
-                storageClass: azurefile-csi-premium
+                storageClassName: azurefile-csi-premium
                 size: 1Gi
             logs:
               persistence:
                 enabled: true
-                storageClass: azurefile-csi-premium
+                storageClassName: azurefile-csi-premium
                 size: 1Gi
   syncPolicy:
     syncOptions:
