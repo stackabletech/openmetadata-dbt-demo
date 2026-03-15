@@ -1,0 +1,57 @@
+---
+# PreSync hook to run Airflow DB migrations before pods start.
+#
+# The openmetadata-dependencies Helm chart defines its migration Job as a
+# post-install/post-upgrade Helm hook, which ArgoCD maps to PostSync.
+# This creates a deadlock: pods wait for migrations in an init container,
+# but PostSync only fires after pods are healthy.
+#
+# This PreSync Job breaks the deadlock by running migrations before the
+# chart's pods are synced.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openmetadata-airflow-db-migrate
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      securityContext:
+        runAsUser: 50000
+        fsGroup: 0
+      restartPolicy: OnFailure
+      containers:
+        - name: run-airflow-migrations
+          image: docker.getcollate.io/openmetadata/ingestion:1.12.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - bash
+            - -c
+            - |-
+              exec \
+              airflow db migrate
+          env:
+            - name: _PIP_ADDITIONAL_REQUIREMENTS
+              value: "apache-airflow-providers-fab==2.4.4"
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              valueFrom:
+                secretKeyRef:
+                  name: openmetadata-dependencies-metadata
+                  key: connection
+            - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+              valueFrom:
+                secretKeyRef:
+                  name: openmetadata-dependencies-metadata
+                  key: connection
+          volumeMounts:
+            - name: config
+              mountPath: /opt/airflow/airflow.cfg
+              subPath: airflow.cfg
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: openmetadata-dependencies-config
