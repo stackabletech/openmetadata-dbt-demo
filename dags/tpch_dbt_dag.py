@@ -8,7 +8,7 @@ from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, ExecutionConfig, 
 from cosmos.constants import ExecutionMode, LoadMode
 
 DBT_PROJECT_PATH = Path("/stackable/app/git-0/current/dags/dbt/tpch_demo")
-DBT_TARGET_BASE = Path("/shared/dbt-target")
+DBT_TARGET_PATH = Path("/shared/dbt-target")
 S3_BUCKET = "dbt-artifacts"
 S3_PREFIX = "tpch_demo"
 ARTIFACTS = ["manifest.json", "catalog.json", "run_results.json"]
@@ -20,18 +20,10 @@ OM_ADMIN_PASSWORD = "admin"
 DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
 
 
-def _target_path(context):
-    """Return the run-specific dbt target path."""
-    run_id = context["ts_nodash"]
-    return DBT_TARGET_BASE / run_id
-
-
 def upload_dbt_artifacts(**context):
     """Upload dbt artifacts from the target directory to GarageFS S3."""
     import boto3
     from airflow.hooks.base import BaseHook
-
-    target_path = _target_path(context)
 
     conn = BaseHook.get_connection("garagefs")
     extras = conn.extra_dejson
@@ -45,7 +37,7 @@ def upload_dbt_artifacts(**context):
 
     uploaded = []
     for artifact in ARTIFACTS:
-        local_path = target_path / artifact
+        local_path = DBT_TARGET_PATH / artifact
         if local_path.exists():
             s3_key = f"{S3_PREFIX}/{artifact}"
             s3.upload_file(str(local_path), S3_BUCKET, s3_key)
@@ -55,7 +47,7 @@ def upload_dbt_artifacts(**context):
             print(f"  Skipping {artifact} (not found at {local_path})")
 
     if not uploaded:
-        raise FileNotFoundError(f"No dbt artifacts found in {target_path}")
+        raise FileNotFoundError(f"No dbt artifacts found in {DBT_TARGET_PATH}")
     print(f"Uploaded {len(uploaded)} artifacts to s3://{S3_BUCKET}/{S3_PREFIX}/")
 
 
@@ -95,18 +87,6 @@ def trigger_om_dbt_ingestion(**context):
     print("  dbt ingestion triggered successfully.")
 
 
-def cleanup_target_dir(**context):
-    """Remove the run-specific dbt target directory."""
-    import shutil
-
-    target_path = _target_path(context)
-    if target_path.exists():
-        shutil.rmtree(target_path)
-        print(f"  Cleaned up {target_path}")
-    else:
-        print(f"  Nothing to clean up at {target_path}")
-
-
 with DAG(
     dag_id="dbt_tpch_demo",
     schedule="@daily",
@@ -136,7 +116,6 @@ with DAG(
             "py_system_site_packages": False,
             "py_requirements": ["dbt-trino"],
             "install_deps": True,
-            "dbt_cmd_global_flags": ["--target-path", "/shared/dbt-target/{{ ts_nodash }}"],
         },
         default_args={"retries": 1},
     )
@@ -151,10 +130,4 @@ with DAG(
         python_callable=trigger_om_dbt_ingestion,
     )
 
-    cleanup = PythonOperator(
-        task_id="cleanup_target_dir",
-        python_callable=cleanup_target_dir,
-        trigger_rule="all_done",
-    )
-
-    dbt_tasks >> upload_artifacts >> trigger_om_ingestion >> cleanup
+    dbt_tasks >> upload_artifacts >> trigger_om_ingestion

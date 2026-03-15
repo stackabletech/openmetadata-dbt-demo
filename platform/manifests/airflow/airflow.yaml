@@ -71,6 +71,8 @@ spec:
                   secretKeyRef:
                     name: garagefs-airflow-credentials
                     key: airflow-connection
+              - name: DBT_TARGET_PATH
+                value: /shared/dbt-target
             volumeMounts:
               - name: dbt-target
                 mountPath: /shared/dbt-target
