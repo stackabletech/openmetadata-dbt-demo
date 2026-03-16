@@ -189,6 +189,19 @@ data:
         return result
 
 
+    def deploy_pipeline(token, pipeline):
+        """Deploy the ingestion pipeline (required before triggering)."""
+        pipeline_id = pipeline["id"]
+        fqn = pipeline.get("fullyQualifiedName", pipeline_id)
+        print(f"Deploying ingestion pipeline {fqn} ...")
+        try:
+            api_request(f"/services/ingestionPipelines/deploy/{pipeline_id}", method="POST", token=token)
+            print("  Pipeline deployed successfully.")
+        except Exception as e:
+            print(f"  Warning: Could not deploy pipeline: {e}")
+            print("  The pipeline can be deployed from the UI.")
+
+
     def trigger_ingestion(token, pipeline):
         """Trigger the ingestion pipeline."""
         pipeline_id = pipeline["id"]
@@ -197,7 +210,7 @@ data:
             api_request(f"/services/ingestionPipelines/trigger/{pipeline_id}", method="POST", token=token)
             print("  Ingestion triggered successfully.")
         except Exception as e:
-            print(f"  Warning: Could not trigger ingestion (may need Airflow): {e}")
+            print(f"  Warning: Could not trigger ingestion: {e}")
             print("  The pipeline is registered and can be triggered from the UI.")
 
 
@@ -206,8 +219,10 @@ data:
         token = login()
         service = create_database_service(token)
         pipeline = create_ingestion_pipeline(token, service)
+        deploy_pipeline(token, pipeline)
         trigger_ingestion(token, pipeline)
         dbt_pipeline = create_dbt_pipeline(token, service)
+        deploy_pipeline(token, dbt_pipeline)
         trigger_ingestion(token, dbt_pipeline)
         print("Done — Trino is registered in OpenMetadata with metadata and dbt pipelines.")
 
@@ -218,7 +233,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-openmetadata
+  name: configure-openmetadata-v2
 spec:
   backoffLimit: 50
   template:
