@@ -123,15 +123,43 @@ data:
       --from-literal=airflow-connection="$CONN_STRING" \
       --dry-run=client -o yaml | kubectl apply -f -
 
+    # Step 7: Create Lakekeeper API key (idempotent)
+    echo "Creating API key 'lakekeeper'..."
+    LK_OUTPUT=$($GARAGE_CMD key info lakekeeper 2>&1) || LK_OUTPUT=$($GARAGE_CMD key create lakekeeper 2>&1)
+    LK_KEY_ID=$(echo "$LK_OUTPUT" | grep "Key ID:" | awk '{print $NF}')
+    LK_KEY_SECRET=$(echo "$LK_OUTPUT" | grep "Secret key:" | awk '{print $NF}')
+
+    if [ -z "$LK_KEY_ID" ] || [ -z "$LK_KEY_SECRET" ]; then
+      echo "ERROR: Failed to extract Lakekeeper key credentials"
+      echo "Output: $LK_OUTPUT"
+      exit 1
+    fi
+    echo "  Key ID: $LK_KEY_ID"
+
+    # Step 8: Create iceberg-warehouse bucket (idempotent)
+    echo "Creating bucket 'iceberg-warehouse'..."
+    $GARAGE_CMD bucket create iceberg-warehouse 2>/dev/null || echo "  Bucket may already exist, continuing."
+
+    # Step 9: Grant lakekeeper key access to iceberg-warehouse
+    echo "Granting key 'lakekeeper' access to iceberg-warehouse bucket..."
+    $GARAGE_CMD bucket allow --read --write --owner iceberg-warehouse --key lakekeeper 2>/dev/null || echo "  Access may already be granted."
+
+    # Step 10: Store Lakekeeper credentials in K8s Secret
+    echo "Storing credentials in Secret 'garagefs-lakekeeper-credentials'..."
+    kubectl create secret generic garagefs-lakekeeper-credentials \
+      --from-literal=accessKeyId="$LK_KEY_ID" \
+      --from-literal=secretAccessKey="$LK_KEY_SECRET" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
     echo "=== GarageFS Init Complete ==="
-    echo "  Buckets: airflow-logs, dbt-artifacts"
+    echo "  Buckets: airflow-logs, dbt-artifacts, iceberg-warehouse"
     echo "  S3 Endpoint: http://garage:3900"
     echo "  Region: garage"
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-garagefs
+  name: configure-garagefs-v2
 spec:
   backoffLimit: 50
   template:

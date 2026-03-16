@@ -1,0 +1,36 @@
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: lakekeeper-iceberg
+  labels:
+    trino: trino
+spec:
+  connector:
+    generic:
+      connectorName: iceberg
+      properties:
+        iceberg.catalog.type:
+          value: rest
+        iceberg.rest-catalog.uri:
+          value: "http://lakekeeper:8181/catalog"
+        iceberg.rest-catalog.warehouse:
+          value: "garagefs"
+        iceberg.rest-catalog.vended-credentials-enabled:
+          value: "false"
+        fs.native-s3.enabled:
+          value: "true"
+        s3.endpoint:
+          value: "http://garage:3900"
+        s3.region:
+          value: "garage"
+        s3.path-style-access:
+          value: "true"
+        s3.aws-access-key:
+          valueFromSecret:
+            name: garagefs-lakekeeper-credentials
+            key: accessKeyId
+        s3.aws-secret-key:
+          valueFromSecret:
+            name: garagefs-lakekeeper-credentials
+            key: secretAccessKey
