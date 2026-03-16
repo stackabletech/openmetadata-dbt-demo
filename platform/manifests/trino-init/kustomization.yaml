@@ -13,6 +13,7 @@ configMapGenerator:
       - sql/001-create-hive-schema.sql
       - sql/002-create-tables.sql
       - sql/003-create-iceberg-schema.sql
+      - sql/004-create-iceberg-lakekeeper-schema.sql
 
 generatorOptions:
   disableNameSuffixHash: true
