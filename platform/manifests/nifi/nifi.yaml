@@ -1,0 +1,25 @@
+---
+apiVersion: nifi.stackable.tech/v1alpha1
+kind: NifiCluster
+metadata:
+  name: nifi
+spec:
+  image:
+    productVersion: 2.7.2
+  clusterConfig:
+    authentication:
+      - authenticationClass: simple-nifi-users
+    sensitiveProperties:
+      keySecret: nifi-sensitive-property-key
+      autoGenerate: true
+  nodes:
+    roleConfig:
+      listenerClass: external-unstable
+    roleGroups:
+      default:
+        replicas: 1
+    # When NiFi is exposed through a NodePort Service it's SNI check has to be disabled
+    configOverrides:
+      nifi.properties:
+        nifi.web.https.sni.required: "false"
+        nifi.web.https.sni.host.check: "false"

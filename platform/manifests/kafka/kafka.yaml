@@ -1,0 +1,16 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: kafka
+spec:
+  image:
+    productVersion: "3.9.1"
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3
+  controllers:
+    roleGroups:
+      default:
+        replicas: 3
