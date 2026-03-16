@@ -14,8 +14,8 @@ stacks:
       - helmChart: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/_templates/argo-cd.yaml
       ################################
       # prerequisites
-      ################################
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/sealed-secrets.yaml
+      ################################openmetadata-dbt-demo
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/sealed-secrets.yaml
       ################################
       # project - operators
       ################################
@@ -24,15 +24,16 @@ stacks:
       # applicationset - operators
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applicationsets/stackable-operators.yaml
-#      - helmChart: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/stack/forgejo.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/forgejo.yaml
-        ################################
-        # applicationset - demo
-        ################################
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/project.yaml
-      - plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/infrastructure/cluster-apps.yaml
-      #- plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow.yaml
-      #- plainYaml: /home/sliebau/IdeaProjects/openmetadata-demo/openmetadata-demo/platform/applications/airflow-postgres.yaml
+      ################################
+      # applicationset - ForgeJo-installed and clones this repo, argo then looks at the in-cluster Forgejo, so that
+      # users can push changes without breaking the demo
+      ################################
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/forgejo.yaml
+      ################################
+      # applicationset - demo
+      ################################
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/project.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/cluster-apps.yaml
     supportedNamespaces: []
     resourceRequests:
       cpu: 1750m
