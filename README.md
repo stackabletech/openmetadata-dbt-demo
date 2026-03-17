@@ -24,26 +24,70 @@ All changes flow through Git. ArgoCD has `selfHeal: true` enabled, so any manual
 
 ### Prerequisites
 
-- A Kubernetes cluster (see [AKS limitations](#aks-limitations) below)
+- An Azure subscription (for AKS provisioning)
+- [`az`](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) CLI, logged in
+- [OpenTofu](https://opentofu.org/) (or Terraform)
 - [`stackablectl`](https://docs.stackable.tech/home/stable/stackablectl/) installed
-- `kubectl` configured to point at your cluster
+- `kubectl`
 - [`just`](https://just.systems/) (optional, but recommended)
 
-### Deploy
+### Provision AKS Cluster
 
-Using just:
+The `tofu/` directory contains OpenTofu configuration to create an AKS cluster with all required networking.
+
+1. Copy the template and fill in your values:
+
+```bash
+cp tofu/terraform.tfvars.template tofu/terraform.tfvars
+# Edit tofu/terraform.tfvars with your name, subscription ID, and owner
+```
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `name` | yes | — | Name for the resource group and AKS cluster |
+| `subscription_id` | yes | — | Azure subscription ID |
+| `owner` | yes | — | Owner tag on the resource group and cluster |
+| `location` | no | `westeurope` | Azure region |
+| `node_count` | no | `2` | Number of nodes in the user pool |
+| `node_vm_size` | no | `Standard_D4s_v3` | VM size for user pool nodes |
+| `kubernetes_version` | no | `1.33` | Kubernetes version |
+
+2. Provision the cluster:
+
+```bash
+just infra                    # uses values from terraform.tfvars
+just infra my-cluster-name    # overrides the name variable
+```
+
+3. Get the kubeconfig:
+
+```bash
+just kubeconfig my-cluster-name
+```
+
+The infrastructure creates a resource group, VNet, subnet, NSG (with all inbound traffic allowed), and an AKS cluster with a system node pool and a configurable user node pool with public IPs.
+
+### Deploy the Platform
+
+Once `kubectl` points at your cluster:
 
 ```bash
 just deploy
 ```
 
-Or manually with stackablectl:
+Or run everything end-to-end:
 
 ```bash
-stackablectl stack install forgejo --stack-file infrastructure/stack.yaml
+just demo my-cluster-name     # provisions infra, gets kubeconfig, deploys platform
 ```
 
 This bootstraps ArgoCD, which then takes over and deploys everything else from Git. The full platform takes several minutes to come up as components start in dependency order.
+
+### Tear Down
+
+```bash
+just destroy                  # destroys all AKS infrastructure via OpenTofu
+```
 
 
 ### Access Points
@@ -66,6 +110,10 @@ just seal-secrets        # Re-seal plaintext secrets from secrets/ into platform
 just build-airflow-image # Build and push custom Airflow image with Cosmos
 just dbt-compile         # Compile the dbt project locally
 just dbt-run             # Run dbt models locally (requires Trino access)
+just infra               # Run OpenTofu apply (uses terraform.tfvars)
+just kubeconfig <name>   # Get kubeconfig for a cluster by name
+just destroy             # Tear down all OpenTofu-managed infrastructure
+just demo <name>         # End-to-end: infra + kubeconfig + deploy
 ```
 
 ## Components
@@ -171,6 +219,11 @@ dags/                              # Airflow DAGs (git-synced into pods)
 
 docker/airflow/                    # Custom Airflow image with Cosmos
 └── Dockerfile
+
+tofu/                              # OpenTofu infrastructure (AKS cluster)
+├── main.tf                        # Resource group, VNet, NSG, AKS cluster + node pools
+├── terraform.tfvars.template      # Template for variable values
+└── terraform.tfvars               # Actual values (gitignored)
 ```
 
 ## Secrets Management
