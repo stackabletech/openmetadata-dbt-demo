@@ -24,7 +24,7 @@ spec:
           args:
             - |
               echo "Waiting for Forgejo to be ready..."
-              until curl -sf http://forgejo-http:3000/api/v1/version >/dev/null 2>&1; do
+              until wget -q -O /dev/null http://forgejo-http:3000/api/v1/version 2>/dev/null; do
                 echo "  Not ready, retrying in 5s..."
                 sleep 5
               done
