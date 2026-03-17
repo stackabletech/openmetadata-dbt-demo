@@ -1,9 +1,11 @@
 # This file is an airflow DAG definition using Astronomer Cosmos for dbt orchestration.
-from datetime import datetime
+import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.sensors.python import PythonSensor
 from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, ExecutionConfig, RenderConfig
 from cosmos.constants import ExecutionMode, LoadMode
 
@@ -17,7 +19,41 @@ OM_HOST = "http://openmetadata:8585"
 OM_API = f"{OM_HOST}/api/v1"
 OM_ADMIN_EMAIL = "admin@open-metadata.org"
 OM_ADMIN_PASSWORD = "admin"
+METADATA_PIPELINE_FQN = "trino.trino_metadata_ingestion"
 DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
+INGESTION_POLL_INTERVAL = 10  # seconds
+INGESTION_TIMEOUT = 600  # seconds
+
+REQUIRED_STATEFULSETS = ["trino-coordinator-default", "trino-worker-default"]
+REQUIRED_DEPLOYMENTS = ["openmetadata"]
+K8S_NAMESPACE = "default"
+
+
+def check_k8s_resources_ready(**context):
+    """Check if Trino StatefulSets and OpenMetadata Deployment are fully ready."""
+    from kubernetes import client, config
+
+    config.load_incluster_config()
+    apps_v1 = client.AppsV1Api()
+
+    for ss_name in REQUIRED_STATEFULSETS:
+        ss = apps_v1.read_namespaced_stateful_set(ss_name, K8S_NAMESPACE)
+        desired = ss.spec.replicas or 0
+        ready = ss.status.ready_replicas or 0
+        print(f"  StatefulSet {ss_name}: {ready}/{desired} ready")
+        if ready < desired:
+            return False
+
+    for dep_name in REQUIRED_DEPLOYMENTS:
+        dep = apps_v1.read_namespaced_deployment(dep_name, K8S_NAMESPACE)
+        desired = dep.spec.replicas or 0
+        ready = dep.status.ready_replicas or 0
+        print(f"  Deployment {dep_name}: {ready}/{desired} ready")
+        if ready < desired:
+            return False
+
+    print("  All required Kubernetes resources are ready.")
+    return True
 
 
 def upload_dbt_artifacts(**context):
@@ -51,8 +87,8 @@ def upload_dbt_artifacts(**context):
     print(f"Uploaded {len(uploaded)} artifacts to s3://{S3_BUCKET}/{S3_PREFIX}/")
 
 
-def trigger_om_dbt_ingestion(**context):
-    """Trigger the OpenMetadata dbt ingestion pipeline via REST API."""
+def _om_helpers():
+    """Return shared OpenMetadata API helper functions."""
     import base64
     import json
     import urllib.request
@@ -68,14 +104,83 @@ def trigger_om_dbt_ingestion(**context):
         with urllib.request.urlopen(req) as resp:
             return json.loads(resp.read().decode())
 
-    # Login
-    password_b64 = base64.b64encode(OM_ADMIN_PASSWORD.encode()).decode()
-    result = om_request(
-        "/users/login", method="POST",
-        data={"email": OM_ADMIN_EMAIL, "password": password_b64},
+    def om_login():
+        password_b64 = base64.b64encode(OM_ADMIN_PASSWORD.encode()).decode()
+        result = om_request(
+            "/users/login", method="POST",
+            data={"email": OM_ADMIN_EMAIL, "password": password_b64},
+        )
+        print("  Logged in to OpenMetadata.")
+        return result["accessToken"]
+
+    return om_request, om_login
+
+
+def trigger_om_metadata_ingestion(**context):
+    """Trigger the OpenMetadata metadata ingestion pipeline and wait for completion."""
+    import time
+
+    om_request, om_login = _om_helpers()
+    token = om_login()
+
+    # Look up metadata ingestion pipeline by FQN
+    pipeline = om_request(
+        f"/services/ingestionPipelines/name/{METADATA_PIPELINE_FQN}", token=token
     )
-    token = result["accessToken"]
-    print("  Logged in to OpenMetadata.")
+    pipeline_id = pipeline["id"]
+    print(f"  Found metadata pipeline: {METADATA_PIPELINE_FQN} (id={pipeline_id})")
+
+    # Trigger the pipeline
+    om_request(
+        f"/services/ingestionPipelines/trigger/{pipeline_id}",
+        method="POST",
+        token=token,
+    )
+    print("  Metadata ingestion triggered. Waiting for completion...")
+
+    # Poll for completion
+    elapsed = 0
+    while elapsed < INGESTION_TIMEOUT:
+        time.sleep(INGESTION_POLL_INTERVAL)
+        elapsed += INGESTION_POLL_INTERVAL
+
+        status_resp = om_request(
+            f"/services/ingestionPipelines/{pipeline_id}/pipelineStatus",
+            token=token,
+        )
+
+        # The response contains a list of runs; check the latest
+        if isinstance(status_resp, list):
+            latest = status_resp[0] if status_resp else None
+        elif isinstance(status_resp, dict) and "data" in status_resp:
+            latest = status_resp["data"][0] if status_resp["data"] else None
+        else:
+            latest = status_resp
+
+        if not latest:
+            print(f"  [{elapsed}s] No status available yet...")
+            continue
+
+        state = latest.get("pipelineState", "unknown")
+        print(f"  [{elapsed}s] Pipeline state: {state}")
+
+        if state in ("success", "partialSuccess"):
+            print("  Metadata ingestion completed successfully.")
+            return
+        elif state in ("failed", "error"):
+            raise RuntimeError(
+                f"Metadata ingestion pipeline failed with state: {state}"
+            )
+
+    raise TimeoutError(
+        f"Metadata ingestion did not complete within {INGESTION_TIMEOUT}s"
+    )
+
+
+def trigger_om_dbt_ingestion(**context):
+    """Trigger the OpenMetadata dbt ingestion pipeline via REST API."""
+    om_request, om_login = _om_helpers()
+    token = om_login()
 
     # Look up pipeline by FQN
     pipeline = om_request(f"/services/ingestionPipelines/name/{DBT_PIPELINE_FQN}", token=token)
@@ -93,11 +198,21 @@ def trigger_om_dbt_ingestion(**context):
 
 with DAG(
     dag_id="dbt_tpch_demo",
-    schedule="@daily",
+    schedule="@once",
     start_date=datetime(2024, 1, 1),
     catchup=False,
     default_args={"retries": 1},
+    retries=sys.maxsize,
+    retry_delay=timedelta(minutes=5),
 ) as dag:
+
+    wait_for_services = PythonSensor(
+        task_id="wait_for_k8s_services",
+        python_callable=check_k8s_resources_ready,
+        poke_interval=30,
+        timeout=900,
+        mode="poke",
+    )
 
     dbt_tasks = DbtTaskGroup(
         group_id="dbt_tpch",
@@ -129,9 +244,14 @@ with DAG(
         python_callable=upload_dbt_artifacts,
     )
 
-    trigger_om_ingestion = PythonOperator(
+    trigger_metadata_ingestion = PythonOperator(
+        task_id="trigger_om_metadata_ingestion",
+        python_callable=trigger_om_metadata_ingestion,
+    )
+
+    trigger_dbt_ingestion = PythonOperator(
         task_id="trigger_om_dbt_ingestion",
         python_callable=trigger_om_dbt_ingestion,
     )
 
-    dbt_tasks >> upload_artifacts >> trigger_om_ingestion
+    wait_for_services >> dbt_tasks >> upload_artifacts >> trigger_metadata_ingestion >> trigger_dbt_ingestion
