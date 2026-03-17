@@ -1,0 +1,18 @@
+---
+apiVersion: superset.stackable.tech/v1alpha1
+kind: SupersetCluster
+metadata:
+  name: simple-superset
+spec:
+  image:
+    productVersion: 6.0.0
+  clusterConfig:
+    credentialsSecret: simple-superset-credentials
+  nodes:
+    roleConfig:
+      listenerClass: external-unstable
+    roleGroups:
+      default:
+        config:
+          rowLimit: 10000
+          webserverTimeout: 300
