@@ -1,4 +1,4 @@
-terraform {
+1terraform {
   required_providers {
     airflow = {
       source  = "drfaust92/airflow"
@@ -9,8 +9,7 @@ terraform {
 
 provider "airflow" {
   base_endpoint            = var.airflow_base_url
-  username                 = var.airflow_username
-  password                 = var.airflow_password
+  oauth2_token             = var.airflow_token
   disable_ssl_verification = true
   # Airflow 3.x uses /api/v2
   base_path = "/api/v2"
@@ -20,13 +19,9 @@ variable "airflow_base_url" {
   default = "http://airflow-webserver-default-headless:8080"
 }
 
-variable "airflow_username" {
-  default = "admin"
-}
-
-variable "airflow_password" {
-  default   = "adminadmin"
-  sensitive = true
+variable "airflow_token" {
+  description = "JWT token obtained from Airflow /auth/token endpoint"
+  sensitive   = true
 }
 
 resource "airflow_connection" "trino_default" {
