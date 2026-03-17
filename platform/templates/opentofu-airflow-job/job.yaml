@@ -1,0 +1,40 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opentofu-airflow-job
+spec:
+  backoffLimit: 50
+  template:
+    spec:
+      containers:
+        - name: opentofu
+          image: ghcr.io/opentofu/opentofu:1.9
+          command: ["sh", "/scripts/run.sh"]
+          env:
+            - name: AIRFLOW_BASE_URL
+              value: "http://airflow-webserver-default-headless:8080"
+            - name: AIRFLOW_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-credentials
+                  key: adminUser.username
+            - name: AIRFLOW_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-credentials
+                  key: adminUser.password
+          volumeMounts:
+            - name: tf
+              mountPath: /tf
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: tf
+          configMap:
+            name: opentofu-airflow-tf
+        - name: script
+          configMap:
+            name: opentofu-airflow-script
+            defaultMode: 0755
+      restartPolicy: OnFailure
