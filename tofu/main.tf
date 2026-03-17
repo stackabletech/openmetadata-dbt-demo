@@ -113,6 +113,10 @@ resource "azurerm_kubernetes_cluster" "this" {
     os_disk_size_gb      = 128
     vnet_subnet_id       = azurerm_subnet.aks.id
     temporary_name_for_rotation = "systemtmp"
+
+    upgrade_settings {
+      max_surge = "10%"
+    }
   }
 
   identity {
@@ -140,6 +144,10 @@ resource "azurerm_kubernetes_cluster_node_pool" "user" {
   os_disk_size_gb       = 128
   vnet_subnet_id        = azurerm_subnet.aks.id
   node_public_ip_enabled = true
+
+  upgrade_settings {
+    max_surge = "10%"
+  }
 }
 
 output "resource_group_name" {
