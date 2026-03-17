@@ -151,20 +151,20 @@ def trigger_om_metadata_ingestion(**context):
 
         try:
             status_resp = om_request(
-                f"/services/ingestionPipelines/{pipeline_id}/statuses",
+                f"/services/ingestionPipelines/{METADATA_PIPELINE_FQN}/pipelineStatus",
                 token=token,
             )
         except Exception as e:
             print(f"  [{elapsed}s] Status check failed ({e}), will retry...")
             continue
 
-        # Extract the latest run status from the response
-        statuses = status_resp.get("data", []) if isinstance(status_resp, dict) else status_resp
+        # ResultList<PipelineStatus>: {"data": [...], "paging": {...}}
+        statuses = status_resp.get("data", [])
         if not statuses:
             print(f"  [{elapsed}s] No status available yet...")
             continue
 
-        latest = statuses[0] if isinstance(statuses, list) else statuses
+        latest = statuses[0]
         state = latest.get("pipelineState", "unknown")
         print(f"  [{elapsed}s] Pipeline state: {state}")
 
