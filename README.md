@@ -4,7 +4,7 @@
 > This repository is not meant for the general public, it is public because it may be helpful to some people and definitely serves an instructional purpose, but especially the justfile recipes and scripts in here can cause harm and delete data if not used with caution! 
 
 
-A GitOps-managed Kubernetes demo that showcases the [Stackable Data Platform](https://stackable.tech/) alongside commonly used tools from the wider data ecosystem: OpenMetadata, dbt, Astronomer Cosmos, Lakekeeper, GarageFS, Kafka, and NiFi.
+A GitOps-managed Kubernetes demo that showcases the [Stackable Data Platform](https://stackable.tech/) alongside commonly used tools from the wider data ecosystem: OpenMetadata, Superset, dbt, Astronomer Cosmos, Lakekeeper, GarageFS, Kafka, and NiFi.
 
 The demo deploys a complete data lakehouse on Kubernetes, with TPC-H sample data flowing through dbt models in Trino, Iceberg tables managed by Lakekeeper, S3-compatible storage via GarageFS, and metadata governance through OpenMetadata — all orchestrated by Airflow and continuously deployed via ArgoCD.
 
@@ -128,6 +128,7 @@ just dbt-run             # Run dbt models locally (requires Trino access)
 | Component | Description |
 |-----------|-------------|
 | **[OpenMetadata](https://open-metadata.org/)** | Data catalog and metadata governance |
+| **[Apache Superset](https://superset.apache.org/)** | Data exploration and visualization |
 | **[dbt Core](https://www.getdbt.com/)** | Data transformation framework (TPC-H models) |
 | **[Astronomer Cosmos](https://astronomer.github.io/astronomer-cosmos/)** | dbt orchestration in Airflow |
 | **[Lakekeeper](https://lakekeeper.io/)** | Apache Iceberg REST catalog |
@@ -153,7 +154,7 @@ The included dbt project transforms TPC-H sample data through a staging → mart
 - **Staging models** (views): 8 models wrapping TPC-H source tables
 - **Mart models** (tables): Business-level aggregations — order summaries, supplier performance, revenue by region, customer lifetime value, shipping analysis, part pricing
 
-The Airflow DAG (`dbt_tpch_demo`) orchestrated by Cosmos runs daily:
+The Airflow DAG (`tpch_dbt_dag`) orchestrated by Cosmos runs daily:
 1. Executes all dbt models against Trino
 2. Uploads dbt artifacts (manifest, catalog, run results) to GarageFS
 3. Triggers OpenMetadata dbt ingestion to import lineage and documentation
@@ -198,13 +199,16 @@ platform/                          # Everything ArgoCD manages after bootstrap
 ├── applications/                  # ArgoCD Application definitions (one per component)
 └── manifests/                     # Kubernetes manifests grouped by component
     ├── airflow/                   # AirflowCluster CRD
+    ├── airflow-postgres/          # PostgreSQL for Airflow
     ├── trino/                     # TrinoCluster + TrinoCatalog CRDs
     ├── trino-init/                # SQL init job (Kustomize overlay)
-    ├── garagefs-init/             # GarageFS bucket/key provisioning
+    ├── garagefs-init/             # GarageFS layout/bucket/key provisioning
     ├── lakekeeper-init/           # Lakekeeper bootstrap + warehouse creation
     ├── openmetadata-init/         # OpenMetadata service + pipeline registration
     ├── openmetadata/              # OpenMetadata sealed secrets
     ├── openmetadata-dependencies/ # Airflow DB migration job
+    ├── superset/                  # Apache Superset deployment
+    ├── superset-postgres/         # PostgreSQL for Superset
     └── ...                        # HDFS, Hive, Kafka, NiFi, ZooKeeper, etc.
 
 secrets/                           # Plaintext secrets (source of truth for sealing)
@@ -228,7 +232,7 @@ docker/airflow/                    # Custom Airflow image with Cosmos
 tofu/                              # OpenTofu infrastructure (AKS cluster)
 ├── main.tf                        # Resource group, VNet, NSG, AKS cluster + node pools
 ├── terraform.tfvars.template      # Template for variable values
-└── terraform.tfvars               # Actual values (gitignored)
+└── <name>.tfstate                 # Per-cluster state files (gitignored)
 ```
 
 ## Secrets Management
