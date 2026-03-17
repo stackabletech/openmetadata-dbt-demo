@@ -23,15 +23,11 @@ DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
 INGESTION_POLL_INTERVAL = 10  # seconds
 INGESTION_TIMEOUT = 600  # seconds
 
-TRINO_HOST = "trino-coordinator"
-TRINO_PORT = 8443
 TRINO_SCHEMA_CHECK = "hive-iceberg.demo"
 
 
 def check_services_ready(**context):
     """Check that OpenMetadata API is responding and Trino has the required schema."""
-    import json
-    import ssl
     import urllib.request
     import urllib.error
 
@@ -45,37 +41,14 @@ def check_services_ready(**context):
         print(f"  OpenMetadata not ready: {e}")
         return False
 
-    # --- Check Trino by querying for the required schema ---
+    # --- Check Trino schema via Airflow TrinoHook ---
     try:
+        from airflow.providers.trino.hooks.trino import TrinoHook
+
         catalog, schema = TRINO_SCHEMA_CHECK.split(".", 1)
-        # Trino REST API: POST /v1/statement
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        trino_url = f"https://{TRINO_HOST}:{TRINO_PORT}/v1/statement"
-        query = f"SHOW SCHEMAS FROM \"{catalog}\" LIKE '{schema}'"
-        req = urllib.request.Request(
-            trino_url,
-            data=query.encode(),
-            headers={
-                "X-Trino-User": "admin",
-                "X-Trino-Catalog": catalog,
-                "X-Trino-Schema": "default",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
-            result = json.loads(resp.read().decode())
-
-        # Follow nextUri until we get data or the query finishes
-        while "nextUri" in result and "data" not in result:
-            next_req = urllib.request.Request(result["nextUri"])
-            next_req.add_header("X-Trino-User", "admin")
-            with urllib.request.urlopen(next_req, context=ctx, timeout=10) as resp:
-                result = json.loads(resp.read().decode())
-
-        rows = result.get("data", [])
-        if any(row[0] == schema for row in rows):
+        hook = TrinoHook(trino_conn_id="trino_default")
+        records = hook.get_records(f"SHOW SCHEMAS FROM \"{catalog}\" LIKE '{schema}'")
+        if any(row[0] == schema for row in records):
             print(f"  Trino schema {TRINO_SCHEMA_CHECK} exists.")
         else:
             print(f"  Trino is up but schema {TRINO_SCHEMA_CHECK} not found yet.")
@@ -178,25 +151,20 @@ def trigger_om_metadata_ingestion(**context):
 
         try:
             status_resp = om_request(
-                f"/services/ingestionPipelines/{pipeline_id}/pipelineStatus",
+                f"/services/ingestionPipelines/{pipeline_id}/statuses",
                 token=token,
             )
         except Exception as e:
             print(f"  [{elapsed}s] Status check failed ({e}), will retry...")
             continue
 
-        # The response contains a list of runs; check the latest
-        if isinstance(status_resp, list):
-            latest = status_resp[0] if status_resp else None
-        elif isinstance(status_resp, dict) and "data" in status_resp:
-            latest = status_resp["data"][0] if status_resp["data"] else None
-        else:
-            latest = status_resp
-
-        if not latest:
+        # Extract the latest run status from the response
+        statuses = status_resp.get("data", []) if isinstance(status_resp, dict) else status_resp
+        if not statuses:
             print(f"  [{elapsed}s] No status available yet...")
             continue
 
+        latest = statuses[0] if isinstance(statuses, list) else statuses
         state = latest.get("pipelineState", "unknown")
         print(f"  [{elapsed}s] Pipeline state: {state}")
 
