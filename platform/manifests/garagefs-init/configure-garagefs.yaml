@@ -15,6 +15,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "update", "patch", "get"]
@@ -43,129 +46,92 @@ data:
     GARAGE_POD="garage-0"
     GARAGE_CMD="kubectl exec $GARAGE_POD -- /garage"
 
-    echo "=== GarageFS Init ==="
-
-    # Step 1: Wait for Garage to be ready
-    echo "Waiting for Garage to be ready..."
-    for i in $(seq 1 60); do
-      if $GARAGE_CMD status >/dev/null 2>&1; then
-        echo "  Garage is ready."
-        break
-      fi
-      if [ "$i" -eq 60 ]; then
-        echo "ERROR: Garage not ready after 60 attempts"
+    # Create or get a garage API key, set KEY_ID and KEY_SECRET
+    ensure_key() {
+      local name="$1"
+      echo "Creating API key '$name'..."
+      local output
+      output=$($GARAGE_CMD key info "$name" 2>&1) || output=$($GARAGE_CMD key create "$name" 2>&1)
+      KEY_ID=$(echo "$output" | grep "Key ID:" | awk '{print $NF}')
+      KEY_SECRET=$(echo "$output" | grep "Secret key:" | awk '{print $NF}')
+      if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ]; then
+        echo "ERROR: Failed to extract credentials for key '$name'"
+        echo "Output: $output"
         exit 1
       fi
-      echo "  Attempt $i/60 - not ready, retrying in 5s..."
+      echo "  Key ID: $KEY_ID"
+    }
+
+    # Create a bucket and grant a key full access
+    ensure_bucket() {
+      local bucket="$1" key="$2"
+      echo "Creating bucket '$bucket'..."
+      $GARAGE_CMD bucket create "$bucket" 2>/dev/null || true
+      $GARAGE_CMD bucket allow --read --write --owner "$bucket" --key "$key" 2>/dev/null || true
+    }
+
+    echo "=== GarageFS Init ==="
+
+    # 1. Wait for all garage nodes to join the cluster
+    EXPECTED_NODES=$(kubectl get statefulset garage -o jsonpath='{.spec.replicas}')
+    echo "Waiting for $EXPECTED_NODES garage nodes..."
+    for i in $(seq 1 120); do
+      NODE_COUNT=$($GARAGE_CMD status 2>/dev/null | grep -cE '^[0-9a-f]{16}' || echo 0)
+      if [ "$NODE_COUNT" -ge "$EXPECTED_NODES" ]; then
+        echo "  All $EXPECTED_NODES nodes are present."
+        break
+      fi
+      if [ "$i" -eq 120 ]; then
+        echo "ERROR: Only $NODE_COUNT/$EXPECTED_NODES nodes after 120 attempts"
+        exit 1
+      fi
+      echo "  Attempt $i/120 - $NODE_COUNT/$EXPECTED_NODES nodes, retrying in 5s..."
       sleep 5
     done
 
-    # Step 2: Assign layout to all nodes
-    echo "Checking node layout..."
-    # Revert any pending layout changes to start clean
+    # 2. Assign layout to all nodes (idempotent)
     $GARAGE_CMD layout revert 2>/dev/null || true
-
-    # Get all node IDs from cluster status
-    ALL_NODES=$($GARAGE_CMD status 2>/dev/null | grep -E '^[0-9a-f]{16}' | awk '{print $1}')
     UNASSIGNED=$($GARAGE_CMD status 2>/dev/null | grep "NO ROLE ASSIGNED" | awk '{print $1}')
-
     if [ -n "$UNASSIGNED" ]; then
+      echo "Assigning node layout..."
+      ALL_NODES=$($GARAGE_CMD status 2>/dev/null | grep -E '^[0-9a-f]{16}' | awk '{print $1}')
       for node_id in $ALL_NODES; do
-        echo "  Assigning node $node_id..."
         $GARAGE_CMD layout assign -z dc1 -c 1G "$node_id" 2>/dev/null || true
       done
-
-      # Get current version and apply
-      CURRENT_VERSION=$($GARAGE_CMD layout show 2>/dev/null | grep "Current cluster layout version:" | awk '{print $NF}')
-      NEXT_VERSION=$((CURRENT_VERSION + 1))
-      echo "  Applying layout version $NEXT_VERSION..."
+      NEXT_VERSION=$(( $($GARAGE_CMD layout show 2>/dev/null | grep "Current cluster layout version:" | awk '{print $NF}') + 1 ))
       $GARAGE_CMD layout apply --version "$NEXT_VERSION"
     else
-      echo "  All nodes already have roles assigned."
+      echo "All nodes already have roles assigned."
     fi
 
-    echo "Layout:"
-    $GARAGE_CMD layout show
+    # 3. Create API keys, buckets, and store credentials
+    ensure_key airflow
+    AIRFLOW_KEY_ID="$KEY_ID"
+    AIRFLOW_KEY_SECRET="$KEY_SECRET"
+    ensure_bucket airflow-logs airflow
+    ensure_bucket dbt-artifacts airflow
 
-    # Step 3: Create API key (idempotent)
-    echo "Creating API key 'airflow'..."
-    # Try to get existing key first, create if not found
-    KEY_OUTPUT=$($GARAGE_CMD key info airflow 2>&1) || KEY_OUTPUT=$($GARAGE_CMD key create airflow 2>&1)
-    KEY_ID=$(echo "$KEY_OUTPUT" | grep "Key ID:" | awk '{print $NF}')
-    KEY_SECRET=$(echo "$KEY_OUTPUT" | grep "Secret key:" | awk '{print $NF}')
-
-    if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ]; then
-      echo "ERROR: Failed to extract key credentials"
-      echo "Output: $KEY_OUTPUT"
-      exit 1
-    fi
-    echo "  Key ID: $KEY_ID"
-
-    # Step 4: Create bucket (idempotent)
-    echo "Creating bucket 'airflow-logs'..."
-    $GARAGE_CMD bucket create airflow-logs 2>/dev/null || echo "  Bucket may already exist, continuing."
-
-    # Step 5: Grant access
-    echo "Granting key 'airflow' access to bucket..."
-    $GARAGE_CMD bucket allow --read --write --owner airflow-logs --key airflow 2>/dev/null || echo "  Access may already be granted."
-
-    # Step 4b: Create dbt-artifacts bucket (idempotent)
-    echo "Creating bucket 'dbt-artifacts'..."
-    $GARAGE_CMD bucket create dbt-artifacts 2>/dev/null || echo "  Bucket may already exist, continuing."
-
-    # Step 5b: Grant access
-    echo "Granting key 'airflow' access to dbt-artifacts bucket..."
-    $GARAGE_CMD bucket allow --read --write --owner dbt-artifacts --key airflow 2>/dev/null || echo "  Access may already be granted."
-
-    # Step 6: Store credentials in K8s Secret
-    echo "Storing credentials in Secret 'garagefs-airflow-credentials'..."
-    # URL-encode the secret key for the connection string (may contain URI-special chars)
-    ENCODED_SECRET=$(printf '%s' "$KEY_SECRET" | sed 's/+/%2B/g; s/\//%2F/g; s/@/%40/g; s/:/%3A/g; s/#/%23/g; s/\?/%3F/g; s/&/%26/g; s/=/%3D/g')
-    CONN_STRING="aws://${KEY_ID}:${ENCODED_SECRET}@/?endpoint_url=http%3A%2F%2Fgarage%3A3900&region_name=garage"
-
+    ENCODED_SECRET=$(printf '%s' "$AIRFLOW_KEY_SECRET" | sed 's/+/%2B/g; s/\//%2F/g; s/@/%40/g; s/:/%3A/g; s/#/%23/g; s/\?/%3F/g; s/&/%26/g; s/=/%3D/g')
+    CONN_STRING="aws://${AIRFLOW_KEY_ID}:${ENCODED_SECRET}@/?endpoint_url=http%3A%2F%2Fgarage%3A3900&region_name=garage"
     kubectl create secret generic garagefs-airflow-credentials \
-      --from-literal=accessKeyId="$KEY_ID" \
-      --from-literal=secretAccessKey="$KEY_SECRET" \
+      --from-literal=accessKeyId="$AIRFLOW_KEY_ID" \
+      --from-literal=secretAccessKey="$AIRFLOW_KEY_SECRET" \
       --from-literal=airflow-connection="$CONN_STRING" \
       --dry-run=client -o yaml | kubectl apply -f -
 
-    # Step 7: Create Lakekeeper API key (idempotent)
-    echo "Creating API key 'lakekeeper'..."
-    LK_OUTPUT=$($GARAGE_CMD key info lakekeeper 2>&1) || LK_OUTPUT=$($GARAGE_CMD key create lakekeeper 2>&1)
-    LK_KEY_ID=$(echo "$LK_OUTPUT" | grep "Key ID:" | awk '{print $NF}')
-    LK_KEY_SECRET=$(echo "$LK_OUTPUT" | grep "Secret key:" | awk '{print $NF}')
-
-    if [ -z "$LK_KEY_ID" ] || [ -z "$LK_KEY_SECRET" ]; then
-      echo "ERROR: Failed to extract Lakekeeper key credentials"
-      echo "Output: $LK_OUTPUT"
-      exit 1
-    fi
-    echo "  Key ID: $LK_KEY_ID"
-
-    # Step 8: Create iceberg-warehouse bucket (idempotent)
-    echo "Creating bucket 'iceberg-warehouse'..."
-    $GARAGE_CMD bucket create iceberg-warehouse 2>/dev/null || echo "  Bucket may already exist, continuing."
-
-    # Step 9: Grant lakekeeper key access to iceberg-warehouse
-    echo "Granting key 'lakekeeper' access to iceberg-warehouse bucket..."
-    $GARAGE_CMD bucket allow --read --write --owner iceberg-warehouse --key lakekeeper 2>/dev/null || echo "  Access may already be granted."
-
-    # Step 10: Store Lakekeeper credentials in K8s Secret
-    echo "Storing credentials in Secret 'garagefs-lakekeeper-credentials'..."
+    ensure_key lakekeeper
+    ensure_bucket iceberg-warehouse lakekeeper
     kubectl create secret generic garagefs-lakekeeper-credentials \
-      --from-literal=accessKeyId="$LK_KEY_ID" \
-      --from-literal=secretAccessKey="$LK_KEY_SECRET" \
+      --from-literal=accessKeyId="$KEY_ID" \
+      --from-literal=secretAccessKey="$KEY_SECRET" \
       --dry-run=client -o yaml | kubectl apply -f -
 
     echo "=== GarageFS Init Complete ==="
-    echo "  Buckets: airflow-logs, dbt-artifacts, iceberg-warehouse"
-    echo "  S3 Endpoint: http://garage:3900"
-    echo "  Region: garage"
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-garagefs-v3
+  name: configure-garagefs-v4
 spec:
   backoffLimit: 50
   template:
@@ -173,7 +139,7 @@ spec:
       serviceAccountName: garagefs-init
       containers:
         - name: configure
-          image: bitnami/kubectl:latest
+          image: bitnami/kubectl:1.35.2 # renovate: datasource=docker depName=bitnami/kubectl
           command: ["/bin/sh", "/scripts/configure.sh"]
           volumeMounts:
             - name: script

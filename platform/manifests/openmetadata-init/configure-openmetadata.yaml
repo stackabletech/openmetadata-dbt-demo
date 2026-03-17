@@ -240,7 +240,7 @@ spec:
     spec:
       containers:
         - name: configure
-          image: python:3.12-slim
+          image: python:3.12-slim # renovate: datasource=docker depName=python
           command: ["python", "-u", "/scripts/configure.py"]
           env:
             - name: OM_HOST

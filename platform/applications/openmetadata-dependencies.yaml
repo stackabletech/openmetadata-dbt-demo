@@ -13,7 +13,7 @@ spec:
   sources:
     - repoURL: "https://open-metadata.github.io/openmetadata-helm-charts"
       chart: openmetadata-dependencies
-      targetRevision: "1.12.1"
+      targetRevision: "1.12.1" # renovate: registryUrl=https://open-metadata.github.io/openmetadata-helm-charts datasource=helm depName=openmetadata-dependencies
       helm:
         releaseName: openmetadata-dependencies
         valuesObject:

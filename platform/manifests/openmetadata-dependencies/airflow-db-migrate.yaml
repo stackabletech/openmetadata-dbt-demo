@@ -23,7 +23,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: run-airflow-migrations
-          image: docker.getcollate.io/openmetadata/ingestion:1.12.1
+          image: docker.getcollate.io/openmetadata/ingestion:1.12.1 # renovate: datasource=docker depName=docker.getcollate.io/openmetadata/ingestion
           imagePullPolicy: IfNotPresent
           args:
             - bash

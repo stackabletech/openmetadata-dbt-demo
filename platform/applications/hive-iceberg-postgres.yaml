@@ -12,7 +12,7 @@ spec:
     - repoURL: "registry-1.docker.io/bitnamicharts"
       path: postgresql
       # helm inspect chart oci://registry-1.docker.io/bitnamicharts/postgresql
-      targetRevision: 16.6.3 # 17.4.0
+      targetRevision: 16.6.3 # renovate: registryUrl=https://registry-1.docker.io/bitnamicharts datasource=helm depName=postgresql
       chart: postgresql
       helm:
         # TODO this breaks naming as long as we use the airflow stack yaml which needs this svc name

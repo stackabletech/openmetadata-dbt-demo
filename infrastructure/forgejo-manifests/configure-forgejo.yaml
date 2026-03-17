@@ -19,7 +19,7 @@ spec:
                 secretKeyRef:
                   name: forgejo-admin-secret
                   key: password
-          image: oowy/opentofu:latest
+          image: oowy/opentofu:1.10.6-alpine3.20 # renovate: datasource=docker depName=oowy/opentofu
           command: ["/bin/sh", "-c"]
           args:
             - |
