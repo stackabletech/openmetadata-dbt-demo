@@ -201,9 +201,7 @@ with DAG(
     schedule="@once",
     start_date=datetime(2024, 1, 1),
     catchup=False,
-    default_args={"retries": 1},
-    retries=sys.maxsize,
-    retry_delay=timedelta(minutes=5),
+    default_args={"retries": 1000},
 ) as dag:
 
     wait_for_services = PythonSensor(
