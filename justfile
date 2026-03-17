@@ -1,3 +1,8 @@
+demo name:
+    just infra {{name}}
+    just kubeconfig {{name}}
+    just deploy
+
 deploy:
     stackablectl stack install forgejo --stack-file infrastructure/stack.yaml
 
@@ -22,6 +27,27 @@ seal-secrets:
 build-airflow-image:
     docker build -t oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos docker/airflow
     docker push oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos
+
+infra name="":
+    #!/usr/bin/env bash
+    cd tofu
+    tofu init -upgrade
+    if [ -n "{{name}}" ]; then
+        tofu apply -var="name={{name}}"
+    else
+        tofu apply
+    fi
+
+destroy:
+    #!/usr/bin/env bash
+    cd tofu
+    tofu destroy
+
+kubeconfig name:
+    #!/usr/bin/env bash
+    cd tofu
+    RG=$(tofu output -raw resource_group_name)
+    az aks get-credentials --resource-group "$RG" --name "{{name}}" --overwrite-existing
 
 dbt-compile:
     #!/usr/bin/env bash

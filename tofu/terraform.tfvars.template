@@ -1,0 +1,7 @@
+name               = "demo-soenke"
+subscription_id    = "00000000-0000-0000-0000-000000000000"
+owner              = "your name"
+# location         = "westeurope"
+# node_count       = 2
+# node_vm_size     = "Standard_D4s_v3"
+# kubernetes_version = "1.33"
