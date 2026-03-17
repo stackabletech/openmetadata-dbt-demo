@@ -2,7 +2,7 @@ terraform {
   required_providers {
     airflow = {
       source  = "drfaust92/airflow"
-      version = "~> 0.15"
+      version = 1.0.2
     }
   }
 }
