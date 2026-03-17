@@ -31,13 +31,13 @@ variable "location" {
 variable "node_count" {
   description = "Number of nodes in the user pool"
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "node_vm_size" {
   description = "VM size for user pool nodes"
   type        = string
-  default     = "Standard_D4s_v3"
+  default     = "Standard_D8ds_v5"
 }
 
 variable "kubernetes_version" {
@@ -133,6 +133,32 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   tags = {
     owner = var.owner
+  }
+}
+
+# The AKS-managed NSG (in the MC_* resource group) is attached to node NICs.
+# Azure evaluates both subnet and NIC NSGs, so we need the rule on both.
+resource "terraform_data" "allow_all_inbound_aks_nsg" {
+  depends_on = [azurerm_kubernetes_cluster.this]
+
+  input = azurerm_kubernetes_cluster.this.node_resource_group
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      NSG_NAME=$(az network nsg list -g ${azurerm_kubernetes_cluster.this.node_resource_group} --query '[0].name' -o tsv)
+      az network nsg rule create \
+        -g ${azurerm_kubernetes_cluster.this.node_resource_group} \
+        --nsg-name "$NSG_NAME" \
+        -n AllowAllInbound \
+        --priority 100 \
+        --direction Inbound \
+        --access Allow \
+        --protocol '*' \
+        --source-address-prefixes '*' \
+        --destination-address-prefixes '*' \
+        --source-port-ranges '*' \
+        --destination-port-ranges '*'
+    EOT
   }
 }
 

@@ -1,5 +1,9 @@
 # Stackable Data Platform Demo
 
+> [!WARNING]
+> This repository is not meant for the general public, it is public because it may be helpful to some people and definitely serves an instructional purpose, but especially the justfile recipes and scripts in here can cause harm and delete data if not used with caution! 
+
+
 A GitOps-managed Kubernetes demo that showcases the [Stackable Data Platform](https://stackable.tech/) alongside commonly used tools from the wider data ecosystem: OpenMetadata, dbt, Astronomer Cosmos, Lakekeeper, GarageFS, Kafka, and NiFi.
 
 The demo deploys a complete data lakehouse on Kubernetes, with TPC-H sample data flowing through dbt models in Trino, Iceberg tables managed by Lakekeeper, S3-compatible storage via GarageFS, and metadata governance through OpenMetadata — all orchestrated by Airflow and continuously deployed via ArgoCD.
@@ -48,21 +52,21 @@ cp tofu/terraform.tfvars.template tofu/terraform.tfvars
 | `subscription_id` | yes | — | Azure subscription ID |
 | `owner` | yes | — | Owner tag on the resource group and cluster |
 | `location` | no | `westeurope` | Azure region |
-| `node_count` | no | `2` | Number of nodes in the user pool |
-| `node_vm_size` | no | `Standard_D4s_v3` | VM size for user pool nodes |
+| `node_count` | no | `3` | Number of nodes in the user pool |
+| `node_vm_size` | no | `Standard_D8ds_v5` | VM size for user pool nodes |
 | `kubernetes_version` | no | `1.33` | Kubernetes version |
 
-2. Provision the cluster:
+2. Provision the cluster (each cluster gets its own state file `tofu/<name>.tfstate`):
 
 ```bash
-just infra                    # uses values from terraform.tfvars
-just infra my-cluster-name    # overrides the name variable
+just infra my-cluster-name
 ```
 
 3. Get the kubeconfig:
 
 ```bash
-just kubeconfig my-cluster-name
+just kubeconfig my-cluster-name   # by name
+just kubeconfig                   # interactive selection from managed clusters
 ```
 
 The infrastructure creates a resource group, VNet, subnet, NSG (with all inbound traffic allowed), and an AKS cluster with a system node pool and a configurable user node pool with public IPs.
@@ -86,7 +90,8 @@ This bootstraps ArgoCD, which then takes over and deploys everything else from G
 ### Tear Down
 
 ```bash
-just destroy                  # destroys all AKS infrastructure via OpenTofu
+just destroy my-cluster-name  # destroy by name (async, returns immediately)
+just destroy                  # interactive selection from managed clusters
 ```
 
 
@@ -106,14 +111,14 @@ After deployment, these services are accessible (via NodePort or LoadBalancer de
 ### Other Commands
 
 ```bash
+just demo <name>         # End-to-end: infra + kubeconfig + deploy
+just infra <name>        # Provision AKS cluster (state: tofu/<name>.tfstate)
+just kubeconfig [name]   # Get kubeconfig (interactive selection if no name)
+just destroy [name]      # Tear down cluster (async, interactive if no name)
 just seal-secrets        # Re-seal plaintext secrets from secrets/ into platform/manifests/
 just build-airflow-image # Build and push custom Airflow image with Cosmos
 just dbt-compile         # Compile the dbt project locally
 just dbt-run             # Run dbt models locally (requires Trino access)
-just infra               # Run OpenTofu apply (uses terraform.tfvars)
-just kubeconfig <name>   # Get kubeconfig for a cluster by name
-just destroy             # Tear down all OpenTofu-managed infrastructure
-just demo <name>         # End-to-end: infra + kubeconfig + deploy
 ```
 
 ## Components
