@@ -60,13 +60,19 @@ data:
       sleep 5
     done
 
-    # Step 2: Assign layout to unassigned nodes
+    # Step 2: Assign layout to all nodes
     echo "Checking node layout..."
-    NODES=$($GARAGE_CMD status 2>/dev/null | grep "NO ROLE ASSIGNED" | awk '{print $1}')
-    if [ -n "$NODES" ]; then
-      for node_id in $NODES; do
+    # Revert any pending layout changes to start clean
+    $GARAGE_CMD layout revert 2>/dev/null || true
+
+    # Get all node IDs from cluster status
+    ALL_NODES=$($GARAGE_CMD status 2>/dev/null | grep -E '^[0-9a-f]{16}' | awk '{print $1}')
+    UNASSIGNED=$($GARAGE_CMD status 2>/dev/null | grep "NO ROLE ASSIGNED" | awk '{print $1}')
+
+    if [ -n "$UNASSIGNED" ]; then
+      for node_id in $ALL_NODES; do
         echo "  Assigning node $node_id..."
-        $GARAGE_CMD layout assign -z dc1 -c 1G "$node_id"
+        $GARAGE_CMD layout assign -z dc1 -c 1G "$node_id" 2>/dev/null || true
       done
 
       # Get current version and apply
@@ -159,7 +165,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-garagefs-v2
+  name: configure-garagefs-v3
 spec:
   backoffLimit: 50
   template:

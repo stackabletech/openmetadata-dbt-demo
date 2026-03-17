@@ -37,23 +37,29 @@ _select-cluster:
         echo "No state files found in tofu/" >&2
         exit 1
     fi
-    echo "Select a cluster:" >&2
-    i=1
     declare -a cluster_names
     for sf in "${states[@]}"; do
-        name="${sf%.tfstate}"
-        rg=$(tofu output -raw -state="$sf" resource_group_name 2>/dev/null || echo "unknown")
-        cluster_names+=("$name")
-        echo "  $i) $rg ($name)" >&2
-        ((i++))
+        cluster_names+=("${sf%.tfstate}")
     done
-    read -rp "Choice [1-${#states[@]}]: " choice </dev/tty >&2
-    if [ -z "$choice" ] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#states[@]}" ] 2>/dev/null; then
-        echo "Invalid selection" >&2
-        exit 1
+    if command -v rofi &>/dev/null; then
+        selection=$(printf '%s\n' "${cluster_names[@]}" | rofi -dmenu -p "Select cluster")
+        if [ -z "$selection" ]; then
+            echo "No cluster selected" >&2
+            exit 1
+        fi
+        echo "$selection"
+    else
+        echo "Select a cluster:" >&2
+        for i in "${!cluster_names[@]}"; do
+            echo "  $((i+1))) ${cluster_names[$i]}" >&2
+        done
+        read -rp "Choice [1-${#cluster_names[@]}]: " choice </dev/tty >&2
+        if [ -z "$choice" ] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#cluster_names[@]}" ] 2>/dev/null; then
+            echo "Invalid selection" >&2
+            exit 1
+        fi
+        echo "${cluster_names[$((choice-1))]}"
     fi
-    idx=$((choice - 1))
-    echo "${cluster_names[$idx]}"
 
 infra name:
     #!/usr/bin/env bash

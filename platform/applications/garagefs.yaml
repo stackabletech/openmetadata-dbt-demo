@@ -14,6 +14,9 @@ spec:
     path: script/helm/garage   # path to the chart within the repo
     helm:
       releaseName: garage
+      valuesObject:
+        garage:
+          replicationFactor: 2
   syncPolicy:
     automated:
       prune: true

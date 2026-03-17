@@ -112,6 +112,7 @@ resource "azurerm_kubernetes_cluster" "this" {
     vm_size              = "Standard_D2s_v3"
     os_disk_size_gb      = 128
     vnet_subnet_id       = azurerm_subnet.aks.id
+    max_pods             = 100
     temporary_name_for_rotation = "systemtmp"
 
     upgrade_settings {
@@ -169,6 +170,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "user" {
   node_count            = var.node_count
   os_disk_size_gb       = 128
   vnet_subnet_id        = azurerm_subnet.aks.id
+  max_pods              = 100
   node_public_ip_enabled = true
 
   upgrade_settings {
