@@ -1,4 +1,4 @@
-1terraform {
+terraform {
   required_providers {
     airflow = {
       source  = "drfaust92/airflow"
