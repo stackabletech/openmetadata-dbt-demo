@@ -153,7 +153,7 @@ spec:
       serviceAccountName: lakekeeper-init
       containers:
         - name: configure
-          image: bitnami/kubectl:1.35.2 # renovate: datasource=docker depName=bitnami/kubectl
+          image: alpine/kubectl:1.35.2 # renovate: datasource=docker depName=alpine/kubectl
           command: ["/bin/sh", "/scripts/configure.sh"]
           volumeMounts:
             - name: script
