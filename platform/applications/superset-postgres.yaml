@@ -37,7 +37,7 @@ spec:
             existingSecret: superset-postgresql-credentials
     - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "main"
-      path: platform/manifests/airflow-postgres/
+      path: platform/manifests/superset-postgres/
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
