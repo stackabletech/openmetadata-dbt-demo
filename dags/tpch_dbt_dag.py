@@ -1,6 +1,5 @@
 # This file is an airflow DAG definition using Astronomer Cosmos for dbt orchestration.
-import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from airflow import DAG
@@ -24,35 +23,68 @@ DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
 INGESTION_POLL_INTERVAL = 10  # seconds
 INGESTION_TIMEOUT = 600  # seconds
 
-REQUIRED_STATEFULSETS = ["trino-coordinator-default", "trino-worker-default"]
-REQUIRED_DEPLOYMENTS = ["openmetadata"]
-K8S_NAMESPACE = "default"
+TRINO_HOST = "trino-coordinator"
+TRINO_PORT = 8443
+TRINO_SCHEMA_CHECK = "hive-iceberg.demo"
 
 
-def check_k8s_resources_ready(**context):
-    """Check if Trino StatefulSets and OpenMetadata Deployment are fully ready."""
-    from kubernetes import client, config
+def check_services_ready(**context):
+    """Check that OpenMetadata API is responding and Trino has the required schema."""
+    import json
+    import ssl
+    import urllib.request
+    import urllib.error
 
-    config.load_incluster_config()
-    apps_v1 = client.AppsV1Api()
+    # --- Check OpenMetadata health ---
+    try:
+        req = urllib.request.Request(f"{OM_HOST}/api/v1/system/version")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+        print("  OpenMetadata API is reachable.")
+    except Exception as e:
+        print(f"  OpenMetadata not ready: {e}")
+        return False
 
-    for ss_name in REQUIRED_STATEFULSETS:
-        ss = apps_v1.read_namespaced_stateful_set(ss_name, K8S_NAMESPACE)
-        desired = ss.spec.replicas or 0
-        ready = ss.status.ready_replicas or 0
-        print(f"  StatefulSet {ss_name}: {ready}/{desired} ready")
-        if ready < desired:
+    # --- Check Trino by querying for the required schema ---
+    try:
+        catalog, schema = TRINO_SCHEMA_CHECK.split(".", 1)
+        # Trino REST API: POST /v1/statement
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        trino_url = f"https://{TRINO_HOST}:{TRINO_PORT}/v1/statement"
+        query = f"SHOW SCHEMAS FROM \"{catalog}\" LIKE '{schema}'"
+        req = urllib.request.Request(
+            trino_url,
+            data=query.encode(),
+            headers={
+                "X-Trino-User": "admin",
+                "X-Trino-Catalog": catalog,
+                "X-Trino-Schema": "default",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+
+        # Follow nextUri until we get data or the query finishes
+        while "nextUri" in result and "data" not in result:
+            next_req = urllib.request.Request(result["nextUri"])
+            next_req.add_header("X-Trino-User", "admin")
+            with urllib.request.urlopen(next_req, context=ctx, timeout=10) as resp:
+                result = json.loads(resp.read().decode())
+
+        rows = result.get("data", [])
+        if any(row[0] == schema for row in rows):
+            print(f"  Trino schema {TRINO_SCHEMA_CHECK} exists.")
+        else:
+            print(f"  Trino is up but schema {TRINO_SCHEMA_CHECK} not found yet.")
             return False
+    except Exception as e:
+        print(f"  Trino not ready: {e}")
+        return False
 
-    for dep_name in REQUIRED_DEPLOYMENTS:
-        dep = apps_v1.read_namespaced_deployment(dep_name, K8S_NAMESPACE)
-        desired = dep.spec.replicas or 0
-        ready = dep.status.ready_replicas or 0
-        print(f"  Deployment {dep_name}: {ready}/{desired} ready")
-        if ready < desired:
-            return False
-
-    print("  All required Kubernetes resources are ready.")
+    print("  All services are ready.")
     return True
 
 
@@ -205,8 +237,8 @@ with DAG(
 ) as dag:
 
     wait_for_services = PythonSensor(
-        task_id="wait_for_k8s_services",
-        python_callable=check_k8s_resources_ready,
+        task_id="wait_for_services",
+        python_callable=check_services_ready,
         poke_interval=30,
         timeout=900,
         mode="poke",
