@@ -176,10 +176,14 @@ def trigger_om_metadata_ingestion(**context):
         time.sleep(INGESTION_POLL_INTERVAL)
         elapsed += INGESTION_POLL_INTERVAL
 
-        status_resp = om_request(
-            f"/services/ingestionPipelines/{pipeline_id}/pipelineStatus",
-            token=token,
-        )
+        try:
+            status_resp = om_request(
+                f"/services/ingestionPipelines/{pipeline_id}/pipelineStatus",
+                token=token,
+            )
+        except Exception as e:
+            print(f"  [{elapsed}s] Status check failed ({e}), will retry...")
+            continue
 
         # The response contains a list of runs; check the latest
         if isinstance(status_resp, list):
