@@ -24,6 +24,15 @@ export TF_VAR_airflow_token="$TOKEN"
 echo "=== Initializing OpenTofu ==="
 tofu init
 
+echo "=== Importing existing resources ==="
+# Import existing connections so apply updates instead of failing on create.
+# grep all airflow_connection resource names from .tf files and try to import each.
+grep -h 'resource "airflow_connection"' *.tf | sed 's/.*resource "airflow_connection" "\([^"]*\)".*/\1/' | while read -r name; do
+  conn_id=$(grep -A5 "resource \"airflow_connection\" \"${name}\"" *.tf | grep connection_id | sed 's/.*= *"\([^"]*\)".*/\1/')
+  echo "  Importing airflow_connection.${name} (${conn_id})..."
+  tofu import "airflow_connection.${name}" "${conn_id}" 2>/dev/null || echo "  Not found, will create."
+done
+
 echo "=== Applying configuration ==="
 tofu apply -auto-approve
 
