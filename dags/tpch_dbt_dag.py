@@ -135,6 +135,9 @@ def trigger_om_metadata_ingestion(**context):
     pipeline_id = pipeline["id"]
     print(f"  Found metadata pipeline: {METADATA_PIPELINE_FQN} (id={pipeline_id})")
 
+    # Record start time before triggering (milliseconds for OM API)
+    trigger_ts = int(time.time() * 1000)
+
     # Trigger the pipeline
     om_request(
         f"/services/ingestionPipelines/trigger/{pipeline_id}",
@@ -150,8 +153,10 @@ def trigger_om_metadata_ingestion(**context):
         elapsed += INGESTION_POLL_INTERVAL
 
         try:
+            now_ts = int(time.time() * 1000)
             status_resp = om_request(
-                f"/services/ingestionPipelines/{METADATA_PIPELINE_FQN}/pipelineStatus",
+                f"/services/ingestionPipelines/{METADATA_PIPELINE_FQN}/pipelineStatus"
+                f"?startTs={trigger_ts}&endTs={now_ts}",
                 token=token,
             )
         except Exception as e:
