@@ -17,6 +17,7 @@ spec:
       valuesObject:
         garage:
           replicationFactor: 2
+          rpcSecret: "5799da09045e5b2ad62bdd658aac3f4c1311bd2c92af32a4e8825ec810920063"
   syncPolicy:
     automated:
       prune: true
