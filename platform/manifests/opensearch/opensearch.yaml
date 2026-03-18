@@ -52,4 +52,5 @@ spec:
         replicas: 3
     configOverrides:
       opensearch.yml:
+        node.store.allow_mmap: "false"
         plugins.security.restapi.roles_enabled: all_access
