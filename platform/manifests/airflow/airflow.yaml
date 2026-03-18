@@ -53,11 +53,6 @@ spec:
           limit: 2Gi
     roleGroups:
       default:
-        # NOTE: In order to properly show ArgoCD in action - syncing changes via Git - do the following:
-        # - Fork this repository
-        # - Use the demo parameters `customGitUrl` and `customGitBranch` to point the
-        #   the repository to your fork and branch
-        # - Change the replicas here and push that to the provided `customGitBranch` in your fork
         replicas: 1
   kubernetesExecutors:
     envOverrides: *envOverrides

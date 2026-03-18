@@ -1,0 +1,54 @@
+---
+apiVersion: opensearch.stackable.tech/v1alpha1
+kind: OpenSearchCluster
+metadata:
+  name: simple-opensearch
+spec:
+  image:
+    productVersion: 3.1.0
+  nodes:
+    roleGroups:
+      default:
+        replicas: 3
+    configOverrides:
+      opensearch.yml:
+        plugins.security.allow_default_init_securityindex: "true"
+        plugins.security.restapi.roles_enabled: all_access
+        plugins.security.ssl.transport.enabled: "true"
+        plugins.security.ssl.transport.pemcert_filepath: /stackable/opensearch/config/tls/tls.crt
+        plugins.security.ssl.transport.pemkey_filepath: /stackable/opensearch/config/tls/tls.key
+        plugins.security.ssl.transport.pemtrustedcas_filepath: /stackable/opensearch/config/tls/ca.crt
+        plugins.security.ssl.http.enabled: "true"
+        plugins.security.ssl.http.pemcert_filepath: /stackable/opensearch/config/tls/tls.crt
+        plugins.security.ssl.http.pemkey_filepath: /stackable/opensearch/config/tls/tls.key
+        plugins.security.ssl.http.pemtrustedcas_filepath: /stackable/opensearch/config/tls/ca.crt
+    podOverrides:
+      spec:
+        containers:
+          - name: opensearch
+            volumeMounts:
+              - name: security-config
+                mountPath: /stackable/opensearch/config/opensearch-security
+                readOnly: true
+              - name: tls
+                mountPath: /stackable/opensearch/config/tls
+                readOnly: true
+        volumes:
+          - name: security-config
+            secret:
+              secretName: opensearch-security-config
+              defaultMode: 0o660
+          - name: tls
+            ephemeral:
+              volumeClaimTemplate:
+                metadata:
+                  annotations:
+                    secrets.stackable.tech/class: tls
+                    secrets.stackable.tech/scope: node,pod,service=simple-opensearch,service=simple-opensearch-nodes-default,service=simple-opensearch-nodes-default-headless
+                spec:
+                  storageClassName: secrets.stackable.tech
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: "1"

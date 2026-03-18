@@ -1,0 +1,87 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: opensearch-security-config
+stringData:
+  action_groups.yml: |
+    ---
+    _meta:
+      type: actiongroups
+      config_version: 2
+  allowlist.yml: |
+    ---
+    _meta:
+      type: allowlist
+      config_version: 2
+    config:
+      enabled: false
+  audit.yml: |
+    ---
+    _meta:
+      type: audit
+      config_version: 2
+    config:
+      enabled: false
+  config.yml: |
+    ---
+    _meta:
+      type: config
+      config_version: 2
+    config:
+      dynamic:
+        authc:
+          basic_internal_auth_domain:
+            description: Authenticate via HTTP Basic against internal users database
+            http_enabled: true
+            transport_enabled: true
+            order: 1
+            http_authenticator:
+              type: basic
+              challenge: true
+            authentication_backend:
+              type: intern
+        authz: {}
+  internal_users.yml: |
+    ---
+    _meta:
+      type: internalusers
+      config_version: 2
+    admin:
+      hash: $2y$10$xRtHZFJ9QhG9GcYhRpAGpufCZYsk//nxsuel5URh0GWEBgmiI4Q/e
+      reserved: true
+      backend_roles:
+      - admin
+      description: OpenSearch admin user
+    kibanaserver:
+      hash: $2y$10$vPgQ/6ilKDM5utawBqxoR.7euhVQ0qeGl8mPTeKhmFT475WUDrfQS
+      reserved: true
+      description: OpenSearch Dashboards user
+  nodes_dn.yml: |
+    ---
+    _meta:
+      type: nodesdn
+      config_version: 2
+  roles.yml: |
+    ---
+    _meta:
+      type: roles
+      config_version: 2
+  roles_mapping.yml: |
+    ---
+    _meta:
+      type: rolesmapping
+      config_version: 2
+    all_access:
+      reserved: false
+      backend_roles:
+      - admin
+    kibana_server:
+      reserved: true
+      users:
+      - kibanaserver
+  tenants.yml: |
+    ---
+    _meta:
+      type: tenants
+      config_version: 2
