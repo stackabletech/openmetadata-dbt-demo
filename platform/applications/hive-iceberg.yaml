@@ -7,9 +7,9 @@ spec:
   project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: platform
+    namespace: default
   source:
-    repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
+    repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
     targetRevision: "main"
     path: platform/manifests/hive-iceberg/
   syncPolicy:

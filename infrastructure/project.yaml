@@ -8,11 +8,7 @@ spec:
   sourceRepos:
     - "*"
   destinations:
-    - namespace: shared
-      server: https://kubernetes.default.svc
-    - namespace: platform
-      server: https://kubernetes.default.svc
-    - namespace: deployment
+    - namespace: default
       server: https://kubernetes.default.svc
   clusterResourceWhitelist:
     - group: "*"

@@ -3,7 +3,6 @@ apiVersion: trino.stackable.tech/v1alpha1
 kind: TrinoCatalog
 metadata:
   name: hive-iceberg
-  namespace: platform
   labels:
     trino: trino
 spec:

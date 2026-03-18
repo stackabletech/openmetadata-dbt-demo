@@ -9,7 +9,7 @@ spec:
   project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: platform
+    namespace: default
   sources:
     - repoURL: "https://open-metadata.github.io/openmetadata-helm-charts"
       chart: openmetadata
@@ -32,7 +32,7 @@ spec:
                     secretRef: openmetadata-opensearch-credentials
                     secretKey: openmetadata-elasticsearch-password
               database:
-                host: postgresql-openmetadata.shared.svc.cluster.local
+                host: postgresql-openmetadata
                 port: 5432
                 driverClass: org.postgresql.Driver
                 dbScheme: postgresql
@@ -52,7 +52,7 @@ spec:
                 k8s:
                   # Container image for ingestion jobs
                   ingestionImage: "docker.getcollate.io/openmetadata/ingestion-base:1.12.1"
-    - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
+    - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "main"
       path: platform/manifests/openmetadata/
   syncPolicy:

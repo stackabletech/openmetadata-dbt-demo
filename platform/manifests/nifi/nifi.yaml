@@ -3,7 +3,6 @@ apiVersion: nifi.stackable.tech/v1alpha1
 kind: NifiCluster
 metadata:
   name: nifi
-  namespace: platform
 spec:
   image:
     productVersion: 2.7.2

@@ -3,7 +3,6 @@ apiVersion: trino.stackable.tech/v1alpha1
 kind: TrinoCluster
 metadata:
   name: trino
-  namespace: platform
 spec:
   image:
     productVersion: "477"

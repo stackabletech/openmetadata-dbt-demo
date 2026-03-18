@@ -4,10 +4,10 @@ kind: Application
 metadata:
   name: garage
 spec:
-  project: dbt-openmetadata-demo
+  project: default
   destination:
     server: https://kubernetes.default.svc
-    namespace: shared
+    namespace: default
   source:
     repoURL: https://git.deuxfleurs.fr/Deuxfleurs/garage
     targetRevision: v1.3.1 # renovate: datasource=git-tags depName=https://git.deuxfleurs.fr/Deuxfleurs/garage

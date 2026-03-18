@@ -3,7 +3,6 @@ apiVersion: airflow.stackable.tech/v1alpha1
 kind: AirflowCluster
 metadata:
   name: airflow
-  namespace: platform
 spec:
   image:
     custom: oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos
@@ -20,7 +19,7 @@ spec:
     #
     # TODO(@maltesander): In a Stackable release, this branch should point to the release-YY.MM branch!
     dagsGitSync:
-      - repo: http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git
+      - repo: http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git
         branch: main
         gitFolder: "dags"
         depth: 2

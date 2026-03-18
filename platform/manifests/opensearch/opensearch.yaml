@@ -3,7 +3,6 @@ apiVersion: opensearch.stackable.tech/v1alpha1
 kind: OpenSearchCluster
 metadata:
   name: simple-opensearch
-  namespace: platform
 spec:
   image:
     productVersion: 3.4.0
