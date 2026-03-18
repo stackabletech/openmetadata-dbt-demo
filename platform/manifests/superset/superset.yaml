@@ -3,6 +3,7 @@ apiVersion: superset.stackable.tech/v1alpha1
 kind: SupersetCluster
 metadata:
   name: simple-superset
+  namespace: platform
 spec:
   image:
     productVersion: 6.0.0

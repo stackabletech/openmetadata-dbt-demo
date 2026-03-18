@@ -3,6 +3,7 @@ apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
   name: kafka
+  namespace: platform
 spec:
   clusterConfig:
     metadataManager: kraft

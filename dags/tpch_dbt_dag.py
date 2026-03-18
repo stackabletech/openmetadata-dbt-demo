@@ -70,7 +70,7 @@ def upload_dbt_artifacts(**context):
     extras = conn.extra_dejson
     s3 = boto3.client(
         "s3",
-        endpoint_url=extras.get("endpoint_url", "http://garage:3900"),
+        endpoint_url=extras.get("endpoint_url", "http://garage.shared.svc.cluster.local:3900"),
         aws_access_key_id=conn.login,
         aws_secret_access_key=conn.password,
         region_name=extras.get("region_name", "garage"),

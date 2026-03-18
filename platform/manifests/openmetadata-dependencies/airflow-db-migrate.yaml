@@ -13,6 +13,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: openmetadata-airflow-db-migrate
+  namespace: platform
 spec:
   ttlSecondsAfterFinished: 300
   template:

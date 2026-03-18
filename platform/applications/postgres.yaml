@@ -24,7 +24,7 @@ spec:
       project: dbt-openmetadata-demo
       destination:
         server: https://kubernetes.default.svc
-        namespace: default
+        namespace: shared
       sources:
         - repoURL: "registry-1.docker.io/bitnamicharts"
           path: postgresql
