@@ -11,7 +11,7 @@ spec:
             extendedConfiguration: ""
           - component: hive
             extendedConfiguration: "password_encryption=md5"
-          - component: hiveiceberg
+          - component: hive-iceberg
             extendedConfiguration: "password_encryption=md5"
           - component: openmetadata
             extendedConfiguration: ""
