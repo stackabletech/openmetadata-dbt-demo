@@ -11,7 +11,7 @@ stacks:
       ################################
       # bootstrap argo
       ################################
-      - helmChart: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/argo-cd.yaml
+      - helmChart: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/_templates/argo-cd.yaml
       ################################
       # prerequisites
       ################################openmetadata-dbt-demo
@@ -19,11 +19,11 @@ stacks:
       ################################
       # project - operators
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/stackable-operators.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/projects/stackable-operators.yaml
       ################################
       # applicationset - operators
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/stackable-operators-appset.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applicationsets/stackable-operators.yaml
       ################################
       # applicationset - ForgeJo-installed and clones this repo, argo then looks at the in-cluster Forgejo, so that
       # users can push changes without breaking the demo
