@@ -210,6 +210,7 @@ with DAG(
     schedule="@once",
     start_date=datetime(2024, 1, 1),
     catchup=False,
+    is_paused_upon_creation=False,
     default_args={"retries": 1000},
 ) as dag:
 
