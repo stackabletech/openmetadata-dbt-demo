@@ -19,6 +19,18 @@ spec:
         valuesObject:
           openmetadata:
             config:
+              elasticsearch:
+                enabled: true
+                host: simple-opensearch-nodes-default
+                searchType: opensearch
+                port: 9200
+                scheme: https
+                auth:
+                  enabled: true
+                  username: "admin"
+                  password:
+                    secretRef: openmetadata-opensearch-credentials
+                    secretKey: openmetadata-elasticsearch-password
               database:
                 host: postgresql-openmetadata
                 port: 5432

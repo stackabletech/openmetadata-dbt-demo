@@ -20,6 +20,10 @@ seal-secrets:
         output_dir="$(dirname "$output_path")"
         output_filename="sealed-$(basename "$output_path")"
         output_file="$output_dir/$output_filename"
+        if [ -f "$output_file" ]; then
+            echo "Skipping (already exists): $output_file"
+            continue
+        fi
         echo "Processing: $input_file -> $output_file"
         kubeseal -n stackable-airflow --controller-namespace sealed-secrets --scope=cluster-wide --format=yaml < "$input_file" > "$output_file"
     done
