@@ -65,7 +65,7 @@ infra name:
     #!/usr/bin/env bash
     cd tofu
     tofu init -upgrade
-    tofu apply -var="name={{name}}" -state="{{name}}.tfstate"
+    tofu apply -auto-approve -var="name={{name}}" -state="{{name}}.tfstate"
 
 destroy name="":
     #!/usr/bin/env bash

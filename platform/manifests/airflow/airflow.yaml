@@ -33,6 +33,7 @@ spec:
       AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: garagefs
       # 20 seconds to reload the DAGS folder (default: 300)
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "20"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
     podOverrides: &podOverrides
       spec:
         containers:
