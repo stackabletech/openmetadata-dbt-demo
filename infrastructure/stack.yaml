@@ -34,7 +34,7 @@ stacks:
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/project.yaml
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/cluster-apps.yaml
-    supportedNamespaces: ["deployment"]
+    supportedNamespaces: []
     resourceRequests:
       cpu: 1750m
       memory: 1714Mi

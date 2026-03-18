@@ -4,7 +4,7 @@ demo name:
     just deploy
 
 deploy:
-    stackablectl stack install forgejo --stack-file infrastructure/stack.yaml -n deployment
+    stackablectl stack install forgejo --stack-file infrastructure/stack.yaml
 
 seal-secrets:
     #!/usr/bin/env bash

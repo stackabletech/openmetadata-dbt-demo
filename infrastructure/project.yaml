@@ -3,7 +3,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
   name: dbt-openmetadata-demo
-  namespace: deployment
 spec:
   description: Project to manage a demo environment of how to integrate Stackable with dbt and OpenMetadata
   sourceRepos:
