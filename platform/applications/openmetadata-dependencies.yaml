@@ -17,20 +17,13 @@ spec:
       helm:
         releaseName: openmetadata-dependencies
         valuesObject:
+          mysql:
+            enabled: false
           airflow:
-            dags:
-              persistence:
-                enabled: true
-                storageClassName: azurefile-csi-premium
-                size: 1Gi
-            logs:
-              persistence:
-                enabled: true
-                storageClassName: azurefile-csi-premium
-                size: 1Gi
-    - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
-      targetRevision: "main"
-      path: platform/manifests/openmetadata-dependencies/
+            enabled: false
+#    - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
+#      targetRevision: "main"
+#      path: platform/manifests/openmetadata-dependencies/
   syncPolicy:
     syncOptions:
       - CreateNamespace=true

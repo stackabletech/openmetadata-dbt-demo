@@ -16,6 +16,30 @@ spec:
       targetRevision: "1.12.1" # renovate: registryUrl=https://open-metadata.github.io/openmetadata-helm-charts datasource=helm depName=openmetadata
       helm:
         releaseName: openmetadata
+        valuesObject:
+          openmetadata:
+            config:
+              database:
+                host: postgresql-openmetadata
+                port: 5432
+                driverClass: org.postgresql.Driver
+                dbScheme: postgresql
+                databaseName: openmetadata
+                auth:
+                  username: openmetadata
+                  password:
+                    secretRef: postgresql-openmetadata
+                    secretKey: password
+                dbParams: ""
+              # No Airflow deploy step needed with the k8s pipeline client
+              deployPipelinesConfig:
+                enabled: false
+              pipelineServiceClientConfig:
+                type: "k8s"
+                metadataApiEndpoint: http://openmetadata:8585/api # default value
+                k8s:
+                  # Container image for ingestion jobs
+                  ingestionImage: "docker.getcollate.io/openmetadata/ingestion-base:1.12.1"
     - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "main"
       path: platform/manifests/openmetadata/
