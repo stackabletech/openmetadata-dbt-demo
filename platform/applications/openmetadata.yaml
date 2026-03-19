@@ -28,7 +28,10 @@ spec:
                 scheme: https
                 trustStore:
                   enabled: true
-                  path: /certs/ca.crt
+                  path: /certs/truststore.p12
+                  password:
+                    secretRef: "openmetadata-truststore-credentials"
+                    secretKey: "openmetadata-truststore-password"
                 auth:
                   enabled: true
                   username: "admin"
@@ -64,6 +67,7 @@ spec:
                     annotations:
                       secrets.stackable.tech/class: tls
                       secrets.stackable.tech/scope: pod
+                      secrets.stackable.tech/format: tls-pkcs12
                   spec:
                     storageClassName: secrets.stackable.tech
                     accessModes:
