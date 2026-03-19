@@ -4,6 +4,7 @@ kind: TrinoCatalog
 metadata:
   # The name of the catalog as it will appear in Trino
   name: tpcds
+  namespace: platform
   # TrinoCluster can use these labels to select which catalogs to include
   labels:
     trino: trino

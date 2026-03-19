@@ -3,16 +3,16 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: cluster-apps
-  namespace: default
+  namespace: deployment
 spec:
   project: dbt-openmetadata-demo
   source:
-    repoURL: http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git
+    repoURL: http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git
     targetRevision: main
     path: platform/applications/
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: deployment
   syncPolicy:
     automated:
       prune: true

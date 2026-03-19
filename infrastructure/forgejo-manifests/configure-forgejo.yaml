@@ -3,6 +3,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: configure-forgejo
+  namespace: deployment
 spec:
   template:
     spec:
@@ -48,6 +49,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: forgejo-configuration
+  namespace: deployment
 data:
   forgejo.tf: |
     terraform {

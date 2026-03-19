@@ -11,30 +11,30 @@ stacks:
       ################################
       # bootstrap argo
       ################################
-      - helmChart: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/_templates/argo-cd.yaml
+      - helmChart: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/namespaced/infrastructure/argo-cd.yaml
       ################################
       # prerequisites
       ################################openmetadata-dbt-demo
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/sealed-secrets.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/namespaced/infrastructure/sealed-secrets.yaml
       ################################
       # project - operators
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/projects/stackable-operators.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/namespaced/infrastructure/stackable-operators.yaml
       ################################
       # applicationset - operators
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/demos/main/stacks/argo-cd-git-ops/applicationsets/stackable-operators.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/namespaced/infrastructure/stackable-operators-appset.yaml
       ################################
       # applicationset - ForgeJo-installed and clones this repo, argo then looks at the in-cluster Forgejo, so that
       # users can push changes without breaking the demo
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/forgejo.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/namespaced/infrastructure/forgejo.yaml
       ################################
       # applicationset - demo
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/project.yaml
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/main/infrastructure/cluster-apps.yaml
-    supportedNamespaces: []
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/namespaced/infrastructure/project.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/namespaced/infrastructure/cluster-apps.yaml
+    supportedNamespaces: ["deployment"]
     resourceRequests:
       cpu: 1750m
       memory: 1714Mi

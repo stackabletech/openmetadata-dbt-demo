@@ -3,13 +3,14 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: openmetadata
+  namespace: deployment
   annotations:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: platform
   sources:
     - repoURL: "https://open-metadata.github.io/openmetadata-helm-charts"
       chart: openmetadata
@@ -25,6 +26,9 @@ spec:
                 searchType: opensearch
                 port: 9200
                 scheme: https
+                trustStore:
+                  enabled: true
+                  path: /certs/ca.crt
                 auth:
                   enabled: true
                   username: "admin"
@@ -32,7 +36,7 @@ spec:
                     secretRef: openmetadata-opensearch-credentials
                     secretKey: openmetadata-elasticsearch-password
               database:
-                host: postgresql-openmetadata
+                host: postgresql-openmetadata.shared.svc.cluster.local
                 port: 5432
                 driverClass: org.postgresql.Driver
                 dbScheme: postgresql
@@ -52,7 +56,25 @@ spec:
                 k8s:
                   # Container image for ingestion jobs
                   ingestionImage: "docker.getcollate.io/openmetadata/ingestion-base:1.12.1"
-    - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
+          extraVolumes:
+            - name: tls
+              ephemeral:
+                volumeClaimTemplate:
+                  metadata:
+                    annotations:
+                      secrets.stackable.tech/class: tls
+                      secrets.stackable.tech/scope: pod
+                  spec:
+                    storageClassName: secrets.stackable.tech
+                    accessModes:
+                      - ReadWriteOnce
+                    resources:
+                      requests:
+                        storage: "1"
+          extraVolumeMounts:
+            - name: tls
+              mountPath: /certs
+    - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "main"
       path: platform/manifests/openmetadata/
   syncPolicy:

@@ -3,13 +3,14 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: forgejo
+  namespace: deployment
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: deployment
   sources:
     - repoURL: code.forgejo.org/forgejo-helm
       targetRevision: "16.2.1" # renovate: registryUrl=https://code.forgejo.org/forgejo-helm datasource=helm depName=forgejo

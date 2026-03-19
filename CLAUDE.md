@@ -57,7 +57,7 @@ Never apply changes directly to the Kubernetes cluster (no `kubectl apply`, `hel
 2. Create `platform/applications/<component>.yaml` — an ArgoCD Application pointing to the manifests dir:
    ```yaml
    source:
-     repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
+     repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
      targetRevision: "main"
      path: platform/manifests/<component>/
    ```
@@ -89,7 +89,7 @@ sources:
       valuesObject:
         auth:
           existingSecret: <secret-name>
-  - repoURL: "http://forgejo-http:3000/stackable/openmetadata-dbt-demo.git"
+  - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
     targetRevision: "main"
     path: platform/manifests/<component>/
 ```
@@ -100,14 +100,27 @@ sources:
 2. Run `just seal-secrets` — this generates `platform/manifests/<component>/sealed-<secret-name>.yaml`.
 3. Never edit sealed-* files by hand. Always edit the plaintext in `secrets/` and re-seal.
 
+## Namespace Layout
+
+| Namespace | Components |
+|---|---|
+| `deployment` | ArgoCD, SealedSecrets, Forgejo |
+| `stackable-operators` | Stackable operators |
+| `shared` | GarageFS, all PostgreSQL instances (airflow, hive, hive-iceberg, openmetadata, superset) |
+| `platform` | Airflow, Trino, Hive, HDFS, ZooKeeper, Kafka, NiFi, OpenMetadata, OpenSearch, Superset, Lakekeeper, all init jobs |
+
+Cross-namespace service references must use FQDNs (`<svc>.<namespace>.svc.cluster.local`).
+Services within the same namespace can use short names.
+
 ## Common ArgoCD Application Fields
 
 All applications should use:
 - `project: dbt-openmetadata-demo` (except infrastructure-level apps which use `default`)
 - `destination.server: https://kubernetes.default.svc`
-- `destination.namespace: default`
+- `destination.namespace`: `shared`, `platform`, or `deployment` depending on component (see Namespace Layout)
 - `syncPolicy.automated.selfHeal: true` and `prune: true`
 - `syncPolicy.syncOptions: [CreateNamespace=true]`
+- `source.repoURL`: use `http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git` for Forgejo sources
 
 ## Commands
 
