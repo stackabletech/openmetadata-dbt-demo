@@ -3,6 +3,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: postgres
+  namespace: deployment
 spec:
   generators:
     - list:

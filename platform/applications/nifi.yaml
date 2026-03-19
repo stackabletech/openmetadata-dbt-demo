@@ -3,6 +3,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: nifi
+  namespace: deployment
 spec:
   project: dbt-openmetadata-demo
   destination:
