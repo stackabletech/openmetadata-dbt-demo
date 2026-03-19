@@ -3,6 +3,7 @@ apiVersion: trino.stackable.tech/v1alpha1
 kind: TrinoCatalog
 metadata:
   name: lakekeeper-iceberg
+  namespace: platform
   labels:
     trino: trino
 spec:
@@ -21,7 +22,7 @@ spec:
         fs.native-s3.enabled:
           value: "true"
         s3.endpoint:
-          value: "http://garage:3900"
+          value: "http://garage.shared.svc.cluster.local:3900"
         s3.region:
           value: "garage"
         s3.path-style-access:

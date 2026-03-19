@@ -5,6 +5,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: trino-sql-job
+  namespace: platform
 spec:
   template:
     spec:

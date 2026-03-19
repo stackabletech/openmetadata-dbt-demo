@@ -3,6 +3,7 @@ apiVersion: hdfs.stackable.tech/v1alpha1
 kind: HdfsCluster
 metadata:
   name: simple-hdfs
+  namespace: platform
 spec:
   image:
     productVersion: 3.4.2

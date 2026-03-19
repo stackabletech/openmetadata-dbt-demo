@@ -25,7 +25,7 @@ seal-secrets:
             continue
         fi
         echo "Processing: $input_file -> $output_file"
-        kubeseal -n stackable-airflow --controller-namespace sealed-secrets --scope=cluster-wide --format=yaml < "$input_file" > "$output_file"
+        kubeseal --controller-namespace deployment --scope=cluster-wide --format=yaml < "$input_file" > "$output_file"
     done
 
 build-airflow-image:
