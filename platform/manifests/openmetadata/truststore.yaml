@@ -1,0 +1,10 @@
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: TrustStore
+metadata:
+  name: openmetadata-tls-truststore
+  namespace: platform
+spec:
+  secretClassName: tls
+  format: tls-pem
+  targetKind: ConfigMap

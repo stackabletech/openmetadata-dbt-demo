@@ -28,10 +28,10 @@ spec:
                 scheme: https
                 trustStore:
                   enabled: true
-                  path: /certs/truststore.p12
+                  path: /certs-jks/truststore.jks
                   password:
-                    secretRef: "openmetadata-truststore-credentials"
-                    secretKey: "openmetadata-truststore-password"
+                    secretRef: openmetadata-truststore-credentials
+                    secretKey: openmetadata-truststore-password
                 auth:
                   enabled: true
                   username: "admin"
@@ -59,27 +59,36 @@ spec:
                 k8s:
                   # Container image for ingestion jobs
                   ingestionImage: "docker.getcollate.io/openmetadata/ingestion-base:1.12.1"
-          podSecurityContext:
-            fsGroup: 1000
+          extraInitContainers:
+            - name: convert-truststore
+              image: eclipse-temurin:21-jre
+              command:
+                - sh
+                - -c
+                - |
+                  keytool -importcert \
+                    -file /certs-pem/ca.crt \
+                    -keystore /certs-jks/truststore.jks \
+                    -storetype JKS \
+                    -storepass changeit \
+                    -alias stackable-ca \
+                    -noprompt
+              volumeMounts:
+                - name: ca-cert
+                  mountPath: /certs-pem
+                  readOnly: true
+                - name: certs-jks
+                  mountPath: /certs-jks
           extraVolumes:
-            - name: tls
-              ephemeral:
-                volumeClaimTemplate:
-                  metadata:
-                    annotations:
-                      secrets.stackable.tech/class: tls
-                      secrets.stackable.tech/scope: pod
-                      secrets.stackable.tech/format: tls-pkcs12
-                  spec:
-                    storageClassName: secrets.stackable.tech
-                    accessModes:
-                      - ReadWriteOnce
-                    resources:
-                      requests:
-                        storage: "1"
+            - name: ca-cert
+              configMap:
+                name: openmetadata-tls-truststore
+            - name: certs-jks
+              emptyDir: {}
           extraVolumeMounts:
-            - name: tls
-              mountPath: /certs
+            - name: certs-jks
+              mountPath: /certs-jks
+              readOnly: true
     - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "main"
       path: platform/manifests/openmetadata/
