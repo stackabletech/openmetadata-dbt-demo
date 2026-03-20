@@ -48,7 +48,7 @@ spec:
                   username: openmetadata
                   password:
                     secretRef: postgresql-openmetadata
-                    secretKey: password
+                    secretKey: openmetadata-postgresql-password
                 dbParams: ""
               # No Airflow deploy step needed with the k8s pipeline client
               deployPipelinesConfig:
