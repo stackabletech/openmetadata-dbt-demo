@@ -209,13 +209,27 @@ data:
                 raise
 
 
+    def deploy_pipeline(token, pipeline):
+        """Deploy an ingestion pipeline to the pipeline service (without triggering a run)."""
+        pipeline_id = pipeline["id"]
+        fqn = pipeline["fullyQualifiedName"]
+        print(f"Deploying pipeline '{fqn}' ...")
+        try:
+            api_request(f"/services/ingestionPipelines/deploy/{pipeline_id}", method="POST", token=token)
+            print(f"  Pipeline '{fqn}' deployed.")
+        except urllib.error.HTTPError as e:
+            print(f"  WARNING: Failed to deploy pipeline '{fqn}': HTTP {e.code}", file=sys.stderr)
+
+
     def main():
         wait_for_api()
         token = login()
         trigger_search_reindex(token)
         service = create_database_service(token)
-        create_ingestion_pipeline(token, service)
-        create_dbt_pipeline(token, service)
+        metadata_pipeline = create_ingestion_pipeline(token, service)
+        dbt_pipeline = create_dbt_pipeline(token, service)
+        deploy_pipeline(token, metadata_pipeline)
+        deploy_pipeline(token, dbt_pipeline)
         print("Done — Trino is registered in OpenMetadata with metadata and dbt pipelines.")
 
 
