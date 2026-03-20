@@ -7,7 +7,7 @@ metadata:
 data:
   configure.py: |
     #!/usr/bin/env python3
-    """Configure OpenMetadata: register Trino as a database service and trigger ingestion."""
+    """Configure OpenMetadata: register Trino as a database service and create ingestion pipelines."""
 
     import base64
     import json
@@ -190,41 +190,12 @@ data:
         return result
 
 
-    def deploy_pipeline(token, pipeline):
-        """Deploy the ingestion pipeline (required before triggering)."""
-        pipeline_id = pipeline["id"]
-        fqn = pipeline.get("fullyQualifiedName", pipeline_id)
-        print(f"Deploying ingestion pipeline {fqn} ...")
-        try:
-            api_request(f"/services/ingestionPipelines/deploy/{pipeline_id}", method="POST", token=token)
-            print("  Pipeline deployed successfully.")
-        except Exception as e:
-            print(f"  Warning: Could not deploy pipeline: {e}")
-            print("  The pipeline can be deployed from the UI.")
-
-
-    def trigger_ingestion(token, pipeline):
-        """Trigger the ingestion pipeline."""
-        pipeline_id = pipeline["id"]
-        print(f"Triggering ingestion pipeline {pipeline_id} ...")
-        try:
-            api_request(f"/services/ingestionPipelines/trigger/{pipeline_id}", method="POST", token=token)
-            print("  Ingestion triggered successfully.")
-        except Exception as e:
-            print(f"  Warning: Could not trigger ingestion: {e}")
-            print("  The pipeline is registered and can be triggered from the UI.")
-
-
     def main():
         wait_for_api()
         token = login()
         service = create_database_service(token)
-        pipeline = create_ingestion_pipeline(token, service)
-        deploy_pipeline(token, pipeline)
-        trigger_ingestion(token, pipeline)
-        dbt_pipeline = create_dbt_pipeline(token, service)
-        deploy_pipeline(token, dbt_pipeline)
-        trigger_ingestion(token, dbt_pipeline)
+        create_ingestion_pipeline(token, service)
+        create_dbt_pipeline(token, service)
         print("Done — Trino is registered in OpenMetadata with metadata and dbt pipelines.")
 
 
