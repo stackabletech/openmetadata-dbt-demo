@@ -59,6 +59,8 @@ spec:
                 k8s:
                   # Container image for ingestion jobs
                   ingestionImage: "docker.getcollate.io/openmetadata/ingestion-base:1.12.1"
+          podSecurityContext:
+            fsGroup: 1000
           extraVolumes:
             - name: tls
               ephemeral:
