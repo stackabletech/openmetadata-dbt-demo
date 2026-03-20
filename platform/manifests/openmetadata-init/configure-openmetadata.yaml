@@ -190,9 +190,28 @@ data:
         return result
 
 
+    def trigger_search_reindex(token):
+        """Trigger the SearchIndexingApplication to create/update search indexes."""
+        print("Triggering search reindex ...")
+        try:
+            result = api_request(
+                "/apps/trigger/SearchIndexingApplication",
+                method="POST",
+                token=token,
+            )
+            print("  Search reindex triggered successfully.")
+            return result
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print("  WARNING: SearchIndexingApplication not found, skipping reindex.", file=sys.stderr)
+            else:
+                raise
+
+
     def main():
         wait_for_api()
         token = login()
+        trigger_search_reindex(token)
         service = create_database_service(token)
         create_ingestion_pipeline(token, service)
         create_dbt_pipeline(token, service)
