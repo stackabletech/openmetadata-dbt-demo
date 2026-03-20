@@ -193,18 +193,19 @@ data:
     def trigger_search_reindex(token):
         """Trigger the SearchIndexingApplication to create/update search indexes."""
         print("Triggering search reindex ...")
+        url = f"{API}/apps/trigger/SearchIndexingApplication"
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+        req = urllib.request.Request(url, headers=headers, method="POST")
         try:
-            result = api_request(
-                "/apps/trigger/SearchIndexingApplication",
-                method="POST",
-                token=token,
-            )
+            with urllib.request.urlopen(req) as resp:
+                resp.read()
             print("  Search reindex triggered successfully.")
-            return result
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 print("  WARNING: SearchIndexingApplication not found, skipping reindex.", file=sys.stderr)
             else:
+                error_body = e.read().decode() if e.fp else ""
+                print(f"  HTTP {e.code} triggering reindex: {error_body}", file=sys.stderr)
                 raise
 
 
