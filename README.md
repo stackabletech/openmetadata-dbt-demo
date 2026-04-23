@@ -173,15 +173,11 @@ Since ArgoCD manages the cluster, all changes should be committed to Git:
 
 To add a new component, see the patterns documented in [CLAUDE.md](CLAUDE.md).
 
-### AKS Limitations
+### Portability
 
-This demo currently only runs on Azure Kubernetes Service (AKS), due to the requirement for `ReadWriteMany` PVCs for Airflow logs and DAGs. 
-The default AKS StorageClass (`disk.csi.azure.com`) only supports `ReadWriteOnce`, so these are hardcoded to an AKS storageclass that supports `ReadWriteMany`.
-We plan to fix this at some point, but have not yet gotten around to it.
+The platform was originally AKS-only because Airflow mounted a `ReadWriteMany` PVC (`azurefile`) to share dbt artifacts between executor pods. That volume has been removed — dbt artifacts now flow through GarageFS (S3) using a per-task upload callback and a merging finalize step. The demo no longer depends on an RWX storage class.
 
-The `openmetadata-dependencies` application is configured to use `azurefile-csi-premium` for these PVCs. If your AKS cluster does not have this StorageClass, you need to either:
-- Create an Azure Files StorageClass that supports `ReadWriteMany`
-- Disable the bundled Airflow in the OpenMetadata dependencies chart
+The OpenTofu configuration in `tofu/` still provisions AKS, but the Kubernetes manifests themselves are portable. Running on another cloud or on-prem cluster requires only swapping the infra provisioning.
 
 ## Directory Structure
 
