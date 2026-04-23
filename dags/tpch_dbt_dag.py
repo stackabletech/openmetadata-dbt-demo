@@ -3,17 +3,15 @@ from datetime import datetime
 from pathlib import Path
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator, PythonVirtualenvOperator
 from airflow.sensors.python import PythonSensor
 from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, ExecutionConfig, RenderConfig
 from cosmos.constants import ExecutionMode, LoadMode
 
 DBT_PROJECT_PATH = Path("/stackable/app/git-0/current/dags/dbt/tpch_demo")
-DBT_TARGET_PATH = Path("/shared/dbt-target")
+DBT_TARGET_PATH = Path("/tmp/dbt-target")
 S3_BUCKET = "dbt-artifacts"
 S3_PREFIX = "tpch_demo"
-ARTIFACTS = ["manifest.json", "catalog.json", "run_results.json"]
-
 OM_HOST = "http://openmetadata:8585"
 OM_API = f"{OM_HOST}/api/v1"
 OM_ADMIN_EMAIL = "admin@open-metadata.org"
@@ -59,37 +57,6 @@ def check_services_ready(**context):
 
     print("  All services are ready.")
     return True
-
-
-def upload_dbt_artifacts(**context):
-    """Upload dbt artifacts from the target directory to GarageFS S3."""
-    import boto3
-    from airflow.hooks.base import BaseHook
-
-    conn = BaseHook.get_connection("garagefs")
-    extras = conn.extra_dejson
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=extras.get("endpoint_url", "http://garage.shared.svc.cluster.local:3900"),
-        aws_access_key_id=conn.login,
-        aws_secret_access_key=conn.password,
-        region_name=extras.get("region_name", "garage"),
-    )
-
-    uploaded = []
-    for artifact in ARTIFACTS:
-        local_path = DBT_TARGET_PATH / artifact
-        if local_path.exists():
-            s3_key = f"{S3_PREFIX}/{artifact}"
-            s3.upload_file(str(local_path), S3_BUCKET, s3_key)
-            print(f"  Uploaded {artifact} -> s3://{S3_BUCKET}/{s3_key}")
-            uploaded.append(artifact)
-        else:
-            print(f"  Skipping {artifact} (not found at {local_path})")
-
-    if not uploaded:
-        raise FileNotFoundError(f"No dbt artifacts found in {DBT_TARGET_PATH}")
-    print(f"Uploaded {len(uploaded)} artifacts to s3://{S3_BUCKET}/{S3_PREFIX}/")
 
 
 def upload_run_results_shard(context):
@@ -379,12 +346,25 @@ with DAG(
             "py_requirements": ["dbt-trino"],
             "install_deps": True,
         },
-        default_args={"retries": 1},
+        default_args={
+            "retries": 1,
+            "on_success_callback": upload_run_results_shard,
+            "on_failure_callback": upload_run_results_shard,
+        },
     )
 
-    upload_artifacts = PythonOperator(
-        task_id="upload_dbt_artifacts",
-        python_callable=upload_dbt_artifacts,
+    finalize = PythonVirtualenvOperator(
+        task_id="finalize_dbt_artifacts",
+        python_callable=finalize_dbt_artifacts,
+        requirements=["dbt-trino"],
+        system_site_packages=True,
+        op_kwargs={
+            "dbt_project_path": str(DBT_PROJECT_PATH),
+            "dbt_target_path": str(DBT_TARGET_PATH),
+            "s3_bucket": S3_BUCKET,
+            "s3_prefix": S3_PREFIX,
+            "run_id_raw": "{{ dag_run.run_id }}",
+        },
     )
 
     trigger_metadata_ingestion = PythonOperator(
@@ -397,4 +377,4 @@ with DAG(
         python_callable=trigger_om_dbt_ingestion,
     )
 
-    wait_for_services >> dbt_tasks >> upload_artifacts >> trigger_metadata_ingestion >> trigger_dbt_ingestion
+    wait_for_services >> dbt_tasks >> finalize >> trigger_metadata_ingestion >> trigger_dbt_ingestion
