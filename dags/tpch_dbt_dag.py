@@ -129,6 +129,104 @@ def upload_run_results_shard(context):
     print(f"  Uploaded run_results shard -> s3://{S3_BUCKET}/{key}")
 
 
+def finalize_dbt_artifacts(
+    dbt_project_path: str,
+    dbt_target_path: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    run_id_raw: str,
+):
+    """Merge per-task run_results shards, regenerate manifest+catalog via
+    dbt docs generate, publish all three canonical artifacts to S3, and delete
+    the shard prefix.
+
+    Runs inside a PythonVirtualenvOperator with system_site_packages=True and
+    dbt-trino installed into the venv. Must be self-contained — helpers and
+    imports live inside the body because the callable is serialized into a
+    subprocess.
+    """
+    import json
+    import os
+    from pathlib import Path
+    from urllib.parse import quote
+    import boto3
+    from airflow.hooks.base import BaseHook
+    from dbt.cli.main import dbtRunner
+
+    run_id = quote(run_id_raw, safe="")
+
+    conn = BaseHook.get_connection("garagefs")
+    extras = conn.extra_dejson
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=extras.get("endpoint_url", "http://garage.shared.svc.cluster.local:3900"),
+        aws_access_key_id=conn.login,
+        aws_secret_access_key=conn.password,
+        region_name=extras.get("region_name", "garage"),
+    )
+
+    # 1. List and download all run_results shards for this DAG run.
+    shard_prefix = f"_runs/{run_id}/run_results/"
+    resp = s3.list_objects_v2(Bucket=s3_bucket, Prefix=shard_prefix)
+    shard_keys = [obj["Key"] for obj in resp.get("Contents", [])]
+    print(f"Found {len(shard_keys)} shards at s3://{s3_bucket}/{shard_prefix}")
+    if not shard_keys:
+        raise RuntimeError(
+            f"No run_results shards under s3://{s3_bucket}/{shard_prefix}; "
+            "upstream dbt tasks did not upload anything"
+        )
+
+    # 2. Merge shards. Each shard's "results" array has one entry (Cosmos runs
+    #    one dbt node per task). We concatenate results, preserve metadata/args
+    #    from the first shard, and sum execution_time for elapsed_time.
+    merged_results = []
+    template = None
+    for key in shard_keys:
+        data = json.loads(s3.get_object(Bucket=s3_bucket, Key=key)["Body"].read())
+        if template is None:
+            template = data
+        merged_results.extend(data.get("results", []))
+    merged = {
+        "metadata": template["metadata"],
+        "args": template["args"],
+        "elapsed_time": sum(r.get("execution_time", 0) for r in merged_results),
+        "results": merged_results,
+    }
+
+    # 3. Write merged run_results.json into the pod-local dbt target dir.
+    target = Path(dbt_target_path)
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "run_results.json").write_text(json.dumps(merged))
+    print(f"Wrote merged run_results.json with {len(merged_results)} result entries")
+
+    # 4. dbt docs generate — compiles the project (writes manifest.json) and
+    #    queries Trino information_schema (writes catalog.json) into target.
+    os.environ["DBT_TARGET_PATH"] = str(target)
+    result = dbtRunner().invoke([
+        "docs", "generate",
+        "--project-dir", dbt_project_path,
+        "--profiles-dir", dbt_project_path,
+    ])
+    if not result.success:
+        raise RuntimeError(f"dbt docs generate failed: {result.exception}")
+    print("dbt docs generate succeeded")
+
+    # 5. Upload canonical artifacts to the OM-watched prefix.
+    for name in ("manifest.json", "catalog.json", "run_results.json"):
+        local = target / name
+        if not local.exists():
+            raise FileNotFoundError(f"Expected {name} at {local} after dbt docs generate")
+        s3.upload_file(str(local), s3_bucket, f"{s3_prefix}/{name}")
+        print(f"  Uploaded {name} -> s3://{s3_bucket}/{s3_prefix}/{name}")
+
+    # 6. Cleanup shard prefix.
+    s3.delete_objects(
+        Bucket=s3_bucket,
+        Delete={"Objects": [{"Key": k} for k in shard_keys]},
+    )
+    print(f"Deleted {len(shard_keys)} shards under {shard_prefix}")
+
+
 def _om_helpers():
     """Return shared OpenMetadata API helper functions."""
     import base64
