@@ -8,8 +8,8 @@ A GitOps-managed Kubernetes demo that showcases the [Stackable Data Platform](ht
 
 The demo deploys a complete data lakehouse on Kubernetes, with TPC-H sample data flowing through dbt models in Trino, Iceberg tables managed by Lakekeeper, S3-compatible storage via GarageFS, and metadata governance through OpenMetadata — all orchestrated by Airflow and continuously deployed via ArgoCD.
 
-> [!IMPORTANT]
-> This demo currently only runs on AKS (Azure Kubernetes Service) due to hardcoded storage class requirements. See [AKS Limitations](#aks-limitations) for details.
+> [!NOTE]
+> The OpenTofu configuration in `tofu/` provisions AKS, but the Kubernetes manifests themselves no longer require any cloud-specific storage class. See [Portability](#portability) for details.
 
 ## Architecture
 
@@ -202,7 +202,6 @@ platform/                          # Everything ArgoCD manages after bootstrap
     ├── lakekeeper-init/           # Lakekeeper bootstrap + warehouse creation
     ├── openmetadata-init/         # OpenMetadata service + pipeline registration
     ├── openmetadata/              # OpenMetadata sealed secrets
-    ├── openmetadata-dependencies/ # Airflow DB migration job
     ├── superset/                  # Apache Superset deployment
     ├── superset-postgres/         # PostgreSQL for Superset
     └── ...                        # HDFS, Hive, Kafka, NiFi, ZooKeeper, etc.
