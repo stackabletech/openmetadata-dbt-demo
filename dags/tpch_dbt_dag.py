@@ -92,6 +92,43 @@ def upload_dbt_artifacts(**context):
     print(f"Uploaded {len(uploaded)} artifacts to s3://{S3_BUCKET}/{S3_PREFIX}/")
 
 
+def upload_run_results_shard(context):
+    """Upload this task's run_results.json shard to GarageFS after dbt execution.
+
+    Runs as the Airflow on_success_callback / on_failure_callback for each
+    Cosmos-generated dbt task. Failed tasks often still produce a valid
+    run_results.json (e.g. test failures) that OpenMetadata wants to ingest, so
+    we upload on both success and failure.
+    """
+    import os
+    from pathlib import Path
+    from urllib.parse import quote
+    import boto3
+    from airflow.hooks.base import BaseHook
+
+    target_dir = Path(os.environ.get("DBT_TARGET_PATH", "/tmp/dbt-target"))
+    local = target_dir / "run_results.json"
+    if not local.exists():
+        print(f"  No run_results.json at {local}; nothing to upload")
+        return
+
+    run_id = quote(context["dag_run"].run_id, safe="")
+    task_id = context["ti"].task_id
+    key = f"_runs/{run_id}/run_results/{task_id}.json"
+
+    conn = BaseHook.get_connection("garagefs")
+    extras = conn.extra_dejson
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=extras.get("endpoint_url", "http://garage.shared.svc.cluster.local:3900"),
+        aws_access_key_id=conn.login,
+        aws_secret_access_key=conn.password,
+        region_name=extras.get("region_name", "garage"),
+    )
+    s3.upload_file(str(local), S3_BUCKET, key)
+    print(f"  Uploaded run_results shard -> s3://{S3_BUCKET}/{key}")
+
+
 def _om_helpers():
     """Return shared OpenMetadata API helper functions."""
     import base64
