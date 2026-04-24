@@ -38,6 +38,13 @@ spec:
               secretKeyRef:
                 name: initial-opensearch-security-config
                 key: internal_users.yml
+        roles:
+          managedBy: API
+          content:
+            valueFrom:
+              secretKeyRef:
+                name: initial-opensearch-security-config
+                key: roles.yml
         rolesMapping:
           managedBy: API
           content:
