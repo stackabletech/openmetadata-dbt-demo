@@ -23,7 +23,7 @@ spec:
       containers:
         - name: landing
           image: oci.stackable.tech/sandbox/demo-landing:0.1.0-dev
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           env:
             - name: CONTENT_DIR
               value: /git/current/website
