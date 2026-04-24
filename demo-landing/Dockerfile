@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 
-FROM rust:latest AS builder
+FROM rust:1.88-bookworm AS builder
 WORKDIR /src
 
 # Cache dep compilation: copy manifests first, build a stub, then copy sources.
