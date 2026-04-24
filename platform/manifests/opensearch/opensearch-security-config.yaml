@@ -20,6 +20,45 @@ stringData:
       hash: $2y$10$vPgQ/6ilKDM5utawBqxoR.7euhVQ0qeGl8mPTeKhmFT475WUDrfQS
       reserved: true
       description: OpenSearch Dashboards user
+    openmetadata:
+      hash: $2y$10$m348da0AnaW/1Mn.6gSzU.52YovR7pHTWexjtjJvqT4gSqP3rpCji
+      backend_roles:
+      - openmetadata
+      description: OpenMetadata search backend
+    logs:
+      hash: $2y$10$LnPJaCbfHJYASAkEhwFDzuEDAs3YngxuL7m243O7Wa7jaD6QiRqTy
+      backend_roles:
+      - logs
+      description: Vector aggregator log writer
+  roles.yml: |
+    ---
+    _meta:
+      type: roles
+      config_version: 2
+    openmetadata_app:
+      cluster_permissions:
+        - cluster_monitor
+        - cluster_composite_ops
+        - "indices:admin/template/*"
+      index_permissions:
+        - index_patterns:
+            - "*_search_index*"
+            - "entity_report_data_index*"
+            - "test_case_resolution_status_search_index*"
+            - "test_case_result_search_index*"
+          allowed_actions: ["indices_all"]
+    logs_writer:
+      cluster_permissions:
+        - cluster_monitor
+        - cluster_composite_ops
+      index_permissions:
+        - index_patterns: ["logs-*"]
+          allowed_actions:
+            - "indices:data/write/bulk*"
+            - "indices:data/write/index"
+            - "indices:admin/create"
+            - "indices:admin/mapping/put"
+            - "indices:admin/mappings/fields/get"
   roles_mapping.yml: |
     ---
     _meta:
@@ -33,3 +72,9 @@ stringData:
       reserved: true
       users:
       - kibanaserver
+    openmetadata_app:
+      backend_roles:
+      - openmetadata
+    logs_writer:
+      backend_roles:
+      - logs
