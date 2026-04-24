@@ -1,4 +1,5 @@
 # This file is an airflow DAG definition using Astronomer Cosmos for dbt orchestration.
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -358,7 +359,10 @@ with DAG(
         python_callable=finalize_dbt_artifacts,
         requirements=["dbt-trino"],
         system_site_packages=True,
-        python_version="3.12",
+        # Point uv at Airflow's own interpreter so --system-site-packages
+        # inherits Stackable's /stackable/app/lib64/python3.12/site-packages
+        # (airflow, boto3). A bare "3.12" resolves to a different Python.
+        python_version=sys.executable,
         op_kwargs={
             "dbt_project_path": str(DBT_PROJECT_PATH),
             "dbt_target_path": str(DBT_TARGET_PATH),
