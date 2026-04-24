@@ -24,7 +24,7 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
-          extraEnvsFrom:
+          envFrom:
             - secretRef:
                 name: opensearch-logs-credentials
           customConfig:
