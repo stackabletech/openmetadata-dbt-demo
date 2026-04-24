@@ -6,21 +6,22 @@ a handful of supporting components.
 
 ## Access
 
-| Service | URL |
-|---|---|
-| **ArgoCD** | [https://{{ nodeport "argocd-server-nodeport" }}/applications](https://{{ nodeport "argocd-server-nodeport" }}/applications) |
-| **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/](http://{{ nodeport "forgejo-http-nodeport" }}/) |
-| **OpenMetadata** | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) |
+| Service | URL | Username | Password |
+|---|---|---|---|
+| **ArgoCD** | [https://{{ nodeport "argocd-server-nodeport" }}/applications](https://{{ nodeport "argocd-server-nodeport" }}/applications) | `admin` | `adminadmin` |
+| **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/](http://{{ nodeport "forgejo-http-nodeport" }}/) | `stackable` | `stackable` |
+| **OpenMetadata** | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` |
+| **Airflow** | [http://{{ nodeport "airflow-webserver" }}/](http://{{ nodeport "airflow-webserver" }}/) | `admin` | `admin` |
+| **Trino** | [https://{{ nodeport "trino-coordinator" }}/](https://{{ nodeport "trino-coordinator" }}/) | `admin` | *(none)* |
+| **Superset** | [http://{{ nodeport "simple-superset-node" }}/](http://{{ nodeport "simple-superset-node" }}/) | — | — |
+| **OpenSearch** | [https://{{ nodeport "simple-opensearch" }}/](https://{{ nodeport "simple-opensearch" }}/) | — | — |
+| **NiFi** | [https://{{ nodeport "nifi-node" }}/](https://{{ nodeport "nifi-node" }}/) | *(see sealed secret)* | *(see sealed secret)* |
+| **HDFS** namenode-0 | [https://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/](https://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/) | — | — |
+| **HDFS** namenode-1 | [https://{{ nodeport "listener-simple-hdfs-namenode-default-1" }}/](https://{{ nodeport "listener-simple-hdfs-namenode-default-1" }}/) | — | — |
+| **HDFS** datanode-0 | [https://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/](https://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/) | — | — |
 
-ArgoCD uses a self-signed cert; accept the browser warning on first visit.
-
-## Default credentials
-
-| Service | Username | Password |
-|---|---|---|
-| ArgoCD | `admin` | `adminadmin` |
-| Forgejo | `stackable` | `stackable` |
-| OpenMetadata | `admin@open-metadata.org` | `admin` |
+Most Stackable-managed services run with a self-signed certificate; accept
+the browser warning on first visit.
 
 ## What to look at
 
