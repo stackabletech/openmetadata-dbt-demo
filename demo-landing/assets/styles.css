@@ -5,7 +5,42 @@
  * packages/shared-components/src/lib/theme/stackable-theme.css of the
  * stackable-apps repo (daisyUI-based). Kept as plain CSS here so the tool
  * stays framework-free.
+ *
+ * Fonts are bundled and served by the tool itself (no external CDN) to
+ * avoid the GDPR concerns around third-party font hosts.
  */
+
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/NotoSans-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/NotoSans-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/IBMPlexMono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/IBMPlexMono-700.woff2') format('woff2');
+}
 
 :root {
   --color-primary: #1680bd;

@@ -30,6 +30,30 @@ pub async fn styles() -> Response {
     ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], STYLES_CSS).into_response()
 }
 
+// Brand fonts bundled into the binary so the landing page has no external
+// font dependency (matches the portal's @fontsource approach for GDPR).
+const FONT_NOTO_400: &[u8] = include_bytes!("../assets/fonts/NotoSans-400.woff2");
+const FONT_NOTO_700: &[u8] = include_bytes!("../assets/fonts/NotoSans-700.woff2");
+const FONT_IBM_400: &[u8] = include_bytes!("../assets/fonts/IBMPlexMono-400.woff2");
+const FONT_IBM_700: &[u8] = include_bytes!("../assets/fonts/IBMPlexMono-700.woff2");
+
+pub async fn fonts(Path(name): Path<String>) -> Response {
+    let bytes: &[u8] = match name.as_str() {
+        "NotoSans-400.woff2" => FONT_NOTO_400,
+        "NotoSans-700.woff2" => FONT_NOTO_700,
+        "IBMPlexMono-400.woff2" => FONT_IBM_400,
+        "IBMPlexMono-700.woff2" => FONT_IBM_700,
+        _ => return (StatusCode::NOT_FOUND, "").into_response(),
+    };
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, "font/woff2".parse().unwrap());
+    headers.insert(
+        header::CACHE_CONTROL,
+        "public, max-age=31536000, immutable".parse().unwrap(),
+    );
+    (headers, Body::from(bytes)).into_response()
+}
+
 pub async fn index(State(state): State<AppState>) -> Response {
     let path = state.content_dir.join("index.md");
     let markdown = match tokio::fs::read_to_string(&path).await {

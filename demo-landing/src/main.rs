@@ -140,6 +140,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(routes::index))
         .route("/styles.css", get(routes::styles))
+        .route("/fonts/:name", get(routes::fonts))
         .route("/images/*path", get(routes::image))
         .route("/healthz", get(routes::healthz))
         .layer(tower_http::trace::TraceLayer::new_for_http())
