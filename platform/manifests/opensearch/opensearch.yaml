@@ -45,9 +45,13 @@ spec:
               secretKeyRef:
                 name: initial-opensearch-security-config
                 key: roles_mapping.yml
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   nodes:
     roleConfig:
       discoveryServiceListenerClass: external-unstable
+    config:
+      logging:
+        enableVectorAgent: true
     roleGroups:
       default:
         replicas: 3

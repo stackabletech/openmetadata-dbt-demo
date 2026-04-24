@@ -13,9 +13,13 @@ spec:
     sensitiveProperties:
       keySecret: nifi-sensitive-property-key
       autoGenerate: true
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   nodes:
     roleConfig:
       listenerClass: external-unstable
+    config:
+      logging:
+        enableVectorAgent: true
     roleGroups:
       default:
         replicas: 1

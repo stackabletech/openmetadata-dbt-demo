@@ -7,13 +7,20 @@ metadata:
 spec:
   clusterConfig:
     metadataManager: kraft
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   image:
     productVersion: "3.9.1"
   brokers:
+    config:
+      logging:
+        enableVectorAgent: true
     roleGroups:
       default:
         replicas: 3
   controllers:
+    config:
+      logging:
+        enableVectorAgent: true
     roleGroups:
       default:
         replicas: 3

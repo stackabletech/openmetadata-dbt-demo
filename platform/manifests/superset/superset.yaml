@@ -9,9 +9,13 @@ spec:
     productVersion: 6.0.0
   clusterConfig:
     credentialsSecret: simple-superset-credentials
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   nodes:
     roleConfig:
       listenerClass: external-unstable
+    config:
+      logging:
+        enableVectorAgent: true
     roleGroups:
       default:
         config:

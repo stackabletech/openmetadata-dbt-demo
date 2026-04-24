@@ -10,11 +10,14 @@ spec:
   clusterConfig:
     zookeeperConfigMapName: simple-hdfs-znode
     dfsReplication: 1
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   nameNodes:
     configOverrides: &configOverrides
       core-site.xml:
         hadoop.user.group.static.mapping.overrides: "dr.who=;nn=;nm=;jn=;trino=supergroup;"
     config:
+      logging:
+        enableVectorAgent: true
       listenerClass: external-stable # This exposes your Stacklet outside of Kubernetes. Remove this configuration if this is not desired
     roleGroups:
       default:
@@ -22,12 +25,17 @@ spec:
   dataNodes:
     configOverrides: *configOverrides
     config:
+      logging:
+        enableVectorAgent: true
       listenerClass: external-unstable # This exposes your Stacklet outside of Kubernetes. Remove this configuration if this is not desired
     roleGroups:
       default:
         replicas: 1
   journalNodes:
     configOverrides: *configOverrides
+    config:
+      logging:
+        enableVectorAgent: true
     roleGroups:
       default:
         replicas: 1

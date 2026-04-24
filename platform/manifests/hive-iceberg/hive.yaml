@@ -14,7 +14,11 @@ spec:
       dbType: postgres
     hdfs:
       configMap: simple-hdfs
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   metastore:
+    config:
+      logging:
+        enableVectorAgent: true
     roleGroups:
       default:
         replicas: 1

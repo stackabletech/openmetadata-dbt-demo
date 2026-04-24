@@ -24,6 +24,7 @@ spec:
         branch: main
         gitFolder: "dags"
         depth: 2
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   webservers:
     roleConfig:
       listenerClass: external-stable
@@ -46,6 +47,8 @@ spec:
                     name: garagefs-airflow-credentials
                     key: airflow-connection
     config:
+      logging:
+        enableVectorAgent: true
       gracefulShutdownTimeout: 30s
       resources:
         cpu:
@@ -57,6 +60,9 @@ spec:
       default:
         replicas: 1
   kubernetesExecutors:
+    config:
+      logging:
+        enableVectorAgent: true
     envOverrides: *envOverrides
     podOverrides:
       spec:
@@ -74,6 +80,8 @@ spec:
     envOverrides: *envOverrides
     podOverrides: *podOverrides
     config:
+      logging:
+        enableVectorAgent: true
       gracefulShutdownTimeout: 30s
       resources:
         cpu:
@@ -88,6 +96,8 @@ spec:
     envOverrides: *envOverrides
     podOverrides: *podOverrides
     config:
+      logging:
+        enableVectorAgent: true
       gracefulShutdownTimeout: 30s
       resources:
         cpu:
