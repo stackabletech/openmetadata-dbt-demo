@@ -8,9 +8,9 @@ a handful of supporting components.
 
 | Service | URL |
 |---|---|
-| **ArgoCD** | <https://{{ nodeport "argocd-server-nodeport" }}/applications> |
-| **Forgejo** | <http://{{ nodeport "forgejo-http-nodeport" }}/> |
-| **OpenMetadata** | <http://{{ nodeport "openmetadata-nodeport" }}/> |
+| **ArgoCD** | [https://{{ nodeport "argocd-server-nodeport" }}/applications](https://{{ nodeport "argocd-server-nodeport" }}/applications) |
+| **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/](http://{{ nodeport "forgejo-http-nodeport" }}/) |
+| **OpenMetadata** | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) |
 
 ArgoCD uses a self-signed cert; accept the browser warning on first visit.
 
