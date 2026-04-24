@@ -1,4 +1,5 @@
 mod kube;
+mod render;
 mod template;
 
 use axum::{routing::get, Router};
