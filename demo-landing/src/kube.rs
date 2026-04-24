@@ -119,4 +119,18 @@ mod tests {
         let err = mock.lookup_service("nope").await.unwrap_err();
         matches!(err, LookupError::NotFound(_));
     }
+
+    #[tokio::test]
+    async fn node_ip_returns_configured_ip() {
+        let mock = MockLookup::new().with_node_ip("74.234.12.5");
+        let got = mock.pick_node_ip().await.unwrap();
+        assert_eq!(got, "74.234.12.5");
+    }
+
+    #[tokio::test]
+    async fn node_ip_returns_error_when_no_ready_node() {
+        let mock = MockLookup::new(); // default: NoReadyNode
+        let err = mock.pick_node_ip().await.unwrap_err();
+        assert!(matches!(err, LookupError::NoReadyNode));
+    }
 }
