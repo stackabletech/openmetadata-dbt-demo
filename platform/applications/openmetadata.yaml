@@ -34,10 +34,10 @@ spec:
                     secretKey: openmetadata-truststore-password
                 auth:
                   enabled: true
-                  username: "admin"
+                  username: "openmetadata"
                   password:
-                    secretRef: openmetadata-opensearch-credentials
-                    secretKey: openmetadata-elasticsearch-password
+                    secretRef: opensearch-openmetadata-credentials
+                    secretKey: password
               database:
                 host: postgresql-openmetadata.shared.svc.cluster.local
                 port: 5432
