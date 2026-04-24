@@ -1,5 +1,4 @@
 # This file is an airflow DAG definition using Astronomer Cosmos for dbt orchestration.
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -108,28 +107,31 @@ def finalize_dbt_artifacts(
     dbt docs generate, publish all three canonical artifacts to S3, and delete
     the shard prefix.
 
-    Runs inside a PythonVirtualenvOperator with system_site_packages=True and
-    dbt-trino installed into the venv. Must be self-contained — helpers and
-    imports live inside the body because the callable is serialized into a
-    subprocess.
+    Runs inside a PythonVirtualenvOperator with dbt-trino + boto3 installed
+    into the venv. Fully self-contained — imports live inside the body because
+    the callable is serialized into a subprocess, and we avoid `airflow.*`
+    imports entirely because uv's venv doesn't inherit the Stackable Airflow
+    image's site-packages reliably. The garagefs connection is read straight
+    from the AIRFLOW_CONN_GARAGEFS env var (which Airflow sets on executor
+    pods from the garagefs-airflow-credentials secret).
     """
     import json
     import os
     from pathlib import Path
-    from urllib.parse import quote
+    from urllib.parse import quote, urlparse, parse_qs, unquote
     import boto3
-    from airflow.hooks.base import BaseHook
     from dbt.cli.main import dbtRunner
 
     run_id = quote(run_id_raw, safe="")
 
-    conn = BaseHook.get_connection("garagefs")
-    extras = conn.extra_dejson
+    conn_uri = os.environ["AIRFLOW_CONN_GARAGEFS"]
+    parsed = urlparse(conn_uri)
+    extras = {k: v[0] for k, v in parse_qs(parsed.query).items()}
     s3 = boto3.client(
         "s3",
         endpoint_url=extras.get("endpoint_url", "http://garage.shared.svc.cluster.local:3900"),
-        aws_access_key_id=conn.login,
-        aws_secret_access_key=conn.password,
+        aws_access_key_id=unquote(parsed.username or ""),
+        aws_secret_access_key=unquote(parsed.password or ""),
         region_name=extras.get("region_name", "garage"),
     )
 
@@ -357,12 +359,9 @@ with DAG(
     finalize = PythonVirtualenvOperator(
         task_id="finalize_dbt_artifacts",
         python_callable=finalize_dbt_artifacts,
-        requirements=["dbt-trino"],
-        system_site_packages=True,
-        # Point uv at Airflow's own interpreter so --system-site-packages
-        # inherits Stackable's /stackable/app/lib64/python3.12/site-packages
-        # (airflow, boto3). A bare "3.12" resolves to a different Python.
-        python_version=sys.executable,
+        requirements=["dbt-trino", "boto3"],
+        system_site_packages=False,
+        python_version="3.12",
         op_kwargs={
             "dbt_project_path": str(DBT_PROJECT_PATH),
             "dbt_target_path": str(DBT_TARGET_PATH),
