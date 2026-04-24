@@ -358,6 +358,7 @@ with DAG(
         python_callable=finalize_dbt_artifacts,
         requirements=["dbt-trino"],
         system_site_packages=True,
+        python_version="3.12",
         op_kwargs={
             "dbt_project_path": str(DBT_PROJECT_PATH),
             "dbt_target_path": str(DBT_TARGET_PATH),
