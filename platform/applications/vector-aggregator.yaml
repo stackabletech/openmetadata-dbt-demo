@@ -1,0 +1,66 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vector-aggregator
+  namespace: deployment
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  sources:
+    - repoURL: "https://helm.vector.dev"
+      chart: vector
+      targetRevision: "0.44.0" # renovate: registryUrl=https://helm.vector.dev datasource=helm depName=vector
+      helm:
+        releaseName: vector-aggregator
+        valuesObject:
+          role: Aggregator
+          replicas: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          extraEnvsFrom:
+            - secretRef:
+                name: opensearch-logs-credentials
+          customConfig:
+            data_dir: /vector-data-dir
+            api:
+              enabled: true
+              address: 127.0.0.1:8686
+            sources:
+              vector:
+                type: vector
+                address: 0.0.0.0:6000
+                version: "2"
+            sinks:
+              console:
+                type: console
+                inputs: [vector]
+                encoding:
+                  codec: json
+              opensearch:
+                type: elasticsearch
+                inputs: [vector]
+                endpoint: "https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"
+                auth:
+                  strategy: basic
+                  user: "${OPENSEARCH_USER}"
+                  password: "${OPENSEARCH_PASSWORD}"
+                tls:
+                  verify_certificate: false
+                bulk:
+                  index: "logs-%Y.%m.%d"
+    - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
+      targetRevision: "main"
+      path: platform/manifests/vector-aggregator/
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
