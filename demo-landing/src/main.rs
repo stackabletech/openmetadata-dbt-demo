@@ -1,3 +1,5 @@
+mod auth;
+mod forgejo;
 mod kube;
 mod render;
 mod routes;
@@ -11,6 +13,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::forgejo::ForgejoClient;
 use crate::kube::{LookupError, ServiceInfo, ServiceLookup};
 use crate::routes::AppState;
 
@@ -127,14 +130,23 @@ async fn main() -> anyhow::Result<()> {
     let listen_addr: SocketAddr = std::env::var("LISTEN_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()?;
+    let auth_user = std::env::var("AUTH_USER")
+        .map_err(|_| anyhow::anyhow!("AUTH_USER env var is required"))?;
+    let auth_password = std::env::var("AUTH_PASSWORD")
+        .map_err(|_| anyhow::anyhow!("AUTH_PASSWORD env var is required"))?;
 
     let client = Client::try_default().await?;
     let lookup: Arc<dyn ServiceLookup> =
         Arc::new(KubeClientLookup { client });
 
+    let forgejo = Arc::new(ForgejoClient::from_env()?);
+
     let state = AppState {
         content_dir,
         lookup,
+        forgejo,
+        auth_user,
+        auth_password,
     };
 
     let app = Router::new()
