@@ -106,14 +106,11 @@ fn render_toggle_html(
         Some(ToggleResolution::Ok { sha, value }) => {
             let class = if *value { "switch switch-on" } else { "switch switch-off" };
             let aria = format!("Toggle {} on {}", key, path);
+            // Emitted as a single line so it fits inside one markdown table cell;
+            // embedded newlines would break the row mid-cell and pulldown-cmark
+            // would abort table parsing on the offending line.
             format!(
-                r#"<form class="cell-toggle" method="POST" action="/toggle">
-  <input type="hidden" name="path" value="{p}">
-  <input type="hidden" name="key" value="{k}">
-  <input type="hidden" name="sha" value="{s}">
-  <input type="hidden" name="current_value" value="{v}">
-  <button type="submit" class="{cls}" aria-label="{a}"><span class="switch-knob"></span></button>
-</form>"#,
+                r#"<form class="cell-toggle" method="POST" action="/toggle"><input type="hidden" name="path" value="{p}"><input type="hidden" name="key" value="{k}"><input type="hidden" name="sha" value="{s}"><input type="hidden" name="current_value" value="{v}"><button type="submit" class="{cls}" aria-label="{a}"><span class="switch-knob"></span></button></form>"#,
                 p = html_attr_escape(path),
                 k = html_attr_escape(key),
                 s = html_attr_escape(sha),
