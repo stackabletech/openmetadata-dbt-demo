@@ -7,7 +7,7 @@ a handful of supporting components.
 ## Access
 
 | Service | URL | Username                  | Password |Enabled|
-|---|---|---------------------------|---|
+|---|---|---------------------------|---| |
 | **ArgoCD** | [https://{{ nodeport "argocd-server-nodeport" }}/applications](https://{{ nodeport "argocd-server-nodeport" }}/applications) | `admin`                   | `adminadmin` | |
 | **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/](http://{{ nodeport "forgejo-http-nodeport" }}/) | `stackable`               | `stackable` | |
 | **OpenMetadata** | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | |
