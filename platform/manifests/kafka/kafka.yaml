@@ -5,7 +5,7 @@ metadata:
   name: kafka
   namespace: platform
 spec:
-  clusterOperations:
+  clusterOperation:
     stopped: false
   clusterConfig:
     metadataManager: kraft

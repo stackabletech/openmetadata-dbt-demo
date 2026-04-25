@@ -16,7 +16,7 @@ a handful of supporting components.
 | **Superset** | [http://{{ nodeport "simple-superset-node" }}/](http://{{ nodeport "simple-superset-node" }}/) | — | — | — |
 | **OpenSearch** | [https://{{ nodeport "simple-opensearch" }}/](https://{{ nodeport "simple-opensearch" }}/) | — | — | — |
 | **NiFi** | [https://{{ nodeport "nifi-node" }}/](https://{{ nodeport "nifi-node" }}/) | `admin` | `admin` | — |
-| **Kafka** | — | — | — | {{ toggle "platform/manifests/kafka/kafka.yaml" "spec.clusterOperations.stopped" }} |
+| **Kafka** | — | — | — | {{ toggle "platform/manifests/kafka/kafka.yaml" "spec.clusterOperation.stopped" }} |
 | **HDFS** namenode-0 | [http://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/](http://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/) | — | — | — |
 | **HDFS** namenode-1 | [http://{{ nodeport "listener-simple-hdfs-namenode-default-1" }}/](http://{{ nodeport "listener-simple-hdfs-namenode-default-1" }}/) | — | — | — |
 | **HDFS** datanode-0 | [http://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/](http://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/) | — | — | — |
