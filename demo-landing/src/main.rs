@@ -1,16 +1,19 @@
+mod auth;
+mod forgejo;
 mod kube;
 mod render;
 mod routes;
 mod template;
 
 use async_trait::async_trait;
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Router};
 use k8s_openapi::api::core::v1::{Node, Service};
 use ::kube::{api::ListParams, Api, Client};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::forgejo::ForgejoClient;
 use crate::kube::{LookupError, ServiceInfo, ServiceLookup};
 use crate::routes::AppState;
 
@@ -127,22 +130,38 @@ async fn main() -> anyhow::Result<()> {
     let listen_addr: SocketAddr = std::env::var("LISTEN_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()?;
+    let auth_user = std::env::var("AUTH_USER")
+        .map_err(|_| anyhow::anyhow!("AUTH_USER env var is required"))?;
+    let auth_password = std::env::var("AUTH_PASSWORD")
+        .map_err(|_| anyhow::anyhow!("AUTH_PASSWORD env var is required"))?;
 
     let client = Client::try_default().await?;
     let lookup: Arc<dyn ServiceLookup> =
         Arc::new(KubeClientLookup { client });
 
+    let forgejo = Arc::new(ForgejoClient::from_env()?);
+
     let state = AppState {
         content_dir,
         lookup,
+        forgejo,
+        auth_user,
+        auth_password,
     };
 
-    let app = Router::new()
+    let public = Router::new().route("/healthz", get(routes::healthz));
+
+    let private = Router::new()
         .route("/", get(routes::index))
         .route("/styles.css", get(routes::styles))
         .route("/fonts/:name", get(routes::fonts))
         .route("/images/*path", get(routes::image))
-        .route("/healthz", get(routes::healthz))
+        .route("/toggle", post(routes::toggle))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), auth::basic_auth));
+
+    let app = Router::new()
+        .merge(public)
+        .merge(private)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state);
 
