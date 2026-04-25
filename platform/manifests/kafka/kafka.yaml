@@ -5,6 +5,8 @@ metadata:
   name: kafka
   namespace: platform
 spec:
+  clusterOperations:
+    stopped: false
   clusterConfig:
     metadataManager: kraft
     vectorAggregatorConfigMapName: vector-aggregator-discovery
