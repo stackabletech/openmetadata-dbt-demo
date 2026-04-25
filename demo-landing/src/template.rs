@@ -104,7 +104,10 @@ fn render_toggle_html(
     let entry = toggles.get(&(path.to_string(), key.to_string()));
     match entry {
         Some(ToggleResolution::Ok { sha, value }) => {
-            let class = if *value { "switch switch-on" } else { "switch switch-off" };
+            // The switch's "on" position represents "this thing is enabled / running".
+            // For Stackable's `stopped` flag, that's the inverse of the boolean value:
+            // stopped=false → on, stopped=true → off. Keeps the demo intuitive.
+            let class = if *value { "switch switch-off" } else { "switch switch-on" };
             let aria = format!("Toggle {} on {}", key, path);
             // Emitted as a single line so it fits inside one markdown table cell;
             // embedded newlines would break the row mid-cell and pulldown-cmark
@@ -244,7 +247,9 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
     }
 
     #[test]
-    fn toggle_env_renders_switch_for_resolved_pair() {
+    fn toggle_env_renders_switch_on_when_value_false() {
+        // Visual semantic: switch-on = "this thing is enabled / running".
+        // For a `stopped` field, value=false (not stopped) → switch-on.
         let mut t = HashMap::new();
         t.insert(
             ("p.yaml".to_string(), "spec.k".to_string()),
@@ -262,11 +267,12 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
         assert!(out.contains(r#"name="key" value="spec.k""#));
         assert!(out.contains(r#"name="sha" value="abc""#));
         assert!(out.contains(r#"name="current_value" value="false""#));
-        assert!(out.contains("switch-off"));
+        assert!(out.contains("switch switch-on"));
     }
 
     #[test]
-    fn toggle_env_renders_switch_on_when_value_true() {
+    fn toggle_env_renders_switch_off_when_value_true() {
+        // value=true (stopped) → switch-off (visually disabled).
         let mut t = HashMap::new();
         t.insert(
             ("p.yaml".to_string(), "k".to_string()),
@@ -279,7 +285,7 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
         let out = env
             .render_str(r#"{{ toggle("p.yaml", "k") }}"#, ())
             .unwrap();
-        assert!(out.contains("switch switch-on"));
+        assert!(out.contains("switch switch-off"));
         assert!(out.contains(r#"name="current_value" value="true""#));
     }
 

@@ -200,7 +200,8 @@ mod tests {
         let html = render(md, np, Arc::new(tg), "t").unwrap();
         assert!(html.contains(r#"<form class="cell-toggle""#));
         assert!(html.contains(r#"action="/toggle""#));
-        assert!(html.contains("switch-off"));
+        // value=false (not stopped) → switch shown as "on" / running.
+        assert!(html.contains("switch-on"));
     }
 
     #[test]
