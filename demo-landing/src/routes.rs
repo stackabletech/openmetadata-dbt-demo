@@ -3,7 +3,7 @@
 use crate::forgejo::{ForgejoClient, ForgejoError};
 use crate::kube::ServiceLookup;
 use crate::render::{self, set_yaml_bool_at_path};
-use crate::template::{self, ToggleResolution};
+use crate::template::{self, html_attr_escape, ToggleResolution};
 use axum::{
     body::Body,
     extract::{Form, Path, State},
@@ -250,7 +250,7 @@ fn stale_view_page(path: &str) -> Response {
 <body><main><h1>Stale view</h1>
 <p>The file <code>{}</code> changed since the page loaded. Please <a href="/">reload</a> and try again.</p>
 </main></body></html>"#,
-        path
+        html_attr_escape(path)
     );
     (
         StatusCode::CONFLICT,
@@ -269,7 +269,8 @@ fn forgejo_error_page(path: &str, err: ForgejoError) -> Response {
 <pre>{}</pre>
 <p><a href="/">Back to landing page</a></p>
 </main></body></html>"#,
-        path, err
+        html_attr_escape(path),
+        html_attr_escape(&err.to_string())
     );
     (
         StatusCode::BAD_GATEWAY,
@@ -288,7 +289,8 @@ fn yaml_error_page(path: &str, detail: &str) -> Response {
 <pre>{}</pre>
 <p><a href="/">Back to landing page</a></p>
 </main></body></html>"#,
-        path, detail
+        html_attr_escape(path),
+        html_attr_escape(detail)
     );
     (
         StatusCode::INTERNAL_SERVER_ERROR,

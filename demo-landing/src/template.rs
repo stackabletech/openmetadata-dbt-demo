@@ -135,7 +135,7 @@ fn render_toggle_html(
     }
 }
 
-fn html_attr_escape(s: &str) -> String {
+pub fn html_attr_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
