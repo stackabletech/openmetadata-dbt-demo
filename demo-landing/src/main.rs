@@ -6,7 +6,7 @@ mod routes;
 mod template;
 
 use async_trait::async_trait;
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Router};
 use k8s_openapi::api::core::v1::{Node, Service};
 use ::kube::{api::ListParams, Api, Client};
 use std::net::SocketAddr;
@@ -149,12 +149,19 @@ async fn main() -> anyhow::Result<()> {
         auth_password,
     };
 
-    let app = Router::new()
+    let public = Router::new().route("/healthz", get(routes::healthz));
+
+    let private = Router::new()
         .route("/", get(routes::index))
         .route("/styles.css", get(routes::styles))
         .route("/fonts/:name", get(routes::fonts))
         .route("/images/*path", get(routes::image))
-        .route("/healthz", get(routes::healthz))
+        .route("/toggle", post(routes::toggle))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), auth::basic_auth));
+
+    let app = Router::new()
+        .merge(public)
+        .merge(private)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state);
 
