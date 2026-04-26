@@ -27,10 +27,11 @@ a handful of supporting components.
 | **HDFS** datanode-0 | [http://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/](http://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/) | — | — | —                                                                                            |
 
 ## External Componens
-| Service          | URL | Username | Password | Enabled                                                                                      |
-|------------------| --- | --- | --- |----------------------------------------------------------------------------------------------|
-| **OpenMetadata** | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
-| **LakeKeeper**   | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+| Service                   | URL | Username | Password | Enabled                                                                                      |
+|---------------------------| --- | --- | --- |----------------------------------------------------------------------------------------------|
+| **OpenMetadata**          | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+| **LakeKeeper**            | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+| **OpenSearch Dashboards** | [http://{{ nodeport "opensearch-dashboards-nodeport" }}/](http://{{ nodeport "opensearch-dashboards-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
 
 Most Stackable-managed services run with a self-signed certificate; accept
 the browser warning on first visit.
