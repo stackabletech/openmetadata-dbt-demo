@@ -51,6 +51,30 @@ subjects:
     name: discover-node-ip
     namespace: platform
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: discover-node-ip
+  namespace: deployment
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: discover-node-ip
+  namespace: deployment
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: discover-node-ip
+subjects:
+  - kind: ServiceAccount
+    name: discover-node-ip
+    namespace: platform
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -80,14 +104,23 @@ spec:
                 exit 1
               fi
               echo "Discovered node IP: $NODE_IP"
-              kubectl create configmap oidc-endpoints \
-                --namespace=platform \
-                --from-literal=node-ip="$NODE_IP" \
-                --from-literal=issuer-url="http://${NODE_IP}:30900/realms/stackable-demo" \
-                --from-literal=argocd-base-url="http://${NODE_IP}:30080" \
-                --from-literal=argocd-redirect-uri="http://${NODE_IP}:30080/auth/callback" \
-                --from-literal=forgejo-base-url="http://${NODE_IP}:30000" \
-                --from-literal=forgejo-redirect-uri="http://${NODE_IP}:30000/user/oauth2/keycloak/callback" \
-                --from-literal=landing-base-url="http://${NODE_IP}:30088" \
-                --from-literal=landing-redirect-uri="http://${NODE_IP}:30088/oauth2/callback" \
-                --dry-run=client -o yaml | kubectl apply -f -
+              for ns in platform deployment; do
+                kubectl create configmap oidc-endpoints \
+                  --namespace="$ns" \
+                  --from-literal=node-ip="$NODE_IP" \
+                  --from-literal=issuer-url="http://${NODE_IP}:30900/realms/stackable-demo" \
+                  --from-literal=argocd-base-url="http://${NODE_IP}:30080" \
+                  --from-literal=argocd-redirect-uri="http://${NODE_IP}:30080/auth/callback" \
+                  --from-literal=forgejo-base-url="http://${NODE_IP}:30000" \
+                  --from-literal=forgejo-redirect-uri="http://${NODE_IP}:30000/user/oauth2/keycloak/callback" \
+                  --from-literal=landing-base-url="http://${NODE_IP}:30088" \
+                  --from-literal=landing-redirect-uri="http://${NODE_IP}:30088/oauth2/callback" \
+                  --from-literal=ISSUER_URL="http://${NODE_IP}:30900/realms/stackable-demo" \
+                  --from-literal=ARGOCD_BASE_URL="http://${NODE_IP}:30080" \
+                  --from-literal=ARGOCD_REDIRECT_URI="http://${NODE_IP}:30080/auth/callback" \
+                  --from-literal=FORGEJO_BASE_URL="http://${NODE_IP}:30000" \
+                  --from-literal=FORGEJO_REDIRECT_URI="http://${NODE_IP}:30000/user/oauth2/keycloak/callback" \
+                  --from-literal=LANDING_BASE_URL="http://${NODE_IP}:30088" \
+                  --from-literal=LANDING_REDIRECT_URI="http://${NODE_IP}:30088/oauth2/callback" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+              done
