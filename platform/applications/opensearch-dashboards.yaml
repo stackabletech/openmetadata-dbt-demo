@@ -1,0 +1,49 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opensearch-dashboards
+  namespace: deployment
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  sources:
+    - repoURL: "https://opensearch-project.github.io/helm-charts"
+      chart: opensearch-dashboards
+      targetRevision: "2.30.0" # renovate: registryUrl=https://opensearch-project.github.io/helm-charts datasource=helm depName=opensearch-dashboards
+      helm:
+        releaseName: opensearch-dashboards
+        valuesObject:
+          replicaCount: 1
+          opensearchHosts: "https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"
+          extraEnvs:
+            - name: OPENSEARCH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-kibanaserver-credentials
+                  key: username
+            - name: OPENSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-kibanaserver-credentials
+                  key: password
+          config:
+            opensearch_dashboards.yml: |
+              server.host: "0.0.0.0"
+              opensearch.hosts: ["https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"]
+              opensearch.username: "${OPENSEARCH_USERNAME}"
+              opensearch.password: "${OPENSEARCH_PASSWORD}"
+              opensearch.ssl.verificationMode: none
+              opensearch.requestHeadersWhitelist: [authorization, securitytenant]
+              opensearch_security.multitenancy.enabled: false
+    - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
+      targetRevision: "main"
+      path: platform/manifests/opensearch-dashboards/
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true

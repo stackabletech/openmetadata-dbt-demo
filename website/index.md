@@ -4,22 +4,33 @@ Welcome. This cluster is running the full Stackable Data Platform demo — a
 GitOps-managed data lakehouse with OpenMetadata, Airflow, Trino, dbt, and
 a handful of supporting components.
 
-## Access
+## Platform Deployment 
 
 | Service | URL | Username | Password | Enabled                                                                                      |
 | --- | --- | --- | --- |----------------------------------------------------------------------------------------------|
 | **ArgoCD** | [https://{{ nodeport "argocd-server-nodeport" }}/applications](https://{{ nodeport "argocd-server-nodeport" }}/applications) | `admin` | `adminadmin` | —                                                                                            |
 | **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/](http://{{ nodeport "forgejo-http-nodeport" }}/) | `stackable` | `stackable` | —                                                                                            |
-| **OpenMetadata** | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+
+
+## Stackable Components
+| Service | URL | Username | Password | Enabled                                                                                      |
+| --- | --- | --- | --- |----------------------------------------------------------------------------------------------|
 | **Airflow** | [http://{{ nodeport "airflow-webserver" }}/](http://{{ nodeport "airflow-webserver" }}/) | `admin` | `admin` | {{ toggle "platform/manifests/airflow/airflow.yaml" "spec.clusterOperation.stopped" }}       |
 | **Trino** | [https://{{ nodeport "trino-coordinator" }}/](https://{{ nodeport "trino-coordinator" }}/) | `admin` | *(none)* | {{ toggle "platform/manifests/trino/trino.yaml" "spec.clusterOperation.stopped" }}           |
 | **Superset** | [http://{{ nodeport "simple-superset-node" }}/](http://{{ nodeport "simple-superset-node" }}/) | — | — | {{ toggle "platform/manifests/superset/superset.yaml" "spec.clusterOperation.stopped" }}     |
 | **OpenSearch** | [https://{{ nodeport "simple-opensearch" }}/](https://{{ nodeport "simple-opensearch" }}/) | — | — | {{ toggle "platform/manifests/opensearch/opensearch.yaml" "spec.clusterOperation.stopped" }} |
+| **OpenSearch Dashboards** | [http://{{ nodeport "opensearch-dashboards-nodeport" }}/](http://{{ nodeport "opensearch-dashboards-nodeport" }}/) | `admin` | *(OpenSearch admin pw)* | — |
 | **NiFi** | [https://{{ nodeport "nifi-node" }}/](https://{{ nodeport "nifi-node" }}/) | `admin` | `admin` | {{ toggle "platform/manifests/nifi/nifi.yaml" "spec.clusterOperation.stopped" }}             |
 | **Kafka** | — | — | — | {{ toggle "platform/manifests/kafka/kafka.yaml" "spec.clusterOperation.stopped" }}           |
 | **HDFS** namenode-0 | [http://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/](http://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/) | — | — | {{ toggle "platform/manifests/hdfs/hdfs.yaml" "spec.clusterOperation.stopped" }}             |
 | **HDFS** namenode-1 | [http://{{ nodeport "listener-simple-hdfs-namenode-default-1" }}/](http://{{ nodeport "listener-simple-hdfs-namenode-default-1" }}/) | — | — | —                                                                                            |
 | **HDFS** datanode-0 | [http://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/](http://{{ nodeport "simple-hdfs-datanode-default-0-listener" }}/) | — | — | —                                                                                            |
+
+## External Componens
+| Service          | URL | Username | Password | Enabled                                                                                      |
+|------------------| --- | --- | --- |----------------------------------------------------------------------------------------------|
+| **OpenMetadata** | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+| **LakeKeeper**   | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
 
 Most Stackable-managed services run with a self-signed certificate; accept
 the browser warning on first visit.

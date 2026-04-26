@@ -17,7 +17,7 @@ stringData:
       - admin
       description: OpenSearch admin user
     kibanaserver:
-      hash: $2y$10$vPgQ/6ilKDM5utawBqxoR.7euhVQ0qeGl8mPTeKhmFT475WUDrfQS
+      hash: $2y$10$e9f1cnNdLPyYP7t4ADafa.BldfKs5quXQ2JHHId3SZD3RQ0tu1HYu
       reserved: true
       description: OpenSearch Dashboards user
     openmetadata:
