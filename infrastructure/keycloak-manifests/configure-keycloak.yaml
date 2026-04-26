@@ -1,0 +1,152 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-keycloak
+  namespace: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      containers:
+        - name: opentofu
+          image: oowy/opentofu:1.10.6-alpine3.20 # renovate: datasource=docker depName=oowy/opentofu
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Waiting for Keycloak to be ready..."
+              until wget -q -O /dev/null http://keycloak-service.platform.svc.cluster.local:8080/realms/master 2>/dev/null; do
+                echo "  Not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "Keycloak is ready."
+              mkdir /work
+              cd /work
+              cp /config/keycloak.tf .
+              tofu init
+              tofu plan
+              tofu apply -auto-approve
+          env:
+            - name: TF_VAR_keycloak_admin_username
+              valueFrom:
+                secretKeyRef: { name: keycloak-bootstrap-admin, key: username }
+            - name: TF_VAR_keycloak_admin_password
+              valueFrom:
+                secretKeyRef: { name: keycloak-bootstrap-admin, key: password }
+            - name: TF_VAR_demo_admin_password
+              valueFrom:
+                secretKeyRef: { name: keycloak-demo-passwords, key: demo_admin_password }
+            - name: TF_VAR_demo_user_password
+              valueFrom:
+                secretKeyRef: { name: keycloak-demo-passwords, key: demo_user_password }
+          volumeMounts:
+            - mountPath: /config
+              name: keycloak-configuration
+      restartPolicy: Never
+      volumes:
+        - name: keycloak-configuration
+          configMap: { name: keycloak-configuration }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-configuration
+  namespace: platform
+data:
+  keycloak.tf: |
+    terraform {
+      required_providers {
+        keycloak = {
+          source  = "keycloak/keycloak"
+          version = "~> 5.0"
+        }
+      }
+    }
+
+    provider "keycloak" {
+      client_id     = "admin-cli"
+      username      = var.keycloak_admin_username
+      password      = var.keycloak_admin_password
+      url           = "http://keycloak-service.platform.svc.cluster.local:8080"
+      realm         = "master"
+      initial_login = false
+    }
+
+    variable "keycloak_admin_username" {
+      type = string
+    }
+
+    variable "keycloak_admin_password" {
+      type      = string
+      sensitive = true
+    }
+
+    variable "demo_admin_password" {
+      type      = string
+      sensitive = true
+    }
+
+    variable "demo_user_password" {
+      type      = string
+      sensitive = true
+    }
+
+    resource "keycloak_realm" "stackable_demo" {
+      realm        = "stackable-demo"
+      enabled      = true
+      display_name = "Stackable Data Platform Demo"
+    }
+
+    resource "keycloak_role" "admin" {
+      realm_id    = keycloak_realm.stackable_demo.id
+      name        = "admin"
+      description = "Administrative access to all demo tools"
+    }
+
+    resource "keycloak_role" "viewer" {
+      realm_id    = keycloak_realm.stackable_demo.id
+      name        = "viewer"
+      description = "Read-only access to demo tools"
+    }
+
+    resource "keycloak_user" "demo_admin" {
+      realm_id       = keycloak_realm.stackable_demo.id
+      username       = "demo-admin"
+      email          = "demo-admin@stackable.demo"
+      enabled        = true
+      email_verified = true
+      first_name     = "Demo"
+      last_name      = "Admin"
+      initial_password {
+        value     = var.demo_admin_password
+        temporary = false
+      }
+    }
+
+    resource "keycloak_user_roles" "demo_admin_roles" {
+      realm_id = keycloak_realm.stackable_demo.id
+      user_id  = keycloak_user.demo_admin.id
+      role_ids = [keycloak_role.admin.id]
+    }
+
+    resource "keycloak_user" "demo_user" {
+      realm_id       = keycloak_realm.stackable_demo.id
+      username       = "demo-user"
+      email          = "demo-user@stackable.demo"
+      enabled        = true
+      email_verified = true
+      first_name     = "Demo"
+      last_name      = "User"
+      initial_password {
+        value     = var.demo_user_password
+        temporary = false
+      }
+    }
+
+    resource "keycloak_user_roles" "demo_user_roles" {
+      realm_id = keycloak_realm.stackable_demo.id
+      user_id  = keycloak_user.demo_user.id
+      role_ids = [keycloak_role.viewer.id]
+    }
