@@ -18,6 +18,8 @@ spec:
             extendedConfiguration: ""
           - component: superset
             extendedConfiguration: ""
+          - component: keycloak
+            extendedConfiguration: ""
   template:
     metadata:
       name: "{{component}}-postgres"
