@@ -15,6 +15,11 @@ spec:
       targetRevision: "0.9.0" # renovate: registryUrl=https://lakekeeper.github.io/lakekeeper-charts datasource=helm depName=lakekeeper
       helm:
         releaseName: lakekeeper
+        valuesObject:
+          service:
+            type: NodePort
+            nodePort:
+              http: 30181
   syncPolicy:
     syncOptions:
       - CreateNamespace=true

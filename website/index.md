@@ -19,7 +19,6 @@ a handful of supporting components.
 | **Trino** | [https://{{ nodeport "trino-coordinator" }}/](https://{{ nodeport "trino-coordinator" }}/) | `admin` | *(none)* | {{ toggle "platform/manifests/trino/trino.yaml" "spec.clusterOperation.stopped" }}           |
 | **Superset** | [http://{{ nodeport "simple-superset-node" }}/](http://{{ nodeport "simple-superset-node" }}/) | — | — | {{ toggle "platform/manifests/superset/superset.yaml" "spec.clusterOperation.stopped" }}     |
 | **OpenSearch** | [https://{{ nodeport "simple-opensearch" }}/](https://{{ nodeport "simple-opensearch" }}/) | — | — | {{ toggle "platform/manifests/opensearch/opensearch.yaml" "spec.clusterOperation.stopped" }} |
-| **OpenSearch Dashboards** | [http://{{ nodeport "opensearch-dashboards-nodeport" }}/](http://{{ nodeport "opensearch-dashboards-nodeport" }}/) | `admin` | *(OpenSearch admin pw)* | — |
 | **NiFi** | [https://{{ nodeport "nifi-node" }}/](https://{{ nodeport "nifi-node" }}/) | `admin` | `admin` | {{ toggle "platform/manifests/nifi/nifi.yaml" "spec.clusterOperation.stopped" }}             |
 | **Kafka** | — | — | — | {{ toggle "platform/manifests/kafka/kafka.yaml" "spec.clusterOperation.stopped" }}           |
 | **HDFS** namenode-0 | [http://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/](http://{{ nodeport "listener-simple-hdfs-namenode-default-0" }}/) | — | — | {{ toggle "platform/manifests/hdfs/hdfs.yaml" "spec.clusterOperation.stopped" }}             |
@@ -30,7 +29,7 @@ a handful of supporting components.
 | Service                   | URL | Username | Password | Enabled                                                                                      |
 |---------------------------| --- | --- | --- |----------------------------------------------------------------------------------------------|
 | **OpenMetadata**          | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
-| **LakeKeeper**            | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+| **LakeKeeper**            | [http://{{ nodeport "lakekeeper" }}/ui/](http://{{ nodeport "lakekeeper" }}/ui/) | — | — | —                                                                                            |
 | **OpenSearch Dashboards** | [http://{{ nodeport "opensearch-dashboards-nodeport" }}/](http://{{ nodeport "opensearch-dashboards-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
 
 Most Stackable-managed services run with a self-signed certificate; accept
