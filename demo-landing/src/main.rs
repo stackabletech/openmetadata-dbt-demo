@@ -128,12 +128,8 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "/content".into())
         .into();
     let listen_addr: SocketAddr = std::env::var("LISTEN_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:8080".into())
+        .unwrap_or_else(|_| "127.0.0.1:8081".into())
         .parse()?;
-    let auth_user = std::env::var("AUTH_USER")
-        .map_err(|_| anyhow::anyhow!("AUTH_USER env var is required"))?;
-    let auth_password = std::env::var("AUTH_PASSWORD")
-        .map_err(|_| anyhow::anyhow!("AUTH_PASSWORD env var is required"))?;
 
     let client = Client::try_default().await?;
     let lookup: Arc<dyn ServiceLookup> =
@@ -145,23 +141,18 @@ async fn main() -> anyhow::Result<()> {
         content_dir,
         lookup,
         forgejo,
-        auth_user,
-        auth_password,
     };
 
-    let public = Router::new().route("/healthz", get(routes::healthz));
-
-    let private = Router::new()
+    let app = Router::new()
+        .route("/healthz", get(routes::healthz))
         .route("/", get(routes::index))
         .route("/styles.css", get(routes::styles))
         .route("/fonts/:name", get(routes::fonts))
         .route("/images/*path", get(routes::image))
-        .route("/toggle", post(routes::toggle))
-        .layer(axum::middleware::from_fn_with_state(state.clone(), auth::basic_auth));
-
-    let app = Router::new()
-        .merge(public)
-        .merge(private)
+        .route(
+            "/toggle",
+            post(routes::toggle).layer(axum::middleware::from_fn(auth::require_admin)),
+        )
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state);
 

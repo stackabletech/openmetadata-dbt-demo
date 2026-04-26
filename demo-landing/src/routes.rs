@@ -23,8 +23,6 @@ pub struct AppState {
     pub content_dir: PathBuf,
     pub lookup: Arc<dyn ServiceLookup>,
     pub forgejo: Arc<ForgejoClient>,
-    pub auth_user: String,
-    pub auth_password: String,
 }
 
 pub async fn healthz() -> &'static str {
@@ -407,8 +405,6 @@ mod tests {
             content_dir: tmp.into(),
             lookup: Arc::new(LocalMock::new()),
             forgejo: Arc::new(ForgejoClient::for_testing()),
-            auth_user: "admin".into(),
-            auth_password: "secret".into(),
         }
     }
 

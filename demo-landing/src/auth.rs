@@ -1,120 +1,87 @@
-//! HTTP basic-auth middleware. Applied to every route except `/healthz`
-//! (which must remain unauthenticated for the kubelet liveness probe).
+//! Header-based auth middleware. oauth2-proxy is the auth boundary; this
+//! module reads the headers it forwards and gates admin-only endpoints
+//! on Keycloak realm role membership.
 
 use axum::{
-    extract::{Request, State},
-    http::{header, StatusCode},
+    extract::Request,
+    http::StatusCode,
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
-use base64::Engine;
 
-use crate::routes::AppState;
+const FORWARDED_GROUPS: &str = "x-forwarded-groups";
+const ADMIN_ROLE: &str = "admin";
 
-pub async fn basic_auth(
-    State(state): State<AppState>,
-    req: Request,
-    next: Next,
-) -> Result<Response, Response> {
-    let provided = req
+pub async fn require_admin(req: Request, next: Next) -> Result<Response, StatusCode> {
+    let header_value = req
         .headers()
-        .get(header::AUTHORIZATION)
+        .get(FORWARDED_GROUPS)
         .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Basic "))
-        .and_then(|b64| base64::engine::general_purpose::STANDARD.decode(b64).ok())
-        .and_then(|bytes| String::from_utf8(bytes).ok());
+        .unwrap_or("");
 
-    if let Some(creds) = provided {
-        if let Some((u, p)) = creds.split_once(':') {
-            if u == state.auth_user && p == state.auth_password {
-                return Ok(next.run(req).await);
-            }
-        }
+    let has_admin = header_value
+        .split(',')
+        .map(|s| s.trim())
+        .any(|s| s == ADMIN_ROLE);
+
+    if has_admin {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::FORBIDDEN)
     }
-
-    Err((
-        StatusCode::UNAUTHORIZED,
-        [(header::WWW_AUTHENTICATE, r#"Basic realm="demo-landing""#)],
-        "Authentication required",
-    )
-        .into_response())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::Body;
-    use axum::http::{Request as HttpRequest, StatusCode};
-    use axum::routing::get;
-    use axum::Router;
-    use std::sync::Arc;
+    use axum::{body::Body, http::Request as HttpRequest, routing::post, Router};
     use tower::ServiceExt;
 
-    use crate::forgejo::ForgejoClient;
-    use crate::kube::ServiceLookup;
-
-    fn test_state(user: &str, password: &str) -> AppState {
-        AppState {
-            content_dir: "/tmp".into(),
-            lookup: Arc::new(NullLookup),
-            forgejo: Arc::new(ForgejoClient::for_testing()),
-            auth_user: user.to_string(),
-            auth_password: password.to_string(),
-        }
-    }
-
-    struct NullLookup;
-    #[async_trait::async_trait]
-    impl ServiceLookup for NullLookup {
-        async fn lookup_service(&self, _: &str) -> Result<crate::kube::ServiceInfo, crate::kube::LookupError> {
-            unimplemented!("not used in auth tests")
-        }
-        async fn pick_node_ip(&self) -> Result<String, crate::kube::LookupError> {
-            unimplemented!("not used in auth tests")
-        }
-    }
-
     fn router() -> Router<()> {
-        let state = test_state("admin", "secret");
         Router::new()
-            .route("/protected", get(|| async { "ok" }))
-            .layer(axum::middleware::from_fn_with_state(state.clone(), basic_auth))
-            .with_state(state)
-    }
-
-    fn basic_header(user: &str, password: &str) -> String {
-        let raw = format!("{}:{}", user, password);
-        format!(
-            "Basic {}",
-            base64::engine::general_purpose::STANDARD.encode(raw)
-        )
+            .route("/admin-only", post(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(require_admin))
     }
 
     #[tokio::test]
-    async fn rejects_request_without_authorization_header() {
+    async fn rejects_when_groups_header_missing() {
         let resp = router()
             .oneshot(
                 HttpRequest::builder()
-                    .uri("/protected")
+                    .method("POST")
+                    .uri("/admin-only")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(
-            resp.headers().get(header::WWW_AUTHENTICATE).unwrap(),
-            r#"Basic realm="demo-landing""#
-        );
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
-    async fn accepts_correct_credentials() {
+    async fn rejects_when_groups_header_lacks_admin() {
         let resp = router()
             .oneshot(
                 HttpRequest::builder()
-                    .uri("/protected")
-                    .header(header::AUTHORIZATION, basic_header("admin", "secret"))
+                    .method("POST")
+                    .uri("/admin-only")
+                    .header("x-forwarded-groups", "viewer,other")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn accepts_when_groups_header_contains_admin() {
+        let resp = router()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/admin-only")
+                    .header("x-forwarded-groups", "viewer,admin,other")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -124,32 +91,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_wrong_password() {
+    async fn accepts_when_groups_header_is_just_admin() {
         let resp = router()
             .oneshot(
                 HttpRequest::builder()
-                    .uri("/protected")
-                    .header(header::AUTHORIZATION, basic_header("admin", "wrong"))
+                    .method("POST")
+                    .uri("/admin-only")
+                    .header("x-forwarded-groups", "admin")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]
-    async fn rejects_malformed_base64() {
+    async fn handles_whitespace_in_groups_list() {
         let resp = router()
             .oneshot(
                 HttpRequest::builder()
-                    .uri("/protected")
-                    .header(header::AUTHORIZATION, "Basic not-valid-base64!!!")
+                    .method("POST")
+                    .uri("/admin-only")
+                    .header("x-forwarded-groups", " viewer , admin ")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }
