@@ -39,6 +39,7 @@ stacks:
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/keycloak-operator.yaml
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/keycloak.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/argocd-oidc.yaml
     supportedNamespaces: ["deployment"]
     resourceRequests:
       cpu: 1750m
