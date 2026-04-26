@@ -1,0 +1,19 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  annotations:
+    sealedsecrets.bitnami.com/cluster-wide: "true"
+  name: keycloak-bootstrap-admin
+  namespace: platform
+spec:
+  encryptedData:
+    password: AgDMkeGUejng03SrBDCxjjdnQBzF2eb8XDkuFrl0yGJ+Y5XoomnqLAJEaMBvtm1Jnk08Psr2yCebEMpR/Qe4OmOD6L1qt1eJlHGJXQlQL9Qasm4uykC3CN/0G9xZsycm88diXRWt+EY+3ILNA1LCIdPsnGrF3aLsKca5uQOndf2S8BOkZRHNXKjk9/e3ZkIBLEQaMhWycQZri6USCUU4BuquTIFzb7kB9UG6USRIQ7ZJvnsjvWjX7bpkNX3zfiJRgTuhC6S1mLLqzWk0FmAH4Cy/as4XVmmaSrJ5jVCWdqV4ACKWkz1Kg9dVRjhO4V5bxx/mdnKAd6QOh4Bns0JXJAuK6cPGZiUypYEmXcFo35GJxrkyQzfiPIC90yawNkGAeWF2sTR4VfL9g59hJEoCYPTyqIlwp0eoK5fyv8OMfwFf5LTGtJghgZnDxzbHIWxNrrz91Ah9rgs82U7iNQY1cx5ZfeuJ+/yhw3XglsJgWX5A4TBMpHq8gHNdYRmXWsSsULXwgVt7fuLNyLpBGs2axk6LFyFcb3yGihe3GsvVFRPXQmuBLzSssnnMnRC+qmXj/0Szll21y78HF7eo4t6ntfzBcnGOOs2Gls9bju4ArFxrPjoTwKEYZiBz8JJTHX8+gPXyAF7pKlTmgTg1tnwsirSH+U1Zum0L+8ajZVi0d6PAK7y2slrCmRsXMBk/irIs7LxeGWTYHdZiDLKbblRAWJSapdLlk8Y5Eysm9VJ6paGbNg==
+    username: AgACrQFQeyfX3JD8w2dv5bwLAIVLvWR9QCc4+USdt2XGfmrGtrk0j+8pU92ldvFXFVUPcir5RsSAvhZpLXSS/MSLfKDRhlR3QmluM4GWmZk7Y6mRxJYTiRbRd3JSz312Z+VICFeeIy9dBCaTsjROczYIwe3fML7oThk9qu9G1ZdPhb0jmpP4f/XwNpx38tXdXhJf90Xkd0KbDktmUNnqNPmIBPOg3xMOuG3FWvkDaNFl9lBfsyYorHagwbaPuT4d+sA0bGp1OzjUM8HEkZy3Nvvc/8Tfjiy7j9gr581Aygsoc84SFamxvqCo810G8BWh1AiAZG4q7QuTzD1Hlf9IylQJczDYiEpoqn1swcwTPS1JyWDBIsgJDqoOYj9YlZI+tp59fQUibH8Y0ZP+MeiKSafLTE4LAnQfzdVTQH6NWDagXaO3vfEB3P+cCrJ1iHTDi2n1pt/sN1+YjosPWiv9bWYu4T251EX0hhJAxu23uYqH+KaLwbcn2YKL1DYL4wqnFGq5PERCS6PxHGiEptGKXzFKrprpGmCgKpZBvMmIeJvDYNJVwV3V9b1iWJyPMoeiMM+uB1Qhe6kRmthxH+V2A2DCw57oOlQ0Hg4Kj8Dmq+2O6yK5qogE529KpHnI7mVoRI7RBoPLH0sEpa7J+Mflq6lVbFPzVQVzmrRnTUQo/jp8ZP8lOUC4+6NbWqvS9xBByHVHFMpp6w==
+  template:
+    metadata:
+      annotations:
+        sealedsecrets.bitnami.com/cluster-wide: "true"
+      name: keycloak-bootstrap-admin
+      namespace: platform
+    type: Opaque
