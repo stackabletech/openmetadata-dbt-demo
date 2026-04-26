@@ -22,13 +22,13 @@ spec:
           emptyDir: {}
       containers:
         - name: landing
-          image: oci.stackable.tech/sandbox/demo-landing:0.1.0-dev
+          image: oci.stackable.tech/sandbox/demo-landing:0.2.0-dev
           imagePullPolicy: Always
           env:
             - name: CONTENT_DIR
               value: /git/current/website
             - name: LISTEN_ADDR
-              value: 0.0.0.0:8080
+              value: 127.0.0.1:8081
             - name: LOG_LEVEL
               value: info
             - name: FORGEJO_URL
@@ -49,9 +49,65 @@ spec:
                 secretKeyRef:
                   name: forgejo-admin-secret
                   key: password
-          envFrom:
-            - secretRef:
-                name: demo-landing-basic-auth
+          ports:
+            - name: internal
+              containerPort: 8081
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: git
+              mountPath: /git
+        - name: git-sync
+          image: registry.k8s.io/git-sync/git-sync:v4.3.0
+          args:
+            - --repo=http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git
+            - --ref=main
+            - --depth=1
+            - --period=30s
+            - --root=/git
+            - --link=current
+          volumeMounts:
+            - name: git
+              mountPath: /git
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1 # renovate: datasource=docker depName=oauth2-proxy/oauth2-proxy
+          args:
+            - --provider=keycloak-oidc
+            - --upstream=http://127.0.0.1:8081/
+            - --http-address=0.0.0.0:8080
+            - --email-domain=*
+            - --pass-user-headers=true
+            - --set-xauthrequest=true
+            - --skip-auth-route=^/healthz
+            - --scope=openid profile email roles
+            - --cookie-secure=false
+            - --oidc-groups-claim=realm_access.roles
+            - --reverse-proxy=true
+            - --redirect-url=$(OAUTH2_PROXY_REDIRECT_URL)
+            - --oidc-issuer-url=$(OAUTH2_PROXY_OIDC_ISSUER_URL)
+            - --client-id=demo-landing
+            - --client-secret=demo-landing-secret
+            - --cookie-secret=$(OAUTH2_PROXY_COOKIE_SECRET)
+          env:
+            - name: OAUTH2_PROXY_OIDC_ISSUER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: issuer-url
+            - name: OAUTH2_PROXY_REDIRECT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: landing-redirect-uri
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-cookie-secret
+                  key: cookie-secret
           ports:
             - name: http
               containerPort: 8080
@@ -71,18 +127,3 @@ spec:
               path: /healthz
               port: 8080
             periodSeconds: 10
-          volumeMounts:
-            - name: git
-              mountPath: /git
-        - name: git-sync
-          image: registry.k8s.io/git-sync/git-sync:v4.3.0
-          args:
-            - --repo=http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git
-            - --ref=main
-            - --depth=1
-            - --period=30s
-            - --root=/git
-            - --link=current
-          volumeMounts:
-            - name: git
-              mountPath: /git
