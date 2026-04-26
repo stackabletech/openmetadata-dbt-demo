@@ -150,3 +150,72 @@ data:
       user_id  = keycloak_user.demo_user.id
       role_ids = [keycloak_role.viewer.id]
     }
+
+    resource "keycloak_openid_client" "demo_landing" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "demo-landing"
+      name                  = "Demo Landing Page"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "demo-landing-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["http://*/oauth2/callback"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "demo_landing_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.demo_landing.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    resource "keycloak_openid_client" "argocd" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "argocd"
+      name                  = "ArgoCD"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "argocd-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["http://*/auth/callback", "http://localhost:8085/auth/callback"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "argocd_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.argocd.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    resource "keycloak_openid_client" "forgejo" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "forgejo"
+      name                  = "Forgejo"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "forgejo-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["http://*/user/oauth2/keycloak/callback"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "forgejo_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.forgejo.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
