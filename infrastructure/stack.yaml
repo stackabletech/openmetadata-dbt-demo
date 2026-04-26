@@ -34,6 +34,11 @@ stacks:
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/project.yaml
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/cluster-apps.yaml
+      ################################
+      # keycloak — IdP for OIDC across all demo tools
+      ################################
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/keycloak-operator.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/keycloak.yaml
     supportedNamespaces: ["deployment"]
     resourceRequests:
       cpu: 1750m
