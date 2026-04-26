@@ -5,6 +5,8 @@ metadata:
   name: airflow
   namespace: platform
 spec:
+  clusterOperation:
+    stopped: false
   image:
     custom: oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos
     productVersion: 3.1.6

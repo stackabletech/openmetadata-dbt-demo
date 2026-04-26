@@ -5,6 +5,8 @@ metadata:
   name: simple-hdfs
   namespace: platform
 spec:
+  clusterOperation:
+    stopped: false
   image:
     productVersion: 3.4.2
   clusterConfig:

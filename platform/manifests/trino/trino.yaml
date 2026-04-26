@@ -5,6 +5,8 @@ metadata:
   name: trino
   namespace: platform
 spec:
+  clusterOperation:
+    stopped: false
   image:
     productVersion: "477"
   clusterConfig:

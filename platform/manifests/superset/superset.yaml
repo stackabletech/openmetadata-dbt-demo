@@ -5,6 +5,8 @@ metadata:
   name: simple-superset
   namespace: platform
 spec:
+  clusterOperation:
+    stopped: false
   image:
     productVersion: 6.0.0
   clusterConfig:
