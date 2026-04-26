@@ -10,6 +10,7 @@ a handful of supporting components.
 | --- | --- | --- | --- |----------------------------------------------------------------------------------------------|
 | **ArgoCD** | [https://{{ nodeport "argocd-server-nodeport" }}/applications](https://{{ nodeport "argocd-server-nodeport" }}/applications) | `admin` | `adminadmin` | —                                                                                            |
 | **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/](http://{{ nodeport "forgejo-http-nodeport" }}/) | `stackable` | `stackable` | —                                                                                            |
+| **Keycloak** | [http://{{ nodeport "keycloak-nodeport" }}/realms/stackable-demo/account/](http://{{ nodeport "keycloak-nodeport" }}/realms/stackable-demo/account/) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | —                                                                                            |
 
 
 ## Stackable Components
