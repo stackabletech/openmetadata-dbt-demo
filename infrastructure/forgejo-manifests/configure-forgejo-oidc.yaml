@@ -1,0 +1,97 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configure-forgejo-oidc
+  namespace: deployment
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configure-forgejo-oidc
+  namespace: deployment
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configure-forgejo-oidc
+  namespace: deployment
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: configure-forgejo-oidc
+subjects:
+  - kind: ServiceAccount
+    name: configure-forgejo-oidc
+    namespace: deployment
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-forgejo-oidc
+  namespace: deployment
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      serviceAccountName: configure-forgejo-oidc
+      restartPolicy: Never
+      containers:
+        - name: kubectl
+          image: bitnami/kubectl:1.31 # renovate: datasource=docker depName=bitnami/kubectl
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "Waiting for oidc-endpoints ConfigMap..."
+              until kubectl -n deployment get cm oidc-endpoints >/dev/null 2>&1; do
+                echo "  not ready, retrying in 5s..."
+                sleep 5
+              done
+
+              ISSUER_URL=$(kubectl -n deployment get cm oidc-endpoints -o jsonpath='{.data.issuer-url}')
+              echo "Issuer URL: $ISSUER_URL"
+
+              echo "Waiting for a Forgejo pod to be Ready..."
+              POD=""
+              while [ -z "$POD" ]; do
+                POD=$(kubectl -n deployment get pods -l app.kubernetes.io/name=forgejo \
+                  -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{"\n"}{end}' \
+                  | head -n1)
+                if [ -z "$POD" ]; then
+                  echo "  no Forgejo pod yet, retrying in 5s..."
+                  sleep 5
+                fi
+              done
+              echo "Forgejo pod: $POD"
+
+              echo "Checking for existing Keycloak auth source..."
+              EXISTING=$(kubectl -n deployment exec "$POD" -c forgejo -- \
+                su -s /bin/sh git -c "gitea --config /etc/forgejo/app.ini admin auth list" 2>/dev/null \
+                | awk 'NR>1 {print $2}' || true)
+
+              if echo "$EXISTING" | grep -qx "Keycloak"; then
+                echo "Keycloak auth source already exists; skipping create."
+              else
+                echo "Creating Keycloak OIDC auth source..."
+                kubectl -n deployment exec "$POD" -c forgejo -- \
+                  su -s /bin/sh git -c "gitea --config /etc/forgejo/app.ini admin auth add-oauth \
+                    --name Keycloak \
+                    --provider openidConnect \
+                    --key forgejo \
+                    --secret forgejo-secret \
+                    --auto-discover-url ${ISSUER_URL}/.well-known/openid-configuration \
+                    --scopes 'openid profile email roles' \
+                    --group-claim-name realm_access.roles \
+                    --admin-group admin"
+                echo "Keycloak auth source created."
+              fi
