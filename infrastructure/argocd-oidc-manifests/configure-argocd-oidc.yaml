@@ -1,0 +1,95 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configure-argocd-oidc
+  namespace: deployment
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configure-argocd-oidc
+  namespace: deployment
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configure-argocd-oidc
+  namespace: deployment
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: configure-argocd-oidc
+subjects:
+  - kind: ServiceAccount
+    name: configure-argocd-oidc
+    namespace: deployment
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-argocd-oidc
+  namespace: deployment
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      serviceAccountName: configure-argocd-oidc
+      restartPolicy: Never
+      containers:
+        - name: kubectl
+          image: bitnami/kubectl:1.31 # renovate: datasource=docker depName=bitnami/kubectl
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "Waiting for oidc-endpoints ConfigMap..."
+              until kubectl -n deployment get cm oidc-endpoints >/dev/null 2>&1; do
+                echo "  not ready, retrying in 5s..."
+                sleep 5
+              done
+
+              ISSUER_URL=$(kubectl -n deployment get cm oidc-endpoints -o jsonpath='{.data.issuer-url}')
+              ARGOCD_URL=$(kubectl -n deployment get cm oidc-endpoints -o jsonpath='{.data.argocd-base-url}')
+              echo "Issuer:  $ISSUER_URL"
+              echo "ArgoCD:  $ARGOCD_URL"
+
+              cat > /tmp/argocd-cm-patch.yaml <<PATCH
+              data:
+                url: "${ARGOCD_URL}"
+                oidc.config: |
+                  name: Keycloak
+                  issuer: ${ISSUER_URL}
+                  clientID: argocd
+                  clientSecret: argocd-secret
+                  requestedScopes:
+                    - openid
+                    - profile
+                    - email
+                    - roles
+                  requestedIDTokenClaims:
+                    realm_access:
+                      essential: true
+              PATCH
+
+              kubectl patch configmap argocd-cm -n deployment \
+                --type=merge --patch-file=/tmp/argocd-cm-patch.yaml
+
+              cat > /tmp/argocd-rbac-cm-patch.yaml <<PATCH
+              data:
+                policy.default: ""
+                policy.csv: |
+                  g, admin, role:admin
+                  g, viewer, role:readonly
+              PATCH
+
+              kubectl patch configmap argocd-rbac-cm -n deployment \
+                --type=merge --patch-file=/tmp/argocd-rbac-cm-patch.yaml
+
+              echo "ArgoCD OIDC patch applied."
