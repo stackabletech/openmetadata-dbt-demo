@@ -85,26 +85,30 @@ impl ServiceLookup for KubeClientLookup {
             .await
             .map_err(|e| LookupError::KubeApi(e.to_string()))?;
 
-        for node in list.iter() {
-            // Ready=True?
-            let is_ready = node
-                .status
-                .as_ref()
-                .and_then(|s| s.conditions.as_ref())
-                .map(|conds| {
-                    conds
-                        .iter()
-                        .any(|c| c.type_ == "Ready" && c.status == "True")
-                })
-                .unwrap_or(false);
-            if !is_ready {
-                continue;
-            }
-            let addrs = node.status.as_ref().and_then(|s| s.addresses.as_ref());
-            if let Some(addrs) = addrs {
+        let ready_nodes: Vec<_> = list
+            .iter()
+            .filter(|node| {
+                node.status
+                    .as_ref()
+                    .and_then(|s| s.conditions.as_ref())
+                    .map(|conds| {
+                        conds
+                            .iter()
+                            .any(|c| c.type_ == "Ready" && c.status == "True")
+                    })
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        for node in &ready_nodes {
+            if let Some(addrs) = node.status.as_ref().and_then(|s| s.addresses.as_ref()) {
                 if let Some(ext) = addrs.iter().find(|a| a.type_ == "ExternalIP") {
                     return Ok(ext.address.clone());
                 }
+            }
+        }
+        for node in &ready_nodes {
+            if let Some(addrs) = node.status.as_ref().and_then(|s| s.addresses.as_ref()) {
                 if let Some(int) = addrs.iter().find(|a| a.type_ == "InternalIP") {
                     return Ok(int.address.clone());
                 }
