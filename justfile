@@ -8,24 +8,37 @@ deploy:
 
 seal-secrets:
     #!/usr/bin/env bash
-    # Replicate directory structure from 'secrets' to 'platform'
-    find secrets -type d | while read -r dir; do
-        target_dir="${dir/secrets/platform}"
-        echo "Creating $target_dir"
-        mkdir -p "$target_dir"
-    done
+    set -euo pipefail
+    # Seal offline against the canonical cert checked into the repo.
+    # We do NOT ask the live cluster for the public key: the sealed-secrets
+    # controller auto-rotates whenever the key on disk is older than its
+    # --key-renew-period (default 30d), so a live-cluster fetch produces
+    # bytes tied to a per-instance, throwaway key.
+    CANONICAL_KEY_FILE=infrastructure/sealed-secrets-manifests/sealed-secrets-key.yaml
+    CERT_FILE=$(mktemp -t sealed-secrets-cert.XXXXXX.pem)
+    trap "rm -f $CERT_FILE" EXIT
+    python3 -c "import yaml; print(yaml.safe_load(open('$CANONICAL_KEY_FILE'))['stringData']['tls.crt'])" > "$CERT_FILE"
+    # Components living under infrastructure/ instead of platform/manifests/.
+    # Their consuming ArgoCD Application sources infrastructure/<component>/, so
+    # sealed siblings must be co-located there (not in platform/manifests/).
+    INFRA_COMPONENTS=("keycloak-manifests")
     # Process all yaml files
     find secrets -type f \( -name "*.yaml" -o -name "*.yml" \) | while read -r input_file; do
-        output_path="${input_file/secrets/platform}"
-        output_dir="$(dirname "$output_path")"
-        output_filename="sealed-$(basename "$output_path")"
+        component=$(basename "$(dirname "$input_file")")
+        if printf '%s\n' "${INFRA_COMPONENTS[@]}" | grep -qx "$component"; then
+            output_dir="infrastructure/$component"
+        else
+            output_dir="$(dirname "${input_file/secrets/platform}")"
+        fi
+        mkdir -p "$output_dir"
+        output_filename="sealed-$(basename "$input_file")"
         output_file="$output_dir/$output_filename"
         if [ -f "$output_file" ]; then
             echo "Skipping (already exists): $output_file"
             continue
         fi
         echo "Processing: $input_file -> $output_file"
-        kubeseal --controller-namespace deployment --scope=cluster-wide --format=yaml < "$input_file" > "$output_file"
+        kubeseal --cert "$CERT_FILE" --scope=cluster-wide --format=yaml < "$input_file" > "$output_file"
     done
 
 build-airflow-image:
