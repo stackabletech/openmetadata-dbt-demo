@@ -64,9 +64,13 @@ pub enum ToggleResolution {
 ///
 /// `nodeports`: map service-name → host:port string.
 /// `toggles`: map (file_path, key_path) → resolution.
+/// `is_admin`: when false, toggle helpers render a disabled, non-submittable
+/// switch instead of the interactive form. The server-side check in
+/// `auth::require_admin` is the actual gate; this is purely UI.
 pub fn build_env(
     nodeports: Arc<HashMap<String, String>>,
     toggles: Arc<HashMap<(String, String), ToggleResolution>>,
+    is_admin: bool,
 ) -> Environment<'static> {
     let mut env = Environment::new();
 
@@ -88,7 +92,7 @@ pub fn build_env(
     env.add_function(
         "toggle",
         move |path: String, key: String| -> Result<Value, MjError> {
-            let html = render_toggle_html(&toggles_for_fn, &path, &key);
+            let html = render_toggle_html(&toggles_for_fn, &path, &key, is_admin);
             Ok(Value::from_safe_string(html))
         },
     );
@@ -100,6 +104,7 @@ fn render_toggle_html(
     toggles: &HashMap<(String, String), ToggleResolution>,
     path: &str,
     key: &str,
+    is_admin: bool,
 ) -> String {
     let entry = toggles.get(&(path.to_string(), key.to_string()));
     match entry {
@@ -107,18 +112,27 @@ fn render_toggle_html(
             // The switch's "on" position represents "this thing is enabled / running".
             // For Stackable's `stopped` flag, that's the inverse of the boolean value:
             // stopped=false → on, stopped=true → off. Keeps the demo intuitive.
-            let class = if *value { "switch switch-off" } else { "switch switch-on" };
+            let on_off_class = if *value { "switch-off" } else { "switch-on" };
             let aria = format!("Toggle {} on {}", key, path);
+            if !is_admin {
+                let title = "Only admins can change this";
+                return format!(
+                    r#"<span class="cell-toggle" title="{t}"><span class="switch {cls} switch-disabled" role="img" aria-label="{a} (read-only)" aria-disabled="true"><span class="switch-knob"></span></span></span>"#,
+                    t = html_attr_escape(title),
+                    cls = on_off_class,
+                    a = html_attr_escape(&aria),
+                );
+            }
             // Emitted as a single line so it fits inside one markdown table cell;
             // embedded newlines would break the row mid-cell and pulldown-cmark
             // would abort table parsing on the offending line.
             format!(
-                r#"<form class="cell-toggle" method="POST" action="/toggle"><input type="hidden" name="path" value="{p}"><input type="hidden" name="key" value="{k}"><input type="hidden" name="sha" value="{s}"><input type="hidden" name="current_value" value="{v}"><button type="submit" class="{cls}" aria-label="{a}"><span class="switch-knob"></span></button></form>"#,
+                r#"<form class="cell-toggle" method="POST" action="/toggle"><input type="hidden" name="path" value="{p}"><input type="hidden" name="key" value="{k}"><input type="hidden" name="sha" value="{s}"><input type="hidden" name="current_value" value="{v}"><button type="submit" class="switch {cls}" aria-label="{a}"><span class="switch-knob"></span></button></form>"#,
                 p = html_attr_escape(path),
                 k = html_attr_escape(key),
                 s = html_attr_escape(sha),
                 v = if *value { "true" } else { "false" },
-                cls = class,
+                cls = on_off_class,
                 a = html_attr_escape(&aria),
             )
         }
@@ -227,7 +241,7 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
     fn nodeport_env_substitutes_known_service() {
         let mut np = HashMap::new();
         np.insert("svc".to_string(), "10.0.0.1:30080".to_string());
-        let env = build_env(Arc::new(np), Arc::new(HashMap::new()));
+        let env = build_env(Arc::new(np), Arc::new(HashMap::new()), true);
         let out = env
             .render_str(r#"URL: {{ nodeport("svc") }}"#, ())
             .unwrap();
@@ -236,7 +250,7 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
 
     #[test]
     fn nodeport_env_emits_error_comment_for_unknown_service() {
-        let env = build_env(Arc::new(HashMap::new()), Arc::new(HashMap::new()));
+        let env = build_env(Arc::new(HashMap::new()), Arc::new(HashMap::new()), true);
         let out = env
             .render_str(r#"X: {{ nodeport("missing") }} Y"#, ())
             .unwrap();
@@ -258,7 +272,7 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
                 value: false,
             },
         );
-        let env = build_env(Arc::new(HashMap::new()), Arc::new(t));
+        let env = build_env(Arc::new(HashMap::new()), Arc::new(t), true);
         let out = env
             .render_str(r#"{{ toggle("p.yaml", "spec.k") }}"#, ())
             .unwrap();
@@ -281,7 +295,7 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
                 value: true,
             },
         );
-        let env = build_env(Arc::new(HashMap::new()), Arc::new(t));
+        let env = build_env(Arc::new(HashMap::new()), Arc::new(t), true);
         let out = env
             .render_str(r#"{{ toggle("p.yaml", "k") }}"#, ())
             .unwrap();
@@ -291,7 +305,7 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
 
     #[test]
     fn toggle_env_renders_error_for_unresolved_pair() {
-        let env = build_env(Arc::new(HashMap::new()), Arc::new(HashMap::new()));
+        let env = build_env(Arc::new(HashMap::new()), Arc::new(HashMap::new()), true);
         let out = env
             .render_str(r#"{{ toggle("missing.yaml", "k") }}"#, ())
             .unwrap();
@@ -308,11 +322,36 @@ Also [ArgoCD again](https://{{ nodeport "argocd-server-nodeport" }}).
                 reason: "value at k is not a boolean".into(),
             },
         );
-        let env = build_env(Arc::new(HashMap::new()), Arc::new(t));
+        let env = build_env(Arc::new(HashMap::new()), Arc::new(t), true);
         let out = env
             .render_str(r#"{{ toggle("p.yaml", "k") }}"#, ())
             .unwrap();
         assert!(out.contains(r#"title="value at k is not a boolean""#));
+    }
+
+    #[test]
+    fn toggle_env_renders_disabled_switch_when_not_admin() {
+        let mut t = HashMap::new();
+        t.insert(
+            ("p.yaml".to_string(), "spec.k".to_string()),
+            ToggleResolution::Ok {
+                sha: "abc".into(),
+                value: false,
+            },
+        );
+        let env = build_env(Arc::new(HashMap::new()), Arc::new(t), false);
+        let out = env
+            .render_str(r#"{{ toggle("p.yaml", "spec.k") }}"#, ())
+            .unwrap();
+        // No form, no submit button, no hidden inputs → cannot be POSTed.
+        assert!(!out.contains(r#"action="/toggle""#));
+        assert!(!out.contains("<form"));
+        assert!(!out.contains(r#"type="submit""#));
+        // Visual position preserved + disabled marker present.
+        assert!(out.contains("switch-disabled"));
+        assert!(out.contains("switch-on"));
+        assert!(out.contains(r#"aria-disabled="true""#));
+        assert!(out.contains("Only admins can change this"));
     }
 
     #[test]

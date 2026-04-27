@@ -361,6 +361,17 @@ tbody tr:nth-child(even) td {
   filter: brightness(0.97);
 }
 
+/* Read-only / non-admin appearance: visible but explicitly non-interactive. */
+.switch.switch-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(60%);
+}
+
+.switch.switch-disabled:hover {
+  filter: grayscale(60%);
+}
+
 .toggle-error {
   display: inline-flex;
   align-items: center;

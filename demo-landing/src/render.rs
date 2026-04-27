@@ -59,10 +59,11 @@ pub fn render(
     title: &str,
     current_user: &str,
     logout_url: &str,
+    is_admin: bool,
 ) -> Result<String, RenderError> {
     let normalized = normalize_helper_calls(markdown_src);
 
-    let env = template::build_env(nodeports, toggles);
+    let env = template::build_env(nodeports, toggles, is_admin);
     let templated = env
         .render_str(&normalized, ())
         .map_err(|e| RenderError::Substitute(e.to_string()))?;
@@ -168,7 +169,7 @@ mod tests {
     fn renders_plain_markdown() {
         let md = "# Hello\n\nThis is **bold**.";
         let (np, tg) = empty_maps();
-        let html = render(md, np, tg, "t", "", "").unwrap();
+        let html = render(md, np, tg, "t", "", "", true).unwrap();
         assert!(html.contains("<h1>Hello</h1>"));
         assert!(html.contains("<strong>bold</strong>"));
         assert!(html.contains("<title>t</title>"));
@@ -181,7 +182,7 @@ mod tests {
         let mut np = HashMap::new();
         np.insert("argocd".to_string(), "10.0.0.1:30080".to_string());
         let (_, tg) = empty_maps();
-        let html = render(md, Arc::new(np), tg, "t", "", "").unwrap();
+        let html = render(md, Arc::new(np), tg, "t", "", "", true).unwrap();
         assert!(html.contains(r#"href="https://10.0.0.1:30080/apps""#));
     }
 
@@ -189,7 +190,7 @@ mod tests {
     fn missing_service_renders_error_comment_and_keeps_page() {
         let md = r#"{{ nodeport "missing" }} See <a href="http://example.com">svc</a>"#;
         let (np, tg) = empty_maps();
-        let html = render(md, np, tg, "t", "", "").unwrap();
+        let html = render(md, np, tg, "t", "", "", true).unwrap();
         assert!(html.contains("nodeport error"));
         assert!(html.contains("<a href="));
     }
@@ -206,7 +207,7 @@ mod tests {
             },
         );
         let (np, _) = empty_maps();
-        let html = render(md, np, Arc::new(tg), "t", "", "").unwrap();
+        let html = render(md, np, Arc::new(tg), "t", "", "", true).unwrap();
         assert!(html.contains(r#"<form class="cell-toggle""#));
         assert!(html.contains(r#"action="/toggle""#));
         // value=false (not stopped) → switch shown as "on" / running.
@@ -217,7 +218,7 @@ mod tests {
     fn render_omits_user_block_when_current_user_is_empty() {
         let md = "# hi";
         let (np, tg) = empty_maps();
-        let html = render(md, np, tg, "t", "", "").unwrap();
+        let html = render(md, np, tg, "t", "", "", true).unwrap();
         assert!(!html.contains("user-block"));
         assert!(!html.contains("log out"));
     }
@@ -226,7 +227,7 @@ mod tests {
     fn render_includes_username_without_link_when_logout_url_empty() {
         let md = "# hi";
         let (np, tg) = empty_maps();
-        let html = render(md, np, tg, "t", "demo-admin", "").unwrap();
+        let html = render(md, np, tg, "t", "demo-admin", "", true).unwrap();
         assert!(html.contains("user-block"));
         assert!(html.contains("demo-admin"));
         assert!(!html.contains("log out"));
@@ -243,6 +244,7 @@ mod tests {
             "t",
             "demo-admin",
             "/oauth2/sign_out?rd=http%3A%2F%2Fkc%2Flogout",
+            true,
         )
         .unwrap();
         assert!(html.contains("user-block"));
@@ -255,7 +257,7 @@ mod tests {
     fn render_html_escapes_username() {
         let md = "# hi";
         let (np, tg) = empty_maps();
-        let html = render(md, np, tg, "t", "<script>x</script>", "").unwrap();
+        let html = render(md, np, tg, "t", "<script>x</script>", "", true).unwrap();
         assert!(!html.contains("<script>x</script>"));
         assert!(html.contains("&lt;script&gt;"));
     }

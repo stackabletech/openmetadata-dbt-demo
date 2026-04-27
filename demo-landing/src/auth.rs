@@ -50,19 +50,22 @@ pub fn build_logout_url(issuer_url: &str, landing_base_url: &str) -> String {
     format!("/oauth2/sign_out?rd={}", urlencoding::encode(&inner))
 }
 
-pub async fn require_admin(req: Request, next: Next) -> Result<Response, StatusCode> {
-    let header_value = req
-        .headers()
+/// True if the request's `X-Forwarded-Groups` header carries the prefixed
+/// admin role (`role:admin`) that oauth2-proxy forwards for users with the
+/// Keycloak `admin` realm role. Used both by the request-gating middleware
+/// and by the page renderer to decide whether to show interactive toggles.
+pub fn is_admin(headers: &axum::http::HeaderMap) -> bool {
+    headers
         .get(FORWARDED_GROUPS)
         .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-
-    let has_admin = header_value
+        .unwrap_or("")
         .split(',')
         .map(|s| s.trim())
-        .any(|s| s == ADMIN_ROLE);
+        .any(|s| s == ADMIN_ROLE)
+}
 
-    if has_admin {
+pub async fn require_admin(req: Request, next: Next) -> Result<Response, StatusCode> {
+    if is_admin(req.headers()) {
         Ok(next.run(req).await)
     } else {
         Err(StatusCode::FORBIDDEN)

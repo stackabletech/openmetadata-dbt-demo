@@ -65,6 +65,7 @@ pub async fn index(State(state): State<AppState>, headers: HeaderMap) -> Respons
     } else {
         state.logout_url.clone()
     };
+    let is_admin = crate::auth::is_admin(&headers);
     let path = state.content_dir.join("index.md");
     let markdown = match tokio::fs::read_to_string(&path).await {
         Ok(s) => s,
@@ -191,6 +192,7 @@ pub async fn index(State(state): State<AppState>, headers: HeaderMap) -> Respons
         "Demo",
         &current_user,
         &logout_url,
+        is_admin,
     ) {
         Ok(html) => (
             [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
