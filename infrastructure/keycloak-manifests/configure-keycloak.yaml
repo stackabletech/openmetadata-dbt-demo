@@ -159,7 +159,7 @@ data:
       access_type           = "CONFIDENTIAL"
       client_secret         = "demo-landing-secret"
       standard_flow_enabled = true
-      valid_redirect_uris   = ["http://*/oauth2/callback"]
+      valid_redirect_uris   = ["*"]
       web_origins           = ["+"]
     }
 
@@ -182,7 +182,7 @@ data:
       access_type           = "CONFIDENTIAL"
       client_secret         = "argocd-secret"
       standard_flow_enabled = true
-      valid_redirect_uris   = ["http://*/auth/callback", "http://localhost:8085/auth/callback"]
+      valid_redirect_uris   = ["*"]
       web_origins           = ["+"]
     }
 
@@ -205,7 +205,7 @@ data:
       access_type           = "CONFIDENTIAL"
       client_secret         = "forgejo-secret"
       standard_flow_enabled = true
-      valid_redirect_uris   = ["http://*/user/oauth2/keycloak/callback"]
+      valid_redirect_uris   = ["*"]
       web_origins           = ["+"]
     }
 
