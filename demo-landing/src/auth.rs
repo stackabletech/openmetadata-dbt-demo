@@ -12,6 +12,18 @@ use axum::{
 const FORWARDED_GROUPS: &str = "x-forwarded-groups";
 const ADMIN_ROLE: &str = "admin";
 
+const FORWARDED_PREFERRED_USERNAME: &str = "x-forwarded-preferred-username";
+
+/// Read the username oauth2-proxy forwards via `X-Forwarded-Preferred-Username`.
+/// Returns an empty string if the header is missing or not visible-ASCII.
+pub fn extract_current_user(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get(FORWARDED_PREFERRED_USERNAME)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
 pub async fn require_admin(req: Request, next: Next) -> Result<Response, StatusCode> {
     let header_value = req
         .headers()
@@ -120,5 +132,37 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn extract_current_user_returns_empty_when_header_missing() {
+        let headers = HeaderMap::new();
+        assert_eq!(super::extract_current_user(&headers), "");
+    }
+
+    #[test]
+    fn extract_current_user_returns_header_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-preferred-username", "demo-admin".parse().unwrap());
+        assert_eq!(super::extract_current_user(&headers), "demo-admin");
+    }
+
+    #[test]
+    fn extract_current_user_trims_surrounding_whitespace() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-preferred-username", "  demo-user  ".parse().unwrap());
+        assert_eq!(super::extract_current_user(&headers), "demo-user");
+    }
+
+    #[test]
+    fn extract_current_user_returns_empty_when_header_value_is_non_visible_ascii() {
+        // HeaderValue::to_str returns Err for non-visible-ASCII bytes; we fall
+        // through to empty rather than panicking.
+        let mut headers = HeaderMap::new();
+        let v = axum::http::HeaderValue::from_bytes(b"\xff\xfe").unwrap();
+        headers.insert("x-forwarded-preferred-username", v);
+        assert_eq!(super::extract_current_user(&headers), "");
     }
 }
