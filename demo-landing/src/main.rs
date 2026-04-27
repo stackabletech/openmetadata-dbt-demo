@@ -135,6 +135,17 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "127.0.0.1:8081".into())
         .parse()?;
 
+    let issuer_url = std::env::var("OIDC_ISSUER_URL").unwrap_or_default();
+    let landing_base_url = std::env::var("LANDING_BASE_URL").unwrap_or_default();
+    let logout_url = auth::build_logout_url(&issuer_url, &landing_base_url);
+    if logout_url.is_empty() {
+        tracing::warn!(
+            issuer_set = !issuer_url.is_empty(),
+            landing_set = !landing_base_url.is_empty(),
+            "logout URL not built; logout link will not be rendered"
+        );
+    }
+
     let client = Client::try_default().await?;
     let lookup: Arc<dyn ServiceLookup> =
         Arc::new(KubeClientLookup { client });
@@ -145,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
         content_dir,
         lookup,
         forgejo,
+        logout_url,
     };
 
     let app = Router::new()

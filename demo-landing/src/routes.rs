@@ -23,6 +23,7 @@ pub struct AppState {
     pub content_dir: PathBuf,
     pub lookup: Arc<dyn ServiceLookup>,
     pub forgejo: Arc<ForgejoClient>,
+    pub logout_url: String,
 }
 
 pub async fn healthz() -> &'static str {
@@ -412,6 +413,7 @@ mod tests {
             content_dir: tmp.into(),
             lookup: Arc::new(LocalMock::new()),
             forgejo: Arc::new(ForgejoClient::for_testing()),
+            logout_url: String::new(),
         }
     }
 
