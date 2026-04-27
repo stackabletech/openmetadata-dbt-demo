@@ -174,6 +174,15 @@ data:
       ]
     }
 
+    resource "keycloak_openid_audience_protocol_mapper" "demo_landing_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.demo_landing.id
+      name                     = "demo-landing-audience"
+      included_client_audience = "demo-landing"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
+
     resource "keycloak_openid_client" "argocd" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "argocd"
@@ -197,6 +206,15 @@ data:
       ]
     }
 
+    resource "keycloak_openid_audience_protocol_mapper" "argocd_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.argocd.id
+      name                     = "argocd-audience"
+      included_client_audience = "argocd"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
+
     resource "keycloak_openid_client" "forgejo" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "forgejo"
@@ -218,4 +236,13 @@ data:
         "roles",
         "web-origins",
       ]
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "forgejo_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.forgejo.id
+      name                     = "forgejo-audience"
+      included_client_audience = "forgejo"
+      add_to_id_token          = true
+      add_to_access_token      = true
     }
