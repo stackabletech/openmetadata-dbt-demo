@@ -115,6 +115,7 @@ spec:
                   --from-literal=forgejo-redirect-uri="http://${NODE_IP}:30000/user/oauth2/keycloak/callback" \
                   --from-literal=landing-base-url="http://${NODE_IP}:30088" \
                   --from-literal=landing-redirect-uri="http://${NODE_IP}:30088/oauth2/callback" \
+                  --from-literal=keycloak-host="${NODE_IP}:30900" \
                   --from-literal=ISSUER_URL="http://${NODE_IP}:30900/realms/stackable-demo" \
                   --from-literal=ARGOCD_BASE_URL="http://${NODE_IP}:30080" \
                   --from-literal=ARGOCD_REDIRECT_URI="http://${NODE_IP}:30080/auth/callback" \
@@ -122,5 +123,6 @@ spec:
                   --from-literal=FORGEJO_REDIRECT_URI="http://${NODE_IP}:30000/user/oauth2/keycloak/callback" \
                   --from-literal=LANDING_BASE_URL="http://${NODE_IP}:30088" \
                   --from-literal=LANDING_REDIRECT_URI="http://${NODE_IP}:30088/oauth2/callback" \
+                  --from-literal=KEYCLOAK_HOST="${NODE_IP}:30900" \
                   --dry-run=client -o yaml | kubectl apply -f -
               done
