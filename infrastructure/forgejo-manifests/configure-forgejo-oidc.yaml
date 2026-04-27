@@ -76,7 +76,7 @@ spec:
                 fi
 
                 EXISTING=$(kubectl -n deployment exec "$POD" -c forgejo -- \
-                  gitea --config /etc/forgejo/app.ini admin auth list 2>/dev/null \
+                  gitea admin auth list 2>/dev/null \
                   | awk 'NR>1 {print $2}')
 
                 if echo "$EXISTING" | grep -qx "Keycloak"; then
@@ -86,7 +86,7 @@ spec:
 
                 echo "Creating Keycloak OIDC auth source on pod $POD..."
                 if kubectl -n deployment exec "$POD" -c forgejo -- \
-                     gitea --config /etc/forgejo/app.ini admin auth add-oauth \
+                     gitea admin auth add-oauth \
                        --name Keycloak \
                        --provider openidConnect \
                        --key forgejo \
