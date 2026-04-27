@@ -24,6 +24,28 @@ pub fn extract_current_user(headers: &axum::http::HeaderMap) -> String {
         .unwrap_or_default()
 }
 
+/// Build the demo-landing `<a href>` for the logout link.
+///
+/// The result is `/oauth2/sign_out?rd=<URL-encoded keycloak end-session URL>`.
+/// Encoding is required so the inner query (`?post_logout_redirect_uri=...&client_id=demo-landing`)
+/// survives being a *value* of oauth2-proxy's outer `?rd=` parameter.
+///
+/// Returns an empty string if either input is empty (callers treat that as
+/// "don't render the logout link").
+pub fn build_logout_url(issuer_url: &str, landing_base_url: &str) -> String {
+    if issuer_url.is_empty() || landing_base_url.is_empty() {
+        return String::new();
+    }
+    let issuer = issuer_url.trim_end_matches('/');
+    let landing = landing_base_url.trim_end_matches('/');
+    let encoded_landing = urlencoding::encode(landing);
+    let inner = format!(
+        "{}/protocol/openid-connect/logout?post_logout_redirect_uri={}&client_id=demo-landing",
+        issuer, encoded_landing
+    );
+    format!("/oauth2/sign_out?rd={}", urlencoding::encode(&inner))
+}
+
 pub async fn require_admin(req: Request, next: Next) -> Result<Response, StatusCode> {
     let header_value = req
         .headers()
@@ -164,5 +186,32 @@ mod tests {
         let v = axum::http::HeaderValue::from_bytes(b"\xff\xfe").unwrap();
         headers.insert("x-forwarded-preferred-username", v);
         assert_eq!(super::extract_current_user(&headers), "");
+    }
+
+    #[test]
+    fn build_logout_url_encodes_post_logout_redirect_inside_rd() {
+        let got = super::build_logout_url(
+            "http://10.0.0.1:30900/realms/stackable-demo",
+            "http://10.0.0.1:30088",
+        );
+        // The whole keycloak URL must be URL-encoded so the inner `?` and `&`
+        // are not parsed by oauth2-proxy as new top-level query params.
+        let expected = "/oauth2/sign_out?rd=http%3A%2F%2F10.0.0.1%3A30900%2Frealms%2Fstackable-demo%2Fprotocol%2Fopenid-connect%2Flogout%3Fpost_logout_redirect_uri%3Dhttp%253A%252F%252F10.0.0.1%253A30088%26client_id%3Ddemo-landing";
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn build_logout_url_returns_empty_when_inputs_empty() {
+        assert_eq!(super::build_logout_url("", ""), "");
+        assert_eq!(super::build_logout_url("http://x", ""), "");
+        assert_eq!(super::build_logout_url("", "http://x"), "");
+    }
+
+    #[test]
+    fn build_logout_url_strips_trailing_slash_on_issuer() {
+        let got = super::build_logout_url("http://kc/realms/r/", "http://land/");
+        // Issuer has its trailing slash stripped before appending the logout
+        // path, so we don't end up with `//protocol/...`.
+        assert!(got.contains("realms%2Fr%2Fprotocol%2Fopenid-connect%2Flogout"));
     }
 }
