@@ -10,7 +10,11 @@ use axum::{
 };
 
 const FORWARDED_GROUPS: &str = "x-forwarded-groups";
-const ADMIN_ROLE: &str = "admin";
+// oauth2-proxy v7 prefixes Keycloak realm/client roles with `role:` when
+// extracting from `realm_access.roles` / `resource_access.<client>.roles`,
+// to namespace them apart from generic OIDC groups. So the value we match
+// against is the prefixed form, not bare `admin`.
+const ADMIN_ROLE: &str = "role:admin";
 
 const FORWARDED_PREFERRED_USERNAME: &str = "x-forwarded-preferred-username";
 
@@ -99,7 +103,7 @@ mod tests {
                 HttpRequest::builder()
                     .method("POST")
                     .uri("/admin-only")
-                    .header("x-forwarded-groups", "viewer,other")
+                    .header("x-forwarded-groups", "role:viewer,other")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -115,7 +119,7 @@ mod tests {
                 HttpRequest::builder()
                     .method("POST")
                     .uri("/admin-only")
-                    .header("x-forwarded-groups", "viewer,admin,other")
+                    .header("x-forwarded-groups", "role:viewer,role:admin,other")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -131,7 +135,7 @@ mod tests {
                 HttpRequest::builder()
                     .method("POST")
                     .uri("/admin-only")
-                    .header("x-forwarded-groups", "admin")
+                    .header("x-forwarded-groups", "role:admin")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -147,7 +151,7 @@ mod tests {
                 HttpRequest::builder()
                     .method("POST")
                     .uri("/admin-only")
-                    .header("x-forwarded-groups", " viewer , admin ")
+                    .header("x-forwarded-groups", " role:viewer , role:admin ")
                     .body(Body::empty())
                     .unwrap(),
             )

@@ -22,7 +22,7 @@ spec:
           emptyDir: {}
       containers:
         - name: landing
-          image: oci.stackable.tech/sandbox/demo-landing:0.2.1-dev
+          image: oci.stackable.tech/sandbox/demo-landing:0.2.2-dev
           imagePullPolicy: Always
           env:
             - name: CONTENT_DIR
