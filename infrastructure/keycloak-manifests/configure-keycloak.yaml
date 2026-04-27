@@ -160,6 +160,7 @@ data:
       client_secret         = "demo-landing-secret"
       standard_flow_enabled = true
       valid_redirect_uris   = ["*"]
+      valid_post_logout_redirect_uris = ["*"]
       web_origins           = ["+"]
     }
 
