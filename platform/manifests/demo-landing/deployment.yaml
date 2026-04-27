@@ -93,6 +93,7 @@ spec:
             - --pass-user-headers=true
             - --set-xauthrequest=true
             - --skip-auth-route=^/healthz
+            - --skip-provider-button=true
             - --scope=openid profile email roles
             - --cookie-secure=false
             - --oidc-groups-claim=realm_access.roles
