@@ -46,8 +46,8 @@ build-airflow-image:
     docker push oci.stackable.tech/sandbox/airflow:3.1.6-stackable0.0.0-dev-cosmos
 
 build-landing-image:
-    docker build -t oci.stackable.tech/sandbox/demo-landing:0.2.0-dev demo-landing
-    docker push oci.stackable.tech/sandbox/demo-landing:0.2.0-dev
+    docker build -t oci.stackable.tech/sandbox/demo-landing:0.2.1-dev demo-landing
+    docker push oci.stackable.tech/sandbox/demo-landing:0.2.1-dev
 
 [private]
 _select-cluster:
