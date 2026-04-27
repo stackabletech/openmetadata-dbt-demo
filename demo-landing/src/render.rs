@@ -1,7 +1,8 @@
 //! Full render pipeline: markdown source + resolution maps -> HTML page.
 
 use crate::template::{self, ToggleResolution};
-use minijinja::{context, Environment};
+use minijinja::value::Value;
+use minijinja::{context, AutoEscape, Environment};
 use pulldown_cmark::{html as cmark_html, Options, Parser};
 use regex::Regex;
 use std::collections::HashMap;
@@ -56,6 +57,8 @@ pub fn render(
     nodeports: Arc<HashMap<String, String>>,
     toggles: Arc<HashMap<(String, String), ToggleResolution>>,
     title: &str,
+    current_user: &str,
+    logout_url: &str,
 ) -> Result<String, RenderError> {
     let normalized = normalize_helper_calls(markdown_src);
 
@@ -73,14 +76,20 @@ pub fn render(
     cmark_html::push_html(&mut body_html, parser);
 
     let mut layout_env = Environment::new();
+    layout_env.set_auto_escape_callback(|_| AutoEscape::Html);
     layout_env
         .add_template("layout", LAYOUT_SRC)
         .map_err(|e| RenderError::Layout(e.to_string()))?;
     let tmpl = layout_env
         .get_template("layout")
         .map_err(|e| RenderError::Layout(e.to_string()))?;
-    tmpl.render(context! { title => title, content => body_html })
-        .map_err(|e| RenderError::Layout(e.to_string()))
+    tmpl.render(context! {
+        title => title,
+        content => Value::from_safe_string(body_html),
+        current_user => current_user,
+        logout_url => Value::from_safe_string(logout_url.to_string()),
+    })
+    .map_err(|e| RenderError::Layout(e.to_string()))
 }
 
 /// Read a boolean value at a dotted YAML key path.
@@ -159,7 +168,7 @@ mod tests {
     fn renders_plain_markdown() {
         let md = "# Hello\n\nThis is **bold**.";
         let (np, tg) = empty_maps();
-        let html = render(md, np, tg, "t").unwrap();
+        let html = render(md, np, tg, "t", "", "").unwrap();
         assert!(html.contains("<h1>Hello</h1>"));
         assert!(html.contains("<strong>bold</strong>"));
         assert!(html.contains("<title>t</title>"));
@@ -172,7 +181,7 @@ mod tests {
         let mut np = HashMap::new();
         np.insert("argocd".to_string(), "10.0.0.1:30080".to_string());
         let (_, tg) = empty_maps();
-        let html = render(md, Arc::new(np), tg, "t").unwrap();
+        let html = render(md, Arc::new(np), tg, "t", "", "").unwrap();
         assert!(html.contains(r#"href="https://10.0.0.1:30080/apps""#));
     }
 
@@ -180,7 +189,7 @@ mod tests {
     fn missing_service_renders_error_comment_and_keeps_page() {
         let md = r#"{{ nodeport "missing" }} See <a href="http://example.com">svc</a>"#;
         let (np, tg) = empty_maps();
-        let html = render(md, np, tg, "t").unwrap();
+        let html = render(md, np, tg, "t", "", "").unwrap();
         assert!(html.contains("nodeport error"));
         assert!(html.contains("<a href="));
     }
@@ -197,11 +206,58 @@ mod tests {
             },
         );
         let (np, _) = empty_maps();
-        let html = render(md, np, Arc::new(tg), "t").unwrap();
+        let html = render(md, np, Arc::new(tg), "t", "", "").unwrap();
         assert!(html.contains(r#"<form class="cell-toggle""#));
         assert!(html.contains(r#"action="/toggle""#));
         // value=false (not stopped) → switch shown as "on" / running.
         assert!(html.contains("switch-on"));
+    }
+
+    #[test]
+    fn render_omits_user_block_when_current_user_is_empty() {
+        let md = "# hi";
+        let (np, tg) = empty_maps();
+        let html = render(md, np, tg, "t", "", "").unwrap();
+        assert!(!html.contains("user-block"));
+        assert!(!html.contains("log out"));
+    }
+
+    #[test]
+    fn render_includes_username_without_link_when_logout_url_empty() {
+        let md = "# hi";
+        let (np, tg) = empty_maps();
+        let html = render(md, np, tg, "t", "demo-admin", "").unwrap();
+        assert!(html.contains("user-block"));
+        assert!(html.contains("demo-admin"));
+        assert!(!html.contains("log out"));
+    }
+
+    #[test]
+    fn render_includes_username_and_logout_link_when_both_set() {
+        let md = "# hi";
+        let (np, tg) = empty_maps();
+        let html = render(
+            md,
+            np,
+            tg,
+            "t",
+            "demo-admin",
+            "/oauth2/sign_out?rd=http%3A%2F%2Fkc%2Flogout",
+        )
+        .unwrap();
+        assert!(html.contains("user-block"));
+        assert!(html.contains("demo-admin"));
+        assert!(html.contains("log out"));
+        assert!(html.contains(r#"href="/oauth2/sign_out?rd=http%3A%2F%2Fkc%2Flogout""#));
+    }
+
+    #[test]
+    fn render_html_escapes_username() {
+        let md = "# hi";
+        let (np, tg) = empty_maps();
+        let html = render(md, np, tg, "t", "<script>x</script>", "").unwrap();
+        assert!(!html.contains("<script>x</script>"));
+        assert!(html.contains("&lt;script&gt;"));
     }
 
     #[test]

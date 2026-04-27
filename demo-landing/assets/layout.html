@@ -29,6 +29,15 @@
         </svg>
         <span class="wordmark">stackable</span>
       </a>
+      {% if current_user %}
+      <div class="user-block">
+        <span class="user-name">{{ current_user }}</span>
+        {% if logout_url %}
+        <span class="user-sep">·</span>
+        <a class="logout" href="{{ logout_url }}">log out</a>
+        {% endif %}
+      </div>
+      {% endif %}
     </header>
     <main>
       {{ content | safe }}

@@ -177,7 +177,14 @@ pub async fn index(State(state): State<AppState>) -> Response {
         }
     }
 
-    match render::render(&markdown, Arc::new(nodeports), Arc::new(toggles), "Demo") {
+    match render::render(
+        &markdown,
+        Arc::new(nodeports),
+        Arc::new(toggles),
+        "Demo",
+        "",
+        "",
+    ) {
         Ok(html) => (
             [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
             html,

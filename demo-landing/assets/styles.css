@@ -89,6 +89,7 @@ body {
 .site-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0.85rem 1.5rem;
   background: var(--color-base-200);
   border-bottom: 1px solid var(--color-base-300);
@@ -114,6 +115,27 @@ body {
 
 .site-header .logo:hover {
   text-decoration: none;
+  color: var(--color-primary);
+}
+
+.site-header .user-block {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-neutral);
+}
+
+.site-header .user-block .user-name {
+  color: var(--color-base-content);
+}
+
+.site-header .user-block .user-sep {
+  color: var(--color-base-300);
+}
+
+.site-header .user-block .logout {
   color: var(--color-primary);
 }
 
