@@ -51,7 +51,6 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              set -e
               echo "Waiting for oidc-endpoints ConfigMap..."
               until kubectl -n deployment get cm oidc-endpoints >/dev/null 2>&1; do
                 echo "  not ready, retrying in 5s..."
@@ -61,37 +60,45 @@ spec:
               ISSUER_URL=$(kubectl -n deployment get cm oidc-endpoints -o jsonpath='{.data.issuer-url}')
               echo "Issuer URL: $ISSUER_URL"
 
-              echo "Waiting for a Forgejo pod to be Ready..."
-              POD=""
-              while [ -z "$POD" ]; do
+              # Retry loop: on any failure (Forgejo not ready, transient exec
+              # error, partially-initialised app.ini, etc.) sleep and try
+              # again. Exits 0 once the auth source either exists or is
+              # successfully created — keeps the Job to a single pod instead
+              # of stacking up Error pods.
+              while true; do
                 POD=$(kubectl -n deployment get pods -l app.kubernetes.io/name=forgejo \
                   -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{"\n"}{end}' \
-                  | head -n1)
+                  2>/dev/null | head -n1)
                 if [ -z "$POD" ]; then
-                  echo "  no Forgejo pod yet, retrying in 5s..."
-                  sleep 5
+                  echo "  no Forgejo pod yet, retrying in 10s..."
+                  sleep 10
+                  continue
                 fi
+
+                EXISTING=$(kubectl -n deployment exec "$POD" -c forgejo -- \
+                  gitea --config /etc/forgejo/app.ini admin auth list 2>/dev/null \
+                  | awk 'NR>1 {print $2}')
+
+                if echo "$EXISTING" | grep -qx "Keycloak"; then
+                  echo "Keycloak auth source exists on pod $POD. Done."
+                  exit 0
+                fi
+
+                echo "Creating Keycloak OIDC auth source on pod $POD..."
+                if kubectl -n deployment exec "$POD" -c forgejo -- \
+                     gitea --config /etc/forgejo/app.ini admin auth add-oauth \
+                       --name Keycloak \
+                       --provider openidConnect \
+                       --key forgejo \
+                       --secret forgejo-secret \
+                       --auto-discover-url "${ISSUER_URL}/.well-known/openid-configuration" \
+                       --scopes "openid profile email roles" \
+                       --group-claim-name realm_access.roles \
+                       --admin-group admin; then
+                  echo "Keycloak auth source created."
+                  exit 0
+                fi
+
+                echo "  create failed; retrying in 10s..."
+                sleep 10
               done
-              echo "Forgejo pod: $POD"
-
-              echo "Checking for existing Keycloak auth source..."
-              EXISTING=$(kubectl -n deployment exec "$POD" -c forgejo -- \
-                su -s /bin/sh git -c "gitea --config /etc/forgejo/app.ini admin auth list" 2>/dev/null \
-                | awk 'NR>1 {print $2}' || true)
-
-              if echo "$EXISTING" | grep -qx "Keycloak"; then
-                echo "Keycloak auth source already exists; skipping create."
-              else
-                echo "Creating Keycloak OIDC auth source..."
-                kubectl -n deployment exec "$POD" -c forgejo -- \
-                  su -s /bin/sh git -c "gitea --config /etc/forgejo/app.ini admin auth add-oauth \
-                    --name Keycloak \
-                    --provider openidConnect \
-                    --key forgejo \
-                    --secret forgejo-secret \
-                    --auto-discover-url ${ISSUER_URL}/.well-known/openid-configuration \
-                    --scopes 'openid profile email roles' \
-                    --group-claim-name realm_access.roles \
-                    --admin-group admin"
-                echo "Keycloak auth source created."
-              fi
