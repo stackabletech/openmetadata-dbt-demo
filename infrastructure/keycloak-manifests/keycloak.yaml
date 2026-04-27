@@ -21,7 +21,7 @@ spec:
     httpEnabled: true
   hostname:
     strict: false
-    backchannelDynamic: true
+    backchannelDynamic: false
   proxy:
     headers: xforwarded
   bootstrapAdmin:
