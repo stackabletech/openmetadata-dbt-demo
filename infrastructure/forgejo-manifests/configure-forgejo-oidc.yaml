@@ -47,7 +47,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: kubectl
-          image: bitnami/kubectl:1.31 # renovate: datasource=docker depName=bitnami/kubectl
+          image: bitnamilegacy/kubectl:1.31 # renovate: datasource=docker depName=bitnamilegacy/kubectl
           command: ["/bin/sh", "-c"]
           args:
             - |
