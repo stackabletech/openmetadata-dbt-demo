@@ -58,7 +58,13 @@ pub async fn fonts(Path(name): Path<String>) -> Response {
     (headers, Body::from(bytes)).into_response()
 }
 
-pub async fn index(State(state): State<AppState>) -> Response {
+pub async fn index(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let current_user = crate::auth::extract_current_user(&headers);
+    let logout_url = if current_user.is_empty() {
+        String::new()
+    } else {
+        state.logout_url.clone()
+    };
     let path = state.content_dir.join("index.md");
     let markdown = match tokio::fs::read_to_string(&path).await {
         Ok(s) => s,
@@ -183,8 +189,8 @@ pub async fn index(State(state): State<AppState>) -> Response {
         Arc::new(nodeports),
         Arc::new(toggles),
         "Demo",
-        "",
-        "",
+        &current_user,
+        &logout_url,
     ) {
         Ok(html) => (
             [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -436,6 +442,34 @@ mod tests {
         assert_eq!(healthz().await, "ok");
     }
 
+    #[tokio::test]
+    async fn index_renders_user_block_from_header_and_logout_url() {
+        let tmp = tempdir_with_index_md("# hello\n\nbody.");
+        let mut state = test_state(tmp.path());
+        state.logout_url = "/oauth2/sign_out?rd=http%3A%2F%2Fkc%2Flogout".to_string();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-preferred-username",
+            "demo-admin".parse().unwrap(),
+        );
+
+        let resp = index(State(state), headers).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_to_string(resp).await;
+        assert!(body.contains("demo-admin"));
+        assert!(body.contains(r#"href="/oauth2/sign_out?rd=http%3A%2F%2Fkc%2Flogout""#));
+    }
+
+    #[tokio::test]
+    async fn index_omits_user_block_when_header_missing() {
+        let tmp = tempdir_with_index_md("# hello");
+        let state = test_state(tmp.path());
+        let resp = index(State(state), HeaderMap::new()).await;
+        let body = body_to_string(resp).await;
+        assert!(!body.contains("user-block"));
+    }
+
     fn tempdir_with_images() -> TempDir {
         let base = std::env::temp_dir().join(format!(
             "demo-landing-test-{}",
@@ -458,5 +492,26 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.path);
         }
+    }
+
+    fn tempdir_with_index_md(contents: &str) -> TempDir {
+        let base = std::env::temp_dir().join(format!(
+            "demo-landing-index-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("index.md"), contents).unwrap();
+        TempDir { path: base }
+    }
+
+    async fn body_to_string(resp: Response) -> String {
+        let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
     }
 }
