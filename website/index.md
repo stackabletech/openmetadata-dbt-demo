@@ -29,7 +29,7 @@ a handful of supporting components.
 ## External Componens
 | Service                   | URL | Username | Password | Enabled                                                                                      |
 |---------------------------| --- | --- | --- |----------------------------------------------------------------------------------------------|
-| **OpenMetadata**          | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+| **OpenMetadata**          | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | —                                                                                            |
 | **LakeKeeper**            | [http://{{ nodeport "lakekeeper" }}/ui/](http://{{ nodeport "lakekeeper" }}/ui/) | — | — | —                                                                                            |
 | **OpenSearch Dashboards** | [http://{{ nodeport "opensearch-dashboards-nodeport" }}/](http://{{ nodeport "opensearch-dashboards-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
 
