@@ -1,0 +1,91 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configure-stackable-oidc
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: configure-stackable-oidc
+rules:
+  - apiGroups: ["authentication.stackable.tech"]
+    resources: ["authenticationclasses"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: configure-stackable-oidc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: configure-stackable-oidc
+subjects:
+  - kind: ServiceAccount
+    name: configure-stackable-oidc
+    namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configure-stackable-oidc
+  namespace: platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configure-stackable-oidc
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: configure-stackable-oidc
+subjects:
+  - kind: ServiceAccount
+    name: configure-stackable-oidc
+    namespace: platform
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-stackable-oidc
+  namespace: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      serviceAccountName: configure-stackable-oidc
+      restartPolicy: Never
+      containers:
+        - name: kubectl
+          image: bitnamilegacy/kubectl:1.31 # renovate: datasource=docker depName=bitnamilegacy/kubectl
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+
+              echo "Waiting for oidc-endpoints ConfigMap..."
+              until kubectl -n platform get cm oidc-endpoints >/dev/null 2>&1; do
+                echo "  not ready, retrying in 5s..."
+                sleep 5
+              done
+
+              KEYCLOAK_HOST=$(kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.keycloak-host}')
+              KEYCLOAK_HOSTNAME="${KEYCLOAK_HOST%:*}"
+              KEYCLOAK_PORT="${KEYCLOAK_HOST#*:}"
+              echo "Keycloak: hostname=$KEYCLOAK_HOSTNAME port=$KEYCLOAK_PORT"
+
+              # === Per-product blocks below ===
+              # Each per-product OIDC plan inserts its
+              # AuthenticationClass + Secret apply block here.
+              # See docs/superpowers/specs/2026-04-28-stackable-stack-oidc-design.md.
+
+              echo "configure-stackable-oidc: no per-product blocks yet."
