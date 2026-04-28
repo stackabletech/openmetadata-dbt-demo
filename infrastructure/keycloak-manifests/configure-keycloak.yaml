@@ -216,6 +216,22 @@ data:
       add_to_access_token      = true
     }
 
+    # ArgoCD reads groups from the ID token; Keycloak's built-in realm-role
+    # mapper writes only to the access token. This mapper publishes
+    # realm_access.roles into a top-level "groups" claim on the ID token so
+    # ArgoCD's default groupsClaim (= "groups") sees the user's realm roles
+    # and the argocd-rbac-cm policy `g, admin, role:admin` matches.
+    resource "keycloak_openid_user_realm_role_protocol_mapper" "argocd_realm_roles" {
+      realm_id            = keycloak_realm.stackable_demo.id
+      client_id           = keycloak_openid_client.argocd.id
+      name                = "argocd-realm-roles"
+      claim_name          = "groups"
+      multivalued         = true
+      add_to_id_token     = true
+      add_to_access_token = true
+      add_to_userinfo     = true
+    }
+
     resource "keycloak_openid_client" "forgejo" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "forgejo"
