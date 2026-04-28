@@ -269,7 +269,11 @@ metadata:
 rules:
   - apiGroups: ["authentication.stackable.tech"]
     resources: ["authenticationclasses"]
-    verbs: ["get", "create", "update", "patch"]
+    verbs: ["get", "update", "patch"]
+    resourceNames: ["trino-keycloak", "airflow-keycloak", "nifi-keycloak", "superset-keycloak"]
+  - apiGroups: ["authentication.stackable.tech"]
+    resources: ["authenticationclasses"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
