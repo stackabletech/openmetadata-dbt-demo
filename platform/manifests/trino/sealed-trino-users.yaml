@@ -1,0 +1,18 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  annotations:
+    sealedsecrets.bitnami.com/cluster-wide: "true"
+  name: trino-users
+  namespace: platform
+spec:
+  encryptedData:
+    admin: AgA4tP7Tmy1JGBraMtBOMznJQ/8F6beY81PZntMtSZgjP7SkBSMEgt+tGK3+A/U3frruGgYfHUmC4FuPSV6SwRqWFdGd0v1qKTrweM8pAQhtWSlG+wW6B8IrxBLXAXEq0yjilL0xK3Cxtbpn1X2VH2/am+rR1itHhiCFpY7UEQmuIGo25xSUBFoGXvYXUHkbBWWkQ7FsRuM4l6YplKGWW+ExOVc6CgT1ZKVVB8QLV9I1RYunoZxphudJo3W0YJnGcloNBCPPEK+Gr3HhWy4QNQRpfMkL1sljm4+fDmQ7/kZtBb/4QjCGFZJZFTKUJ0a8RhG5F92mosZgYOuXztUhZR6cDzKNH6dCgDAtKPkWBZWKILBM9k2YzhEL6KNAe3cDUhBImsw6voGnbcaGK8+1AWFetBgi5meHk4IczHQqoS0nake6VSM6lJA81storepOQX5LX7jl52tpCgamwRVk+t+e8Pu38X4YSCcppx7gvGBfqIIdwcB9Q0OM6rLnMaDu1HL9w/B1EPFcEjDRuVuy1+anx7VuIjWE7KO+i8HqXeWj98KWLqrDpfLYXYyRCSX7wlYXjkVGcUNTFhmO+OVcAX/bO6oHc1I9D9s+W/vCo7y+Bktp9xxQJkuEOwWaumGVYR31hX1TNsujEBO13t8TCGpywwv9dRzNWIEYxaevGcc2DwxSGFDDggutDyML7q0z1qVFDbmx5C8lZdc0
+  template:
+    metadata:
+      annotations:
+        sealedsecrets.bitnami.com/cluster-wide: "true"
+      name: trino-users
+      namespace: platform
+    type: Opaque

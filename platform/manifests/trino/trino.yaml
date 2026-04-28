@@ -18,12 +18,22 @@ spec:
       - authenticationClass: trino-keycloak
         oidc:
           clientCredentialsSecret: trino-keycloak-client
+      - authenticationClass: trino-users
   coordinators:
     roleConfig:
       listenerClass: external-unstable
     config:
       logging:
         enableVectorAgent: true
+    podOverrides: &vectorPodOverrides
+      spec:
+        containers:
+          - name: vector
+            resources:
+              requests:
+                memory: 128Mi
+              limits:
+                memory: 512Mi
     roleGroups:
       default:
         replicas: 1
@@ -31,6 +41,7 @@ spec:
     config:
       logging:
         enableVectorAgent: true
+    podOverrides: *vectorPodOverrides
     roleGroups:
       default:
         replicas: 2

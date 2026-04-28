@@ -76,15 +76,33 @@ spec:
             - |
               set -e
 
-              echo "Waiting for oidc-endpoints ConfigMap..."
-              until kubectl -n platform get cm oidc-endpoints >/dev/null 2>&1; do
-                echo "  not ready, retrying in 5s..."
-                sleep 5
-              done
+              # Poll the ConfigMap *value* (not just existence) so we never
+              # render AuthenticationClasses with an empty hostname/port if
+              # discover-node-ip hasn't populated the key yet. Bail with
+              # exit 1 after the timeout so Replace=true re-runs us on
+              # next sync.
+              wait_cm_key() {
+                ns=$1; cm=$2; key=$3
+                for _ in $(seq 1 60); do
+                  val=$(kubectl -n "$ns" get cm "$cm" -o jsonpath="{.data.$key}" 2>/dev/null || true)
+                  if [ -n "$val" ]; then
+                    echo "$val"
+                    return 0
+                  fi
+                  echo "  $cm/$key not populated, retrying in 5s..." >&2
+                  sleep 5
+                done
+                echo "ERROR: $cm/$key still empty after 5min" >&2
+                return 1
+              }
 
-              KEYCLOAK_HOST=$(kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.keycloak-host}')
+              KEYCLOAK_HOST=$(wait_cm_key platform oidc-endpoints keycloak-host)
               KEYCLOAK_HOSTNAME="${KEYCLOAK_HOST%:*}"
               KEYCLOAK_PORT="${KEYCLOAK_HOST#*:}"
+              if [ -z "$KEYCLOAK_HOSTNAME" ] || [ -z "$KEYCLOAK_PORT" ]; then
+                echo "ERROR: malformed keycloak-host '$KEYCLOAK_HOST' (expected host:port)" >&2
+                exit 1
+              fi
               echo "Keycloak: hostname=$KEYCLOAK_HOSTNAME port=$KEYCLOAK_PORT"
 
               # === Per-product blocks below ===

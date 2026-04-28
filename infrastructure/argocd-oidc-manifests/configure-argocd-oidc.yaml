@@ -49,14 +49,28 @@ spec:
           args:
             - |
               set -e
-              echo "Waiting for oidc-endpoints ConfigMap..."
-              until kubectl -n deployment get cm oidc-endpoints >/dev/null 2>&1; do
-                echo "  not ready, retrying in 5s..."
-                sleep 5
-              done
 
-              ISSUER_URL=$(kubectl -n deployment get cm oidc-endpoints -o jsonpath='{.data.issuer-url}')
-              ARGOCD_URL=$(kubectl -n deployment get cm oidc-endpoints -o jsonpath='{.data.argocd-base-url}')
+              # Poll the ConfigMap *values* (not just existence) so we never
+              # patch argocd-cm with an empty issuer if discover-node-ip
+              # hasn't finished populating the keys yet. Bail with exit 1
+              # after the timeout so Replace=true re-runs us on next sync.
+              wait_cm_key() {
+                ns=$1; cm=$2; key=$3
+                for _ in $(seq 1 60); do
+                  val=$(kubectl -n "$ns" get cm "$cm" -o jsonpath="{.data.$key}" 2>/dev/null || true)
+                  if [ -n "$val" ]; then
+                    echo "$val"
+                    return 0
+                  fi
+                  echo "  $cm/$key not populated, retrying in 5s..." >&2
+                  sleep 5
+                done
+                echo "ERROR: $cm/$key still empty after 5min" >&2
+                return 1
+              }
+
+              ISSUER_URL=$(wait_cm_key deployment oidc-endpoints issuer-url)
+              ARGOCD_URL=$(wait_cm_key deployment oidc-endpoints argocd-base-url)
               echo "Issuer:  $ISSUER_URL"
               echo "ArgoCD:  $ARGOCD_URL"
 

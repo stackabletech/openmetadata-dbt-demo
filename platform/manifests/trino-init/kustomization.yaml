@@ -18,6 +18,5 @@ configMapGenerator:
 generatorOptions:
   disableNameSuffixHash: true
 
-# Configure Trino endpoint and/or authentication by uncommenting below.
-# patches:
-#   - path: trino-config.yaml
+patches:
+  - path: trino-config.yaml
