@@ -59,6 +59,30 @@ spec:
                 k8s:
                   # Container image for ingestion jobs
                   ingestionImage: "docker.getcollate.io/openmetadata/ingestion-base:1.12.1"
+              authentication:
+                provider: "custom-oidc"
+                publicKeys:
+                  - "$(ISSUER_URL)/protocol/openid-connect/certs"
+                authority: "$(ISSUER_URL)"
+                clientId: "openmetadata"
+                callbackUrl: "http://$(NODE_IP):30585/callback"
+              authorizer:
+                className: "org.openmetadata.service.security.DefaultAuthorizer"
+                containerRequestFilter: "org.openmetadata.service.security.JwtFilter"
+                initialAdmins:
+                  - "demo-admin"
+                principalDomain: "stackable.demo"
+            extraEnvs:
+              - name: NODE_IP
+                valueFrom:
+                  configMapKeyRef:
+                    name: oidc-endpoints
+                    key: node-ip
+              - name: ISSUER_URL
+                valueFrom:
+                  configMapKeyRef:
+                    name: oidc-endpoints
+                    key: issuer-url
           extraInitContainers:
             - name: convert-truststore
               image: eclipse-temurin:21-jre
