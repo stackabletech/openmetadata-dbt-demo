@@ -12,6 +12,12 @@ spec:
   clusterConfig:
     credentialsSecret: simple-superset-credentials
     vectorAggregatorConfigMapName: vector-aggregator-discovery
+    authentication:
+      - authenticationClass: superset-keycloak
+        oidc:
+          clientCredentialsSecret: superset-keycloak-client
+        userRegistrationRole: Gamma
+        syncRolesAt: Login
   nodes:
     roleConfig:
       listenerClass: external-unstable
@@ -23,3 +29,7 @@ spec:
         config:
           rowLimit: 10000
           webserverTimeout: 300
+        configOverrides:
+          superset_config.py:
+            AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Gamma"]}'
+            AUTH_ROLES_SYNC_AT_LOGIN: "True"
