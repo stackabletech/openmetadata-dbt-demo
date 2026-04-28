@@ -5,7 +5,11 @@ metadata:
   name: configure-stackable-oidc
   namespace: deployment
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    # Earlier than default (0) so the AuthenticationClasses + client
+    # Secrets exist before Trino, Airflow, Superset and NiFi try to
+    # reconcile against them. The Job has its own retry loop on the
+    # oidc-endpoints ConfigMap, so being early is harmless.
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: dbt-openmetadata-demo
   destination:
