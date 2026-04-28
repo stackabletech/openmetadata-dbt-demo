@@ -27,6 +27,12 @@ spec:
         gitFolder: "dags"
         depth: 2
     vectorAggregatorConfigMapName: vector-aggregator-discovery
+    authentication:
+      - authenticationClass: airflow-keycloak
+        oidc:
+          clientCredentialsSecret: airflow-keycloak-client
+        userRegistrationRole: Public
+        syncRolesAt: Registration
   webservers:
     roleConfig:
       listenerClass: external-stable
@@ -38,6 +44,7 @@ spec:
       # 20 seconds to reload the DAGS folder (default: 300)
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "20"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+      AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Viewer"]}'
     podOverrides: &podOverrides
       spec:
         containers:
