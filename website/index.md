@@ -16,7 +16,7 @@ a handful of supporting components.
 ## Stackable Components
 | Service | URL | Username | Password | Enabled                                                                                      |
 | --- | --- | --- | --- |----------------------------------------------------------------------------------------------|
-| **Airflow** | [http://{{ nodeport "airflow-webserver" }}/](http://{{ nodeport "airflow-webserver" }}/) | `admin` | `admin` | {{ toggle "platform/manifests/airflow/airflow.yaml" "spec.clusterOperation.stopped" }}       |
+| **Airflow** | [http://{{ nodeport "airflow-webserver" }}/login/keycloak](http://{{ nodeport "airflow-webserver" }}/login/keycloak) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | {{ toggle "platform/manifests/airflow/airflow.yaml" "spec.clusterOperation.stopped" }}       |
 | **Trino** | [https://{{ nodeport "trino-coordinator" }}/](https://{{ nodeport "trino-coordinator" }}/) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | {{ toggle "platform/manifests/trino/trino.yaml" "spec.clusterOperation.stopped" }}           |
 | **Superset** | [http://{{ nodeport "simple-superset-node" }}/](http://{{ nodeport "simple-superset-node" }}/) | — | — | {{ toggle "platform/manifests/superset/superset.yaml" "spec.clusterOperation.stopped" }}     |
 | **OpenSearch** | [https://{{ nodeport "simple-opensearch" }}/](https://{{ nodeport "simple-opensearch" }}/) | — | — | {{ toggle "platform/manifests/opensearch/opensearch.yaml" "spec.clusterOperation.stopped" }} |
