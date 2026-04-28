@@ -63,6 +63,11 @@ spec:
               cat > /tmp/argocd-cm-patch.yaml <<PATCH
               data:
                 url: "${ARGOCD_URL}"
+                # Disable the local admin/adminadmin login so the only
+                # login affordance is "Sign in with Keycloak". Combined
+                # with the demo-landing link pointing to /auth/login,
+                # users in the happy path never see ArgoCD's login UI.
+                admin.enabled: "false"
                 oidc.config: |
                   name: Keycloak
                   issuer: ${ISSUER_URL}
