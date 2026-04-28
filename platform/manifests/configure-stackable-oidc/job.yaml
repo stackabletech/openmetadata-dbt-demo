@@ -13,7 +13,7 @@ rules:
   - apiGroups: ["authentication.stackable.tech"]
     resources: ["authenticationclasses"]
     verbs: ["get", "update", "patch"]
-    resourceNames: ["trino", "airflow", "nifi", "superset", "openmetadata"]
+    resourceNames: ["trino-keycloak", "airflow-keycloak", "nifi-keycloak", "superset-keycloak"]
   - apiGroups: ["authentication.stackable.tech"]
     resources: ["authenticationclasses"]
     verbs: ["create"]
