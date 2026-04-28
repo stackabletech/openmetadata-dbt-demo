@@ -17,6 +17,12 @@ stacks:
       ################################openmetadata-dbt-demo
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/sealed-secrets.yaml
       ################################
+      # discover-node-ip — populates the oidc-endpoints ConfigMap in deployment + platform.
+      # Applied here (not via ArgoCD) because Forgejo's pod blocks on this ConfigMap and
+      # ArgoCD can't sync the keycloak-manifests until Forgejo serves the in-cluster mirror.
+      ################################
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/discover-node-ip.yaml
+      ################################
       # project - operators
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/main/infrastructure/stackable-operators.yaml
