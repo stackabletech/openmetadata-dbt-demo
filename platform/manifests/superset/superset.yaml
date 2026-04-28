@@ -32,4 +32,4 @@ spec:
         configOverrides:
           superset_config.py:
             AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Gamma"]}'
-            AUTH_ROLES_SYNC_AT_LOGIN: "True"
+            AUTH_ROLES_SYNC_AT_LOGIN: "true"
