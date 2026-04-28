@@ -184,3 +184,34 @@ spec:
                 clientId: superset
                 clientSecret: superset-secret
               EOF
+
+              echo "Applying NiFi AuthenticationClass + client Secret..."
+              kubectl apply -f - <<EOF
+              ---
+              apiVersion: authentication.stackable.tech/v1alpha1
+              kind: AuthenticationClass
+              metadata:
+                name: nifi-keycloak
+              spec:
+                provider:
+                  oidc:
+                    hostname: ${KEYCLOAK_HOSTNAME}
+                    port: ${KEYCLOAK_PORT}
+                    rootPath: /realms/stackable-demo
+                    principalClaim: preferred_username
+                    scopes:
+                      - openid
+                      - email
+                      - profile
+                    providerHint: Keycloak
+              ---
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: nifi-keycloak-client
+                namespace: platform
+              type: Opaque
+              stringData:
+                clientId: nifi
+                clientSecret: nifi-secret
+              EOF
