@@ -92,4 +92,33 @@ spec:
               # AuthenticationClass + Secret apply block here.
               # See docs/superpowers/specs/2026-04-28-stackable-stack-oidc-design.md.
 
-              echo "configure-stackable-oidc: no per-product blocks yet."
+              echo "Applying Trino AuthenticationClass + client Secret..."
+              kubectl apply -f - <<EOF
+              ---
+              apiVersion: authentication.stackable.tech/v1alpha1
+              kind: AuthenticationClass
+              metadata:
+                name: trino-keycloak
+              spec:
+                provider:
+                  oidc:
+                    hostname: ${KEYCLOAK_HOSTNAME}
+                    port: ${KEYCLOAK_PORT}
+                    rootPath: /realms/stackable-demo
+                    principalClaim: preferred_username
+                    scopes:
+                      - openid
+                      - email
+                      - profile
+                    providerHint: Keycloak
+              ---
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: trino-keycloak-client
+                namespace: platform
+              type: Opaque
+              stringData:
+                clientId: trino
+                clientSecret: trino-secret
+              EOF
