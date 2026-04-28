@@ -247,3 +247,163 @@ data:
       add_to_id_token          = true
       add_to_access_token      = true
     }
+
+    resource "keycloak_openid_client" "trino" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "trino"
+      name                  = "Trino"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "trino-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "trino_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.trino.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "trino_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.trino.id
+      name                     = "trino-audience"
+      included_client_audience = "trino"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
+
+    resource "keycloak_openid_client" "airflow" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "airflow"
+      name                  = "Airflow"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "airflow-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "airflow_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.airflow.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "airflow_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.airflow.id
+      name                     = "airflow-audience"
+      included_client_audience = "airflow"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
+
+    resource "keycloak_openid_client" "nifi" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "nifi"
+      name                  = "NiFi"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "nifi-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "nifi_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.nifi.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "nifi_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.nifi.id
+      name                     = "nifi-audience"
+      included_client_audience = "nifi"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
+
+    resource "keycloak_openid_client" "superset" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "superset"
+      name                  = "Superset"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "superset-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "superset_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.superset.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "superset_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.superset.id
+      name                     = "superset-audience"
+      included_client_audience = "superset"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
+
+    resource "keycloak_openid_client" "openmetadata" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "openmetadata"
+      name                  = "OpenMetadata"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "openmetadata-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "openmetadata_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.openmetadata.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "openmetadata_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.openmetadata.id
+      name                     = "openmetadata-audience"
+      included_client_audience = "openmetadata"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
