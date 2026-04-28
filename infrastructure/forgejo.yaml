@@ -21,6 +21,20 @@ spec:
           gitea:
             admin:
               existingSecret: forgejo-admin-secret
+            # ROOT_URL/DOMAIN come from the discover-node-ip ConfigMap so the
+            # values follow the cluster's external IP. NODE_IP must appear
+            # first in this list — Kubernetes substitutes $(VAR) only when
+            # VAR was declared earlier in the same container's env list.
+            additionalConfigFromEnvs:
+              - name: NODE_IP
+                valueFrom:
+                  configMapKeyRef:
+                    name: oidc-endpoints
+                    key: node-ip
+              - name: GITEA__SERVER__ROOT_URL
+                value: "http://$(NODE_IP):30000/"
+              - name: GITEA__SERVER__DOMAIN
+                value: "$(NODE_IP)"
     - repoURL: "https://github.com/stackabletech/openmetadata-dbt-demo.git"
       targetRevision: "main"
       path: infrastructure/forgejo-manifests/

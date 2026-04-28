@@ -9,7 +9,7 @@ a handful of supporting components.
 | Service | URL | Username | Password | Enabled                                                                                      |
 | --- | --- | --- | --- |----------------------------------------------------------------------------------------------|
 | **ArgoCD** | [https://{{ nodeport "argocd-server-nodeport" }}/auth/login](https://{{ nodeport "argocd-server-nodeport" }}/auth/login) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | —                                                                                            |
-| **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/](http://{{ nodeport "forgejo-http-nodeport" }}/) | `stackable` | `stackable` | —                                                                                            |
+| **Forgejo** | [http://{{ nodeport "forgejo-http-nodeport" }}/user/oauth2/Keycloak](http://{{ nodeport "forgejo-http-nodeport" }}/user/oauth2/Keycloak) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | —                                                                                            |
 | **Keycloak** | [http://{{ nodeport "keycloak-nodeport" }}/realms/stackable-demo/account/](http://{{ nodeport "keycloak-nodeport" }}/realms/stackable-demo/account/) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | —                                                                                            |
 
 
