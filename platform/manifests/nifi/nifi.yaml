@@ -11,7 +11,9 @@ spec:
     productVersion: 2.7.2
   clusterConfig:
     authentication:
-      - authenticationClass: simple-nifi-users
+      - authenticationClass: nifi-keycloak
+        oidc:
+          clientCredentialsSecret: nifi-keycloak-client
     sensitiveProperties:
       keySecret: nifi-sensitive-property-key
       autoGenerate: true
