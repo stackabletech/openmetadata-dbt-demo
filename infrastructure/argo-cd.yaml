@@ -13,6 +13,35 @@ options:
       # We have to set the time otherwise error message:
       # invalid session: Account password has changed since token issued
       argocdServerAdminPasswordMtime: "2025-01-01T00:00:00Z"
+    cm:
+      # Disable the local admin/adminadmin login so the only login
+      # affordance is "Sign in with Keycloak". Combined with the
+      # demo-landing link pointing to /auth/login, users in the happy
+      # path never see ArgoCD's login UI.
+      admin.enabled: "false"
+      # $<configmap>:<key> is resolved by argocd-server at request time
+      # against the named ConfigMap in the same namespace. discover-node-ip
+      # populates oidc-endpoints during stackablectl bootstrap, so the
+      # value is already there when argocd-server first reads it.
+      url: $oidc-endpoints:argocd-base-url
+      oidc.config: |
+        name: Keycloak
+        issuer: $oidc-endpoints:issuer-url
+        clientID: argocd
+        clientSecret: argocd-secret
+        requestedScopes:
+          - openid
+          - profile
+          - email
+          - roles
+        requestedIDTokenClaims:
+          realm_access:
+            essential: true
+    rbac:
+      policy.default: ""
+      policy.csv: |
+        g, admin, role:admin
+        g, viewer, role:readonly
   dex:
     enabled: false
   notifications:
