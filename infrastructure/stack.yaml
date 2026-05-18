@@ -53,3 +53,6 @@ stacks:
         description: Password of the ArgoCD admin user.
         # generated via: `htpasswd -nbBC 10 "" adminadmin | tr -d ':\n'`
         default: $2y$10$HhJC3pGHTlk8RyBoS39N/.wC72mdWxV2X8QS1wROUwCFxl.2tGfky
+      - name: repoRevision
+        description: Target branch from repository to point ArgoCD at
+        default: main
