@@ -72,17 +72,17 @@ spec:
                 initialAdmins:
                   - "demo-admin"
                 principalDomain: "stackable.demo"
-            extraEnvs:
-              - name: NODE_IP
-                valueFrom:
-                  configMapKeyRef:
-                    name: oidc-endpoints
-                    key: node-ip
-              - name: ISSUER_URL
-                valueFrom:
-                  configMapKeyRef:
-                    name: oidc-endpoints
-                    key: issuer-url
+          extraEnvs:
+            - name: NODE_IP
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: node-ip
+            - name: ISSUER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: issuer-url
           extraInitContainers:
             - name: convert-truststore
               image: eclipse-temurin:21-jre

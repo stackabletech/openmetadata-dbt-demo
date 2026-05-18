@@ -82,4 +82,9 @@ spec:
                   --from-literal=LANDING_REDIRECT_URI="http://${NODE_IP}:30088/oauth2/callback" \
                   --from-literal=KEYCLOAK_HOST="${NODE_IP}:30900" \
                   --dry-run=client -o yaml | kubectl apply -f -
+                # argocd-cm uses `$oidc-endpoints:<key>` to pull issuer/url from this ConfigMap.
+                # That substitution only fires when the source CM carries the part-of=argocd label,
+                # otherwise the literal "$oidc-endpoints:issuer-url" reaches the OIDC client and
+                # login fails with `unsupported protocol scheme ""`.
+                kubectl label cm oidc-endpoints -n "$ns" app.kubernetes.io/part-of=argocd --overwrite
               done
