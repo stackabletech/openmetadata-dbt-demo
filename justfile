@@ -13,8 +13,16 @@ deploy branch="main":
 retarget branch:
     #!/usr/bin/env bash
     set -euo pipefail
-    sed -i -E 's|targetRevision: "[a-zA-Z][a-zA-Z0-9_/-]*"|targetRevision: "{{branch}}"|g' platform/applications/*.yaml
-    sed -i -E 's|refs/heads/[a-zA-Z][a-zA-Z0-9_/-]*/infrastructure/|refs/heads/{{branch}}/infrastructure/|g' infrastructure/stack.yaml
+    # Quoted and unquoted targetRevisions across platform/applications/ and the
+    # infrastructure/ Apps that point at GitHub (forgejo.yaml, sealed-secrets.yaml).
+    # Version-pinned Helm targetRevisions (e.g. "1.12.1", v1.3.1) start with a digit
+    # or 'v<digit>' and aren't matched.
+    sed -i -E 's|targetRevision: "[a-zA-Z][a-zA-Z0-9_/-]*"|targetRevision: "{{branch}}"|g' \
+        platform/applications/*.yaml infrastructure/forgejo.yaml
+    sed -i -E 's|^([[:space:]]*)targetRevision: [a-zA-Z][a-zA-Z0-9_/-]*$|\1targetRevision: {{branch}}|' \
+        infrastructure/sealed-secrets.yaml
+    sed -i -E 's|refs/heads/[a-zA-Z][a-zA-Z0-9_/-]*/infrastructure/|refs/heads/{{branch}}/infrastructure/|g' \
+        infrastructure/stack.yaml
     echo "Retargeted to {{branch}}. Review with 'git diff' and commit when happy."
 
 seal-secrets:

@@ -22,7 +22,7 @@ spec:
             admin:
               existingSecret: forgejo-admin-secret
     - repoURL: "https://github.com/stackabletech/openmetadata-dbt-demo.git"
-      targetRevision: "main"
+      targetRevision: "no-auth"
       path: infrastructure/forgejo-manifests/
   syncPolicy:
     syncOptions:
