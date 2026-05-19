@@ -1,10 +1,10 @@
-demo name:
+demo name branch="main":
     just infra {{name}}
     just kubeconfig {{name}}
-    just deploy
+    just deploy {{branch}}
 
-deploy:
-    stackablectl stack install forgejo --stack-file infrastructure/stack.yaml -n deployment
+deploy branch="main":
+    stackablectl stack install forgejo --stack-file infrastructure/stack.yaml -n deployment --stack-parameters repoRevision={{branch}}
 
 # Rewrite branch-pinned references (Forgejo targetRevisions in
 # platform/applications/ and refs/heads/ URLs in infrastructure/stack.yaml)
