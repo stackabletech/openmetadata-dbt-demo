@@ -55,6 +55,16 @@ spec:
                   secretKeyRef:
                     name: garagefs-airflow-credentials
                     key: airflow-connection
+              # Trino credentials for the dbt DAG. Single source of truth is the
+              # trino-users static-auth Secret; TRINO_PASSWORD must precede the
+              # CONN var so Kubernetes can expand $(TRINO_PASSWORD) in its value.
+              - name: TRINO_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: trino-users
+                    key: admin
+              - name: AIRFLOW_CONN_TRINO_DEFAULT
+                value: "trino://admin:$(TRINO_PASSWORD)@trino-coordinator.platform.svc.cluster.local:8443/?protocol=https&verify=false"
     config:
       logging:
         enableVectorAgent: true
@@ -85,6 +95,17 @@ spec:
                     key: airflow-connection
               - name: DBT_TARGET_PATH
                 value: /tmp/dbt-target
+              # Trino credentials for the dbt tasks + the wait_for_services sensor,
+              # which both run in this executor pod. TRINO_PASSWORD (from trino-users)
+              # feeds dbt's profiles.yml via env_var() and is expanded into the
+              # Airflow connection URI below. Order matters for $(TRINO_PASSWORD).
+              - name: TRINO_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: trino-users
+                    key: admin
+              - name: AIRFLOW_CONN_TRINO_DEFAULT
+                value: "trino://admin:$(TRINO_PASSWORD)@trino-coordinator.platform.svc.cluster.local:8443/?protocol=https&verify=false"
   schedulers:
     envOverrides: *envOverrides
     podOverrides: *podOverrides

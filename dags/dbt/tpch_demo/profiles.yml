@@ -3,10 +3,14 @@ tpch_demo:
   outputs:
     dev:
       type: trino
-      method: none
+      # LDAP = HTTP basic auth, validated by Trino's PASSWORD authenticator
+      # (trino-users static auth). Password comes from the TRINO_PASSWORD env
+      # injected into the executor pod from the trino-users Secret.
+      method: ldap
       host: trino-coordinator
       port: 8443
       user: admin
+      password: "{{ env_var('TRINO_PASSWORD') }}"
       schema: demo
       catalog: hive-iceberg
       http_scheme: https
