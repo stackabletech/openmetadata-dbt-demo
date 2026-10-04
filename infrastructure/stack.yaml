@@ -66,4 +66,6 @@ stacks:
         default: $2y$10$HhJC3pGHTlk8RyBoS39N/.wC72mdWxV2X8QS1wROUwCFxl.2tGfky
       - name: repoRevision
         description: Target branch from repository to point ArgoCD at
-        default: no-auth
+        # Matches the branch this file is committed on (kept in sync by `just retarget`).
+        # `just deploy <branch>` overrides it, but a bare `stackablectl` run uses this.
+        default: feat/data2day

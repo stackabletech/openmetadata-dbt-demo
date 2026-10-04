@@ -25,12 +25,17 @@ retarget branch:
         s2 = pat.sub(repl, s)
         if s2 != s:
             open(path, "w").write(s2)
+    # infrastructure/stack.yaml: the raw-GitHub refs/heads URLs, and the repoRevision
+    # default so a bare `stackablectl` run (without --parameters) also targets this branch.
     sp = "infrastructure/stack.yaml"
     s = open(sp).read()
-    open(sp, "w").write(re.sub(r'refs/heads/[A-Za-z][A-Za-z0-9_/-]*/infrastructure/',
-                               f'refs/heads/{branch}/infrastructure/', s))
-    # Airflow git-syncs the DAGs from this branch (dagsGitSync.branch); the DAGs
-    # and dbt profile differ per branch, so it must track the deployed branch too.
+    s = re.sub(r'refs/heads/[A-Za-z][A-Za-z0-9_/-]*/infrastructure/',
+               f'refs/heads/{branch}/infrastructure/', s)
+    s = re.sub(r'(- name: repoRevision\n(?:[^\n]*\n)*?\s*default: )\S+', rf'\g<1>{branch}', s, count=1)
+    open(sp, "w").write(s)
+    # Airflow git-syncs the DAGs from dagsGitSync.branch; the DAGs + dbt profile differ
+    # per branch, so it must track the deployed branch too. Assumes dagsGitSync.branch
+    # is the first/only `branch:` key in airflow.yaml.
     ap = "platform/manifests/airflow/airflow.yaml"
     s = open(ap).read()
     open(ap, "w").write(re.sub(r'(\n\s*branch: )[^\n]+', rf'\g<1>{branch}', s, count=1))
@@ -64,6 +69,8 @@ seal-secrets:
         output_filename="sealed-$(basename "$input_file")"
         output_file="$output_dir/$output_filename"
         if [ -f "$output_file" ]; then
+            # NOTE: existing sealed files are NOT re-sealed. If you edited the
+            # plaintext secret, delete its sealed-*.yaml first, then re-run.
             echo "Skipping (already exists): $output_file"
             continue
         fi
