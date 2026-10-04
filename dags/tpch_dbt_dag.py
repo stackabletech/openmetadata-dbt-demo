@@ -205,7 +205,6 @@ def finalize_dbt_artifacts(
 
 def _om_helpers():
     """Return shared OpenMetadata API helper functions."""
-    import base64
     import json
     import urllib.request
     import urllib.error
@@ -275,6 +274,10 @@ def trigger_om_metadata_ingestion(**context):
         elapsed += INGESTION_POLL_INTERVAL
 
         try:
+            # Refresh the token each poll: Keycloak access tokens expire (~300s by
+            # default), which is shorter than INGESTION_TIMEOUT, so a single token
+            # would die mid-loop on a slow ingestion.
+            token = om_login()
             now_ts = int(time.time() * 1000)
             status_resp = om_request(
                 f"/services/ingestionPipelines/{METADATA_PIPELINE_FQN}/pipelineStatus"

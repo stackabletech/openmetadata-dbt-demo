@@ -23,7 +23,9 @@ spec:
     # TODO(@maltesander): In a Stackable release, this branch should point to the release-YY.MM branch!
     dagsGitSync:
       - repo: http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git
-        branch: main
+        # Must track the deployed branch, not main — the DAGs + dbt profile differ
+        # per branch. `just retarget <branch>` rewrites this.
+        branch: feat/data2day
         gitFolder: "dags"
         depth: 2
     vectorAggregatorConfigMapName: vector-aggregator-discovery

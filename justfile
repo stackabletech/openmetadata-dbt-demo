@@ -29,6 +29,11 @@ retarget branch:
     s = open(sp).read()
     open(sp, "w").write(re.sub(r'refs/heads/[A-Za-z][A-Za-z0-9_/-]*/infrastructure/',
                                f'refs/heads/{branch}/infrastructure/', s))
+    # Airflow git-syncs the DAGs from this branch (dagsGitSync.branch); the DAGs
+    # and dbt profile differ per branch, so it must track the deployed branch too.
+    ap = "platform/manifests/airflow/airflow.yaml"
+    s = open(ap).read()
+    open(ap, "w").write(re.sub(r'(\n\s*branch: )[^\n]+', rf'\g<1>{branch}', s, count=1))
     print(f"Retargeted to {branch} (commit-SHA and version pins left intact). Review with 'git diff'.")
 
 seal-secrets:
