@@ -4,7 +4,7 @@ demo name branch="main":
     just deploy {{branch}}
 
 deploy branch="main":
-    stackablectl stack install forgejo --stack-file infrastructure/stack.yaml -n deployment --stack-parameters repoRevision={{branch}}
+    stackablectl stack install forgejo --stack-file infrastructure/stack.yaml -n deployment --parameters repoRevision={{branch}}
 
 # Rewrite branch-pinned references (Forgejo targetRevisions in
 # platform/applications/ and refs/heads/ URLs in infrastructure/stack.yaml)

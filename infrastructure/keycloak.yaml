@@ -11,7 +11,10 @@ spec:
     namespace: platform
   source:
     repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
-    targetRevision: "main"
+    # Bootstrap app applied by stackablectl, which substitutes the repoRevision
+    # stack parameter (same mechanism as cluster-apps.yaml). Must NOT be a
+    # hardcoded branch, or a branch deploy silently gets main's keycloak-manifests.
+    targetRevision: {{ repoRevision }}
     path: infrastructure/keycloak-manifests/
   syncPolicy:
     syncOptions:

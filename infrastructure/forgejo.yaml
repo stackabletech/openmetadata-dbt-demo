@@ -36,7 +36,9 @@ spec:
               - name: GITEA__SERVER__DOMAIN
                 value: "$(NODE_IP)"
     - repoURL: "https://github.com/stackabletech/openmetadata-dbt-demo.git"
-      targetRevision: "main"
+      # Bootstrap app (stackablectl substitutes repoRevision); keep in sync with
+      # the deployed branch rather than hardcoding main.
+      targetRevision: {{ repoRevision }}
       path: infrastructure/forgejo-manifests/
   syncPolicy:
     syncOptions:
