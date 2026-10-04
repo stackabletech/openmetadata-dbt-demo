@@ -263,6 +263,10 @@ kind: Job
 metadata:
   name: configure-openmetadata-v2
   namespace: platform
+  annotations:
+    # A Job's pod template is immutable, so ArgoCD must recreate (not apply) it
+    # when the script/env change — matches configure-keycloak & configure-stackable-oidc.
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   backoffLimit: 50
   template:
