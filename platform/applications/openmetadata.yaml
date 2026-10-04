@@ -83,6 +83,19 @@ spec:
                 configMapKeyRef:
                   name: oidc-endpoints
                   key: issuer-url
+            # The authentication.* values above are rendered by the chart into an
+            # envFrom Secret, where Kubernetes does NOT perform $(VAR) substitution
+            # — so the OIDC issuer/callback arrive as the literal "$(ISSUER_URL)"
+            # and OM's JwtFilter dies with "URI is not absolute". Re-declare them
+            # here as explicit env entries: env[] DOES expand $(ISSUER_URL)/$(NODE_IP)
+            # (NODE_IP/ISSUER_URL are defined just above) and takes precedence over
+            # envFrom, so OM receives absolute URLs.
+            - name: AUTHENTICATION_AUTHORITY
+              value: "$(ISSUER_URL)"
+            - name: AUTHENTICATION_PUBLIC_KEYS
+              value: '["$(ISSUER_URL)/protocol/openid-connect/certs"]'
+            - name: AUTHENTICATION_CALLBACK_URL
+              value: "http://$(NODE_IP):30585/callback"
           extraInitContainers:
             - name: convert-truststore
               image: eclipse-temurin:21-jre

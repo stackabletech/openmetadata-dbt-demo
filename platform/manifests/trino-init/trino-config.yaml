@@ -5,7 +5,11 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: trino-sql-job
-  namespace: platform
+  # No namespace here: this is a strategic-merge patch and must match the base
+  # Job (templates/trino-sql-job, which sets no namespace) at patch time, before
+  # Kustomize's namespace transform runs. ArgoCD applies the result to the app's
+  # destination namespace (platform). Declaring namespace here makes the patch
+  # target 'trino-sql-job.platform', which matches nothing -> kustomize build fails.
 spec:
   template:
     spec:
