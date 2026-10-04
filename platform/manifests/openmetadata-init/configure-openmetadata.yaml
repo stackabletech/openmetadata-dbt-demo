@@ -261,12 +261,14 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-openmetadata-v2
+  # A Job's pod template (and auto-generated selector) is immutable. ArgoCD applies
+  # this with `kubectl apply`, which creates it cleanly on a fresh deploy; to force
+  # recreation after a script/env change on an existing cluster, bump the name
+  # suffix (v2 -> v3 ...). NOTE: do NOT use sync-option Replace=true here — for a
+  # Job with no explicit selector, `kubectl replace` fails with "selector: Required
+  # value / field is immutable" and the job never runs.
+  name: configure-openmetadata-v3
   namespace: platform
-  annotations:
-    # A Job's pod template is immutable, so ArgoCD must recreate (not apply) it
-    # when the script/env change — matches configure-keycloak & configure-stackable-oidc.
-    argocd.argoproj.io/sync-options: Replace=true
 spec:
   backoffLimit: 50
   template:
