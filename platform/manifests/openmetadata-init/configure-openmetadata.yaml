@@ -37,6 +37,9 @@ data:
     TRINO_PORT = os.environ.get("TRINO_PORT", "8443")
     TRINO_SCHEME = os.environ.get("TRINO_SCHEME", "https")
     TRINO_USER = os.environ.get("TRINO_USER", "admin")
+    # Trino requires auth; the OM ingestion must present the password or its
+    # CheckAccess fails with 401. Sourced from the trino-users Secret.
+    TRINO_PASSWORD = os.environ.get("TRINO_PASSWORD", "")
 
     MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "60"))
     RETRY_INTERVAL = int(os.environ.get("RETRY_INTERVAL", "10"))
@@ -114,6 +117,7 @@ data:
                     "scheme": "trino",
                     "hostPort": f"{TRINO_HOST}:{TRINO_PORT}",
                     "username": TRINO_USER,
+                    "authType": {"password": TRINO_PASSWORD},
                     "connectionArguments": {
                         "http_scheme": TRINO_SCHEME,
                         "verify": False
@@ -286,6 +290,11 @@ spec:
               value: "https"
             - name: TRINO_USER
               value: "admin"
+            - name: TRINO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: trino-users
+                  key: admin
             - name: S3_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
