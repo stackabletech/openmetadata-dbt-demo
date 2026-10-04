@@ -19,6 +19,14 @@ spec:
         oidc:
           clientCredentialsSecret: trino-keycloak-client
       - authenticationClass: trino-users
+    # Authorization via Open Policy Agent. The trino-operator auto-configures all
+    # OPA policy URIs (allow/batch/column-masking/batch-column-masking/row-filters)
+    # from this block. Policies live in the `trino` rego package served by the
+    # `opa` OpaCluster (see platform/manifests/opa/).
+    authorization:
+      opa:
+        configMapName: opa
+        package: trino
   coordinators:
     roleConfig:
       listenerClass: external-unstable

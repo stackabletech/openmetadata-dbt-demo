@@ -1,0 +1,94 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configure-cockpit
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configure-cockpit
+  namespace: platform
+rules:
+  # Read the discovered node IP, patch the chart-rendered cockpit ConfigMap,
+  # and roll the cockpit Deployment so it picks up the new env values.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configure-cockpit
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: configure-cockpit
+subjects:
+  - kind: ServiceAccount
+    name: configure-cockpit
+    namespace: platform
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-cockpit
+  namespace: platform
+  annotations:
+    # Runs after the Helm chart has created the `cockpit` ConfigMap + Deployment.
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      serviceAccountName: configure-cockpit
+      restartPolicy: Never
+      containers:
+        - name: kubectl
+          image: bitnamilegacy/kubectl:1.31 # renovate: datasource=docker depName=bitnamilegacy/kubectl
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+
+              # Wait for discover-node-ip to publish the node IP.
+              NODE_IP=""
+              for _ in $(seq 1 60); do
+                NODE_IP=$(kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}' 2>/dev/null || true)
+                [ -n "$NODE_IP" ] && break
+                echo "  oidc-endpoints/node-ip not populated, retrying in 5s..." >&2
+                sleep 5
+              done
+              if [ -z "$NODE_IP" ]; then
+                echo "ERROR: node-ip still empty after 5min" >&2
+                exit 1
+              fi
+
+              BASE_URL="http://${NODE_IP}:30300"
+              DISCOVERY_URL="http://${NODE_IP}:30900/realms/stackable-demo/.well-known/openid-configuration"
+              echo "Cockpit base/origin: ${BASE_URL}; discovery: ${DISCOVERY_URL}"
+
+              # Idempotent: only patch + restart if the value actually changed,
+              # so routine ArgoCD syncs don't bounce the Cockpit pod.
+              CURRENT=$(kubectl -n platform get cm cockpit -o jsonpath='{.data.base-url}' 2>/dev/null || true)
+              if [ "$CURRENT" = "$BASE_URL" ]; then
+                echo "Cockpit ConfigMap already up to date; nothing to do."
+                exit 0
+              fi
+
+              kubectl -n platform patch configmap cockpit --type merge -p "{
+                \"data\": {
+                  \"base-url\": \"${BASE_URL}\",
+                  \"origin\": \"${BASE_URL}\",
+                  \"oidc-discovery-url\": \"${DISCOVERY_URL}\"
+                }
+              }"
+
+              echo "Restarting cockpit to pick up the new config..."
+              kubectl -n platform rollout restart deployment/cockpit

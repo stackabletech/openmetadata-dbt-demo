@@ -2,14 +2,12 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: configure-stackable-oidc
+  name: opa
   namespace: deployment
   annotations:
-    # Earlier than default (0) so the AuthenticationClasses + client
-    # Secrets exist before Trino, Airflow, Superset and NiFi try to
-    # reconcile against them. The Job has its own retry loop on the
-    # oidc-endpoints ConfigMap, so being early is harmless.
-    argocd.argoproj.io/sync-wave: "-1"
+    # Before Trino (sync-wave 1): the OpaCluster discovery ConfigMap and the
+    # Rego bundles must exist before Trino reconciles its OPA authorization.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: dbt-openmetadata-demo
   destination:
@@ -18,7 +16,7 @@ spec:
   source:
     repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
     targetRevision: "feat/data2day"
-    path: platform/manifests/configure-stackable-oidc/
+    path: platform/manifests/opa/
   syncPolicy:
     syncOptions:
       - CreateNamespace=true

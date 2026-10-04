@@ -1,0 +1,28 @@
+---
+apiVersion: opa.stackable.tech/v1alpha1
+kind: OpaCluster
+metadata:
+  name: opa
+  namespace: platform
+spec:
+  image:
+    productVersion: 1.12.3
+  clusterConfig:
+    # User Info Fetcher sidecar: lets Rego resolve a user's Keycloak group
+    # membership via data.stackable.opa.userinfo.v1.userInfoByUsername(...).
+    # Our Keycloak is plain HTTP (keycloak-service:8080) and is NOT a Stackable
+    # product, so it has no `tls` SecretClass cert — we therefore omit `tls`
+    # entirely. Per the opa-operator CRD: "If not specified no TLS will be used"
+    # and the port then defaults to HTTP semantics.
+    userInfo:
+      backend:
+        keycloak:
+          hostname: keycloak-service.platform.svc.cluster.local
+          port: 8080
+          clientCredentialsSecret: user-info-fetcher-client-credentials
+          adminRealm: stackable-demo
+          userRealm: stackable-demo
+  servers:
+    roleGroups:
+      default:
+        replicas: 1

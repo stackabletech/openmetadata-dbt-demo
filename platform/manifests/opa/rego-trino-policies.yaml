@@ -1,0 +1,145 @@
+---
+# Trino authorization *policy data* for the data2day demo.
+#
+# This is the only file you normally edit to change who can see what. It is
+# consumed by the vendored Stackable Trino rego engine (package `trino`, in
+# rego-trino-engine.yaml), which implements Trino's SystemAccessControl contract
+# (allow / batch / columnMask / batchColumnMasks / rowFilters).
+#
+# The policy schema mirrors Trino's file-based access control
+# (https://trino.io/docs/current/security/file-system-access-control.html):
+# catalogs / schemas / tables, each matched by regex on user + group, with
+# per-column `mask` / `allow` and per-table `filter`. First matching rule wins.
+#
+# Identity:
+#   - `user`  matches input.context.identity.user (the OIDC preferred_username,
+#     or a static Trino user such as `admin` / `cockpit`).
+#   - `group` matches a Keycloak group *path* (e.g. `/admin`, `/pii`) resolved
+#     at request time by the User Info Fetcher (see `extra_groups` below).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-policies
+  namespace: platform
+  labels:
+    opa.stackable.tech/bundle: "true"
+data:
+  trino_policies.rego: |
+    package trino_policies
+
+    policies := {
+      "catalogs": [
+        # Full admins: the static `admin` user and anyone in the Keycloak `/admin` group.
+        {"user": "admin", "catalog": ".*", "allow": "all"},
+        {"group": "/admin", "catalog": ".*", "allow": "all"},
+        # Everyone else may read the demo catalogs.
+        {"catalog": "hive-iceberg", "allow": "read-only"},
+        {"catalog": "hive", "allow": "read-only"},
+        {"catalog": "tpch", "allow": "read-only"},
+        {"catalog": "tpcds", "allow": "read-only"},
+        {"catalog": "lakekeeper-iceberg", "allow": "read-only"},
+        # Needed for JDBC/BI clients (system.jdbc, system.metadata).
+        {"catalog": "system", "allow": "read-only"},
+      ],
+      "schemas": [
+        {"user": "admin", "catalog": ".*", "schema": ".*", "owner": true},
+        {"group": "/admin", "catalog": ".*", "schema": ".*", "owner": true},
+      ],
+      "tables": [
+        # --- Admins: unrestricted. ---
+        {"user": "admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
+        {"group": "/admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
+
+        # --- PII demo on the dbt marts (catalog hive-iceberg, schema demo) ---
+        # First-match-wins: the `/pii` rule is listed *before* the masking rule
+        # for the same table, so members of the `/pii` group see the raw value
+        # while everyone else gets the masked expression.
+
+        # customer_lifetime_value: customer_name + account_balance are PII.
+        {
+          "group": "/pii",
+          "catalog": "hive-iceberg",
+          "schema": "demo",
+          "table": "customer_lifetime_value",
+          "privileges": ["SELECT"],
+        },
+        {
+          "catalog": "hive-iceberg",
+          "schema": "demo",
+          "table": "customer_lifetime_value",
+          "privileges": ["SELECT"],
+          "columns": [
+            {"name": "customer_name", "mask": "'***MASKED***'"},
+            {"name": "account_balance", "mask": "cast(null as double)"},
+          ],
+        },
+
+        # order_summary: customer_name is PII.
+        {
+          "group": "/pii",
+          "catalog": "hive-iceberg",
+          "schema": "demo",
+          "table": "order_summary",
+          "privileges": ["SELECT"],
+        },
+        {
+          "catalog": "hive-iceberg",
+          "schema": "demo",
+          "table": "order_summary",
+          "privileges": ["SELECT"],
+          "columns": [
+            {"name": "customer_name", "mask": "'***MASKED***'"},
+          ],
+        },
+
+        # All other marts (and the rest of schema demo) are readable by everyone.
+        {"catalog": "hive-iceberg", "schema": "demo", "privileges": ["SELECT"]},
+
+        # Read-only access to the sample/source catalogs for exploration.
+        {"catalog": "tpch", "privileges": ["SELECT"]},
+        {"catalog": "tpcds", "privileges": ["SELECT"]},
+        {"catalog": "hive", "privileges": ["SELECT"]},
+        {"catalog": "lakekeeper-iceberg", "privileges": ["SELECT"]},
+        # Needed for JDBC clients (e.g. system.metadata.table_comments).
+        {"catalog": "system", "schema": "jdbc|metadata", "privileges": ["SELECT"]},
+      ],
+      "system_information": [],
+      "queries": [
+        # Everyone may execute and manage their own queries.
+        {"allow": ["execute"]},
+      ],
+      "impersonation": [
+        # Stackable Cockpit connects to Trino as the static `cockpit` user and
+        # impersonates the logged-in end user (X-Trino-User) so that these very
+        # policies apply per-user through the Cockpit UI.
+        {"original_user": "cockpit", "new_user": ".*", "allow": true},
+      ],
+      "authorization": [],
+      "system_session_properties": [
+        {"allow": true},
+      ],
+      "catalog_session_properties": [
+        {"allow": true},
+      ],
+      "functions": [],
+      "procedures": [],
+    }
+
+    # Resolve the requesting user's Keycloak groups via the User Info Fetcher
+    # sidecar (http API on 127.0.0.1:9476, enabled by userInfo on the OpaCluster).
+    # Returns group *paths* such as ["/admin", "/pii"]. We call the sidecar
+    # directly rather than via the data.stackable.opa.userinfo.v1 library so we
+    # don't depend on that library being bundled (this mirrors the Stackable
+    # end-to-end-security demo). If the user is unknown to Keycloak (e.g. the
+    # static `admin`/`cockpit` users) the request is non-200, this rule is
+    # undefined, and the engine falls back to its `default extra_groups := []`.
+    extra_groups := groups if {
+      response := http.send({
+        "method": "POST",
+        "url": "http://127.0.0.1:9476/user",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"username": input.context.identity.user},
+      })
+      response.status_code == 200
+      groups := response.body.groups
+    }

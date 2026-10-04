@@ -8,14 +8,28 @@ deploy branch="main":
 
 # Rewrite branch-pinned references (Forgejo targetRevisions in
 # platform/applications/ and refs/heads/ URLs in infrastructure/stack.yaml)
-# so the checked-out branch self-references. Version-pinned Helm targetRevisions
-# (e.g. "1.12.1") are left alone — only [a-zA-Z]-prefixed values match.
+# so the checked-out branch self-references. Left untouched:
+#   - version-pinned Helm targetRevisions (e.g. "1.12.1") — they start with a digit
+#   - commit-SHA pins (e.g. the Stackable Cockpit chart) — 7-40 hex chars
 retarget branch:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    sed -i -E 's|targetRevision: "[a-zA-Z][a-zA-Z0-9_/-]*"|targetRevision: "{{branch}}"|g' platform/applications/*.yaml
-    sed -i -E 's|refs/heads/[a-zA-Z][a-zA-Z0-9_/-]*/infrastructure/|refs/heads/{{branch}}/infrastructure/|g' infrastructure/stack.yaml
-    echo "Retargeted to {{branch}}. Review with 'git diff' and commit when happy."
+    #!/usr/bin/env python3
+    import re, glob
+    branch = "{{branch}}"
+    is_sha = re.compile(r'^[0-9a-f]{7,40}$')
+    def repl(m):
+        val = m.group(1)
+        return m.group(0) if is_sha.match(val) else f'targetRevision: "{branch}"'
+    pat = re.compile(r'targetRevision: "([A-Za-z][A-Za-z0-9_/-]*)"')
+    for path in glob.glob("platform/applications/*.yaml"):
+        s = open(path).read()
+        s2 = pat.sub(repl, s)
+        if s2 != s:
+            open(path, "w").write(s2)
+    sp = "infrastructure/stack.yaml"
+    s = open(sp).read()
+    open(sp, "w").write(re.sub(r'refs/heads/[A-Za-z][A-Za-z0-9_/-]*/infrastructure/',
+                               f'refs/heads/{branch}/infrastructure/', s))
+    print(f"Retargeted to {branch} (commit-SHA and version pins left intact). Review with 'git diff'.")
 
 seal-secrets:
     #!/usr/bin/env bash

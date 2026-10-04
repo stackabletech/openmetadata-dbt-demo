@@ -1,0 +1,79 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cockpit
+  namespace: deployment
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  sources:
+    # Stackable Cockpit v2 (experimental; no releases yet). We pin the Helm chart
+    # to a specific commit on main (NOT a moving branch) and the image to a digest,
+    # so a teardown + re-deploy is byte-for-byte reproducible.
+    - repoURL: "https://github.com/stackabletech/cockpit"
+      path: deploy/helm/cockpit
+      targetRevision: effa5c7e37582a47275e60bca929dff93c147295
+      helm:
+        releaseName: cockpit
+        valuesObject:
+          image:
+            # name:tag@digest — the digest pins the exact main build.
+            tag: "0.0.0-dev@sha256:1b697bf704e42828c6a2ac9c0bcf03efbd2c56d4878fcd170ebd453e0d349052"
+          sessionSecret:
+            secretKeyRef:
+              name: cockpit-secrets
+              key: session-secret
+          # base-url / origin / oidc discoveryUrl are node-IP dependent and are
+          # patched at runtime by the configure-cockpit Job from the oidc-endpoints
+          # ConfigMap (see platform/manifests/cockpit/). The placeholders below are
+          # what the chart renders into the `cockpit` ConfigMap before patching.
+          origin: "http://localhost:3000"
+          auth:
+            baseUrl: "http://localhost:3000"
+            oidc:
+              enabled: true
+              discoveryUrl: "http://localhost:3000"
+              clientId: cockpit
+              clientSecret:
+                secretKeyRef:
+                  name: cockpit-secrets
+                  key: oidc-client-secret
+          trino:
+            # In-cluster coordinator; HTTPS with the Stackable `tls` SecretClass CA.
+            url: "https://trino-coordinator.platform.svc.cluster.local:8443"
+            userImpersonation:
+              enabled: true
+              userClaim: preferred_username
+            auth:
+              type: basic
+              username: cockpit
+              password:
+                secretKeyRef:
+                  name: cockpit-secrets
+                  key: trino-auth-password
+            tls:
+              secretClass: tls
+    # Our supporting manifests: NodePort + the configure-cockpit Job + its RBAC + SealedSecret.
+    - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
+      targetRevision: "feat/data2day"
+      path: platform/manifests/cockpit/
+  # The configure-cockpit Job rewrites these three keys with the real node IP.
+  # Tell ArgoCD not to fight that patch (otherwise selfHeal reverts to localhost).
+  ignoreDifferences:
+    - group: ""
+      kind: ConfigMap
+      name: cockpit
+      namespace: platform
+      jsonPointers:
+        - /data/base-url
+        - /data/origin
+        - /data/oidc-discovery-url
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
