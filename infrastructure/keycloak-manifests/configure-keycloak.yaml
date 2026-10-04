@@ -456,6 +456,9 @@ data:
       access_type           = "CONFIDENTIAL"
       client_secret         = "openmetadata-secret"
       standard_flow_enabled = true
+      # Lets the configure-openmetadata job and the dbt DAG obtain a demo-admin
+      # bearer token via password grant (OM is in custom-oidc mode -> no basic login).
+      direct_access_grants_enabled = true
       valid_redirect_uris   = ["*"]
       web_origins           = ["+"]
     }

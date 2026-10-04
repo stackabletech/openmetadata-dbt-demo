@@ -65,6 +65,12 @@ spec:
                     key: admin
               - name: AIRFLOW_CONN_TRINO_DEFAULT
                 value: "trino://admin:$(TRINO_PASSWORD)@trino-coordinator.platform.svc.cluster.local:8443/?protocol=https&verify=false"
+              # demo-admin password for the DAG's OpenMetadata Keycloak login.
+              - name: KEYCLOAK_DEMO_ADMIN_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: keycloak-demo-passwords
+                    key: demo_admin_password
     config:
       logging:
         enableVectorAgent: true
@@ -106,6 +112,12 @@ spec:
                     key: admin
               - name: AIRFLOW_CONN_TRINO_DEFAULT
                 value: "trino://admin:$(TRINO_PASSWORD)@trino-coordinator.platform.svc.cluster.local:8443/?protocol=https&verify=false"
+              # demo-admin password for the DAG's OpenMetadata Keycloak login.
+              - name: KEYCLOAK_DEMO_ADMIN_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: keycloak-demo-passwords
+                    key: demo_admin_password
   schedulers:
     envOverrides: *envOverrides
     podOverrides: *podOverrides

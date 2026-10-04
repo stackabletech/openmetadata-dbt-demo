@@ -14,8 +14,14 @@ S3_BUCKET = "dbt-artifacts"
 S3_PREFIX = "tpch_demo"
 OM_HOST = "http://openmetadata:8585"
 OM_API = f"{OM_HOST}/api/v1"
-OM_ADMIN_EMAIL = "admin@open-metadata.org"
-OM_ADMIN_PASSWORD = "admin"
+# OM runs in custom-oidc mode, so basic /users/login is forbidden. We get a
+# bearer token from Keycloak (demo-admin password grant via the openmetadata
+# client -> aud=openmetadata, accepted by OM). Password is injected into the
+# executor pod as KEYCLOAK_DEMO_ADMIN_PASSWORD (see the AirflowCluster).
+KEYCLOAK_TOKEN_URL = "http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo/protocol/openid-connect/token"
+OM_OIDC_CLIENT_ID = "openmetadata"
+OM_OIDC_CLIENT_SECRET = "openmetadata-secret"
+OM_ADMIN_USER = "demo-admin"
 METADATA_PIPELINE_FQN = "trino.trino_metadata_ingestion"
 DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
 INGESTION_POLL_INTERVAL = 10  # seconds
@@ -215,13 +221,24 @@ def _om_helpers():
             return json.loads(resp.read().decode())
 
     def om_login():
-        password_b64 = base64.b64encode(OM_ADMIN_PASSWORD.encode()).decode()
-        result = om_request(
-            "/users/login", method="POST",
-            data={"email": OM_ADMIN_EMAIL, "password": password_b64},
+        import os
+        import urllib.parse
+        data = urllib.parse.urlencode({
+            "grant_type": "password",
+            "client_id": OM_OIDC_CLIENT_ID,
+            "client_secret": OM_OIDC_CLIENT_SECRET,
+            "username": OM_ADMIN_USER,
+            "password": os.environ.get("KEYCLOAK_DEMO_ADMIN_PASSWORD", ""),
+            "scope": "openid",
+        }).encode()
+        req = urllib.request.Request(
+            KEYCLOAK_TOKEN_URL, data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST",
         )
-        print("  Logged in to OpenMetadata.")
-        return result["accessToken"]
+        with urllib.request.urlopen(req) as resp:
+            token = json.loads(resp.read().decode())["access_token"]
+        print("  Obtained OpenMetadata token from Keycloak.")
+        return token
 
     return om_request, om_login
 
@@ -348,6 +365,12 @@ with DAG(
             "py_system_site_packages": False,
             "py_requirements": ["dbt-trino"],
             "install_deps": True,
+            # Cosmos VIRTUALENV runs dbt in a subprocess that does NOT inherit the
+            # task pod's environment by default, so profiles.yml's
+            # env_var('TRINO_PASSWORD') resolved empty -> dbt sent admin:"" and
+            # Trino returned 401. append_env merges the task env (which carries
+            # TRINO_PASSWORD from the executor podOverride) into the dbt subprocess.
+            "append_env": True,
         },
         default_args={
             "retries": 1,
