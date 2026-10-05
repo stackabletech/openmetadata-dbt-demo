@@ -7,6 +7,9 @@ metadata:
 spec:
   image:
     productVersion: 1.12.3
+    # Pinned because the custom opa-operator build (infrastructure/opa-operator-custom.yaml)
+    # reports version 0.0.0-dev and would otherwise pick the nightly OPA image.
+    stackableVersion: 26.3.0
   clusterConfig:
     # User Info Fetcher sidecar: lets Rego resolve a user's Keycloak group
     # membership via data.stackable.opa.userinfo.v1.userInfoByUsername(...).

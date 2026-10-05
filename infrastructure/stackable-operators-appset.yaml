@@ -21,7 +21,7 @@ spec:
                 - operator: hive
                 - operator: kafka
                 - operator: nifi
-                - operator: opa
+                # opa: custom build, see infrastructure/opa-operator-custom.yaml
                 - operator: opensearch
                 - operator: spark-k8s
                 - operator: superset

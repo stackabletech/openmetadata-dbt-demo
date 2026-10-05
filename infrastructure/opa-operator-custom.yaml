@@ -1,0 +1,52 @@
+---
+# Custom opa-operator build with the OpenMetadata backend for the resource-info-fetcher
+# (opa-operator branch feat/openmetadata, not released yet). Replaces the `opa` entry of the
+# stackable-operators ApplicationSet, which installs the stock SDP release.
+#
+# Applied by stackablectl at bootstrap (infrastructure/stack.yaml), like the ApplicationSet, so the
+# operator and its CRD exist before cluster-apps syncs the OpaCluster.
+#
+# Chart: from opa-operator `main`, pinned to a commit. The 26.3.0 chart can't run a main-based
+# operator: main requires the IMAGE_REPOSITORY env var, which only main's chart sets. Note that
+# `image.repository` in main's chart is the registry WITHOUT the image name.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opa-operator
+  namespace: deployment
+spec:
+  project: stackable-operators
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stackable-operators
+  source:
+    repoURL: "https://github.com/stackabletech/opa-operator"
+    path: deploy/helm/opa-operator
+    targetRevision: b30b329734b36d5b1b89c418b75e8743eec8fd31
+    helm:
+      releaseName: opa-operator
+      valuesObject:
+        image:
+          repository: oci.stackable.tech/sandbox
+          # name:tag@digest, the digest pins the exact build.
+          tag: "0.0.0-dev-omd@sha256:0e97434754b53685a7741cd99a885ac8f52c9fcbc129ace6a56e49f333e58aaa"
+          # Product images (OPA itself) stay on the release registry. Without this they would be
+          # looked up under oci.stackable.tech/sandbox.
+          productRepository: oci.stackable.tech/sdp
+  ignoreDifferences:
+    # Same as the stackable-operators ApplicationSet,
+    # mitigating: https://github.com/stackabletech/hdfs-operator/issues/626
+    - group: "apiextensions.k8s.io"
+      kind: "CustomResourceDefinition"
+      jqPathExpressions:
+        - .spec.names.categories | select(. == [])
+        - .spec.names.shortNames | select(. == [])
+        - .spec.versions[].additionalPrinterColumns | select(. == [])
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    automated:
+      selfHeal: true
+      prune: true

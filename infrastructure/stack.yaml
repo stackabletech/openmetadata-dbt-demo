@@ -30,6 +30,8 @@ stacks:
       # applicationset - operators
       ################################
       - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/stackable-operators-appset.yaml
+      # opa-operator: custom build (resource-info-fetcher with OpenMetadata backend), not in the appset
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/opa-operator-custom.yaml
       ################################
       # applicationset - ForgeJo-installed and clones this repo, argo then looks at the in-cluster Forgejo, so that
       # users can push changes without breaking the demo
