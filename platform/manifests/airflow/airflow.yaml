@@ -34,10 +34,20 @@ spec:
         oidc:
           clientCredentialsSecret: airflow-keycloak-client
         userRegistrationRole: Public
-        syncRolesAt: Registration
+        # Re-sync roles on every login (not just first registration), so role
+        # changes in Keycloak take effect without recreating the Airflow user.
+        syncRolesAt: Login
   webservers:
     roleConfig:
       listenerClass: external-stable
+    # AUTH_ROLES_MAPPING must live in webserver_config.py for FAB to read it;
+    # setting it only as an env var (as before) has no effect. Maps the Keycloak
+    # realm roles (surfaced in the "groups" userinfo claim by the
+    # airflow-realm-roles mapper) to Airflow's built-in roles. Webserver-only:
+    # role sync happens during the OAuth login handled by the webserver.
+    configOverrides:
+      webserver_config.py:
+        AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Viewer"]}'
     envOverrides: &envOverrides
       AIRFLOW_CONN_KUBERNETES_IN_CLUSTER: "kubernetes://?__extra__=%7B%22extra__kubernetes__in_cluster%22%3A+true%2C+%22extra__kubernetes__kube_config%22%3A+%22%22%2C+%22extra__kubernetes__kube_config_path%22%3A+%22%22%2C+%22extra__kubernetes__namespace%22%3A+%22%22%7D"
       AIRFLOW__LOGGING__REMOTE_LOGGING: "True"
@@ -46,7 +56,6 @@ spec:
       # 20 seconds to reload the DAGS folder (default: 300)
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "20"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
-      AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Viewer"]}'
     podOverrides: &podOverrides
       spec:
         containers:

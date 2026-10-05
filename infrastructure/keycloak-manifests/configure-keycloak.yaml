@@ -384,6 +384,24 @@ data:
       add_to_access_token      = true
     }
 
+    # Airflow's Flask-AppBuilder reads a user's roles from the "groups" claim of
+    # the OIDC *userinfo* response (FAB 5.x: role_keys = userinfo.get("groups")).
+    # Keycloak keeps realm roles in realm_access.roles and does NOT put them in
+    # userinfo by default, so without this mapper every SSO user falls back to
+    # AUTH_USER_REGISTRATION_ROLE (Public) and sees no DAGs. Publish realm roles
+    # into a top-level "groups" claim incl. userinfo. Role names (admin/viewer)
+    # then match AUTH_ROLES_MAPPING in webserver_config.py. Mirrors argocd_realm_roles.
+    resource "keycloak_openid_user_realm_role_protocol_mapper" "airflow_realm_roles" {
+      realm_id            = keycloak_realm.stackable_demo.id
+      client_id           = keycloak_openid_client.airflow.id
+      name                = "airflow-realm-roles"
+      claim_name          = "groups"
+      multivalued         = true
+      add_to_id_token     = true
+      add_to_access_token = true
+      add_to_userinfo     = true
+    }
+
     resource "keycloak_openid_client" "nifi" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "nifi"
