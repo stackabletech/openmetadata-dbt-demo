@@ -47,6 +47,12 @@ spec:
         replicas: 1
   workers:
     config:
+      # Default is ~1h (graceful query draining). On a fresh deploy a worker that
+      # never started (e.g. a Secret it mounts didn't exist yet) and then got
+      # replaced sat in Terminating for that hour, so Trino had no worker,
+      # trino-init failed and the dbt DAG waited. The demo has no long-running
+      # queries to drain.
+      gracefulShutdownTimeout: 1m
       logging:
         enableVectorAgent: true
     podOverrides: *vectorPodOverrides
