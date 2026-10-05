@@ -240,21 +240,32 @@ data:
         """Create or update the OM bot the OPA Resource Info Fetcher reads metadata with,
         and return its JWT. The bot keeps OM's DefaultBotRole, which can read tables,
         tags and owners but not change them."""
-        print(f"Creating/updating bot '{RIF_BOT_NAME}' ...")
-        user = api_request("/users", method="PUT", token=token, data={
-            "name": RIF_BOT_NAME,
-            "displayName": "Resource Info Fetcher (OPA)",
-            "email": f"{RIF_BOT_NAME}@stackable.demo",
-            "isBot": True,
-            "authenticationMechanism": {"authType": "JWT", "config": {"JWTTokenExpiry": "Unlimited"}},
-        })
-        api_request("/bots", method="PUT", token=token, data={
-            "name": RIF_BOT_NAME,
-            "displayName": "Resource Info Fetcher (OPA)",
-            "description": "Read-only access for the OPA resource-info-fetcher.",
-            "botUser": RIF_BOT_NAME,
-        })
-        auth = api_request(f"/users/auth-mechanism/{user['id']}", token=token)
+        print(f"Ensuring bot '{RIF_BOT_NAME}' ...")
+        # PUT /users is not idempotent for bot users: OM rejects it with 400 once the
+        # user belongs to a bot. So only create user + bot if the bot doesn't exist yet.
+        try:
+            bot = api_request(f"/bots/name/{RIF_BOT_NAME}", token=token)
+            user_id = bot["botUser"]["id"]
+            print(f"  Bot '{RIF_BOT_NAME}' already exists.")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            print(f"Creating bot '{RIF_BOT_NAME}' ...")
+            user = api_request("/users", method="PUT", token=token, data={
+                "name": RIF_BOT_NAME,
+                "displayName": "Resource Info Fetcher (OPA)",
+                "email": f"{RIF_BOT_NAME}@stackable.demo",
+                "isBot": True,
+                "authenticationMechanism": {"authType": "JWT", "config": {"JWTTokenExpiry": "Unlimited"}},
+            })
+            api_request("/bots", method="PUT", token=token, data={
+                "name": RIF_BOT_NAME,
+                "displayName": "Resource Info Fetcher (OPA)",
+                "description": "Read-only access for the OPA resource-info-fetcher.",
+                "botUser": RIF_BOT_NAME,
+            })
+            user_id = user["id"]
+        auth = api_request(f"/users/auth-mechanism/{user_id}", token=token)
         jwt = auth.get("config", {}).get("JWTToken")
         if not jwt:
             print("ERROR: OpenMetadata returned no JWT for the bot.", file=sys.stderr)
