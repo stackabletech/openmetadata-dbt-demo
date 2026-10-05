@@ -466,6 +466,23 @@ data:
       add_to_access_token      = true
     }
 
+    # Superset (also Flask-AppBuilder) reads roles from the "groups" claim of the
+    # OIDC userinfo response, same as Airflow. Without this mapper SSO users fall
+    # back to userRegistrationRole (Gamma) instead of their mapped role, so
+    # demo-admin silently stays Gamma rather than Admin. Publish realm roles into
+    # a "groups" claim incl. userinfo; names (admin/viewer) match AUTH_ROLES_MAPPING
+    # in superset_config.py. Mirrors airflow-realm-roles / argocd-realm-roles.
+    resource "keycloak_openid_user_realm_role_protocol_mapper" "superset_realm_roles" {
+      realm_id            = keycloak_realm.stackable_demo.id
+      client_id           = keycloak_openid_client.superset.id
+      name                = "superset-realm-roles"
+      claim_name          = "groups"
+      multivalued         = true
+      add_to_id_token     = true
+      add_to_access_token = true
+      add_to_userinfo     = true
+    }
+
     resource "keycloak_openid_client" "openmetadata" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "openmetadata"
