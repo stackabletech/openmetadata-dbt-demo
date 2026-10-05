@@ -29,6 +29,19 @@ INGESTION_TIMEOUT = 600  # seconds
 
 TRINO_SCHEMA_CHECK = "hive-iceberg.demo"
 
+# Trino denies SELECT on hive-iceberg.demo tables without an owner in OpenMetadata
+# (rego-trino-policies.yaml). These marts get an owning team after ingestion so the
+# demo starts usable. order_summary is left out on purpose: the talk sets its owner
+# (and PII tags) live. The staging views stay unowned, i.e. closed for humans.
+OM_OWNER_TEAM = "data-engineering"
+OM_OWNED_TABLES = [
+    "customer_lifetime_value",
+    "part_pricing_analysis",
+    "revenue_by_region",
+    "shipping_analysis",
+    "supplier_performance",
+]
+
 
 def check_services_ready(**context):
     """Check that OpenMetadata API is responding and Trino has the required schema."""
@@ -209,9 +222,9 @@ def _om_helpers():
     import urllib.request
     import urllib.error
 
-    def om_request(path, method="GET", data=None, token=None):
+    def om_request(path, method="GET", data=None, token=None, content_type="application/json"):
         url = f"{OM_API}{path}"
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": content_type}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         body = json.dumps(data).encode() if data else None
@@ -309,6 +322,40 @@ def trigger_om_metadata_ingestion(**context):
     raise TimeoutError(
         f"Metadata ingestion did not complete within {INGESTION_TIMEOUT}s"
     )
+
+
+def set_om_owners(**context):
+    """Give the marts in OM_OWNED_TABLES the owning team OM_OWNER_TEAM in OpenMetadata.
+
+    Runs after the metadata ingestion, so the tables exist in OM. Tables that already
+    have an owner are left alone, so manual changes survive a rerun.
+    """
+    import urllib.parse
+
+    om_request, om_login = _om_helpers()
+    token = om_login()
+
+    team = om_request("/teams", method="PUT", token=token, data={
+        "name": OM_OWNER_TEAM,
+        "displayName": "Data Engineering",
+        "teamType": "Group",
+        "description": "Owns the dbt marts of the TPC-H demo.",
+    })
+    print(f"  Team '{OM_OWNER_TEAM}' ready (id={team['id']}).")
+
+    for table in OM_OWNED_TABLES:
+        fqn = f"trino.hive-iceberg.demo.{table}"
+        entity = om_request(f"/tables/name/{urllib.parse.quote(fqn, safe='')}?fields=owners", token=token)
+        owners = entity.get("owners") or []
+        if owners:
+            print(f"  {fqn}: already owned by {[o.get('name') for o in owners]}, leaving it.")
+            continue
+        om_request(
+            f"/tables/{entity['id']}", method="PATCH", token=token,
+            content_type="application/json-patch+json",
+            data=[{"op": "add", "path": "/owners", "value": [{"id": team["id"], "type": "team"}]}],
+        )
+        print(f"  {fqn}: owner set to team '{OM_OWNER_TEAM}'.")
 
 
 def trigger_om_dbt_ingestion(**context):
@@ -413,4 +460,9 @@ with DAG(
         python_callable=trigger_om_dbt_ingestion,
     )
 
-    wait_for_services >> dbt_tasks >> finalize >> trigger_metadata_ingestion >> trigger_dbt_ingestion
+    set_owners = PythonOperator(
+        task_id="set_om_owners",
+        python_callable=set_om_owners,
+    )
+
+    wait_for_services >> dbt_tasks >> finalize >> trigger_metadata_ingestion >> set_owners >> trigger_dbt_ingestion
