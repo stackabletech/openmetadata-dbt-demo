@@ -43,7 +43,12 @@ spec:
                   key: oidc-client-secret
           trino:
             # In-cluster coordinator; HTTPS with the Stackable `tls` SecretClass CA.
-            url: "https://trino-coordinator.platform.svc.cluster.local:8443"
+            # Use the per-rolegroup HEADLESS service name, not the `trino-coordinator`
+            # role service: the Stackable-issued Trino cert only lists the headless
+            # service + pod in its SANs. Cockpit verifies TLS (unlike dbt/OM/Airflow,
+            # which set verify=false), so pointing at `trino-coordinator...` fails
+            # ERR_TLS_CERT_ALTNAME_INVALID and the Trino view 500s.
+            url: "https://trino-coordinator-default-headless.platform.svc.cluster.local:8443"
             userImpersonation:
               enabled: true
               userClaim: preferred_username
