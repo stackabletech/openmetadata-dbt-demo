@@ -96,6 +96,12 @@ spec:
               value: '["$(ISSUER_URL)/protocol/openid-connect/certs"]'
             - name: AUTHENTICATION_CALLBACK_URL
               value: "http://$(NODE_IP):30585/callback"
+            # All demo UIs share the node IP, and browsers scope cookies by host, not
+            # port: OM receives the session cookies of every other UI too. With the
+            # default 8KiB, OM answers 431 Request Header Fields Too Large once a
+            # browser has logged into a few of them.
+            - name: SERVER_MAX_REQUEST_HEADER_SIZE
+              value: "64KiB"
           extraInitContainers:
             - name: convert-truststore
               image: eclipse-temurin:21-jre
