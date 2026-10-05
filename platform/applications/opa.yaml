@@ -33,3 +33,12 @@ spec:
     automated:
       selfHeal: true
       prune: true
+    # The custom opa-operator creates the OpaCluster CRD itself once it runs. On a
+    # fresh cluster this app can sync first and fail with "no matches for kind
+    # OpaCluster"; automated sync doesn't retry the same commit on its own.
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
