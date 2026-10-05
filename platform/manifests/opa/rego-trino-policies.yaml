@@ -27,6 +27,8 @@ data:
   trino_policies.rego: |
     package trino_policies
 
+    import data.stackable.opa.resourceinfo.v1 as resourceinfo
+
     policies := {
       "catalogs": [
         # Full admins: the static `admin` user and anyone in the Keycloak `/admin` group.
@@ -51,6 +53,10 @@ data:
         {"group": "/admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
 
         # --- PII demo on the dbt marts (catalog hive-iceberg, schema demo) ---
+        # Two flavours, side by side for the talk:
+        #   - customer_lifetime_value: masks HARDCODED here, per group (below).
+        #   - every other table in hive-iceberg.demo: masks driven by the
+        #     OpenMetadata tag PII.Sensitive (see `tag_mask` at the end).
         # First-match-wins: the `/pii` rule is listed *before* the masking rule
         # for the same table, so members of the `/pii` group see the raw value
         # while everyone else gets the masked expression.
@@ -74,25 +80,8 @@ data:
           ],
         },
 
-        # order_summary: customer_name is PII.
-        {
-          "group": "/pii",
-          "catalog": "hive-iceberg",
-          "schema": "demo",
-          "table": "order_summary",
-          "privileges": ["SELECT"],
-        },
-        {
-          "catalog": "hive-iceberg",
-          "schema": "demo",
-          "table": "order_summary",
-          "privileges": ["SELECT"],
-          "columns": [
-            {"name": "customer_name", "mask": "'***MASKED***'"},
-          ],
-        },
-
-        # All other marts (and the rest of schema demo) are readable by everyone.
+        # All other marts (and the rest of schema demo) are readable by everyone,
+        # subject to the OpenMetadata-driven rules at the end of this file.
         {"catalog": "hive-iceberg", "schema": "demo", "privileges": ["SELECT"]},
 
         # Read-only access to the sample/source catalogs for exploration.
@@ -143,3 +132,87 @@ data:
       response.status_code == 200
       groups := response.body.groups
     }
+
+    # =========================================================================
+    # Rules driven by OpenMetadata, via the Resource Info Fetcher sidecar
+    # (resourceInfo on the OpaCluster). Hooked into the engine's allow / batch /
+    # columnMask / batchColumnMasks, see "data2day demo extension" in
+    # rego-trino-engine.yaml.
+    #
+    # Both fail closed: if OpenMetadata can't be asked (fetcher down, token
+    # rejected), access is denied and columns are masked.
+    # =========================================================================
+
+    # Scope: the dbt marts and staging views. Other catalogs aren't affected.
+    governed(catalog, schema) if {
+      catalog == "hive-iceberg"
+      schema == "demo"
+    }
+
+    # Service accounts: dbt, the OpenMetadata ingestion and the Airflow connection
+    # all use the static Trino user `admin`. dbt builds the marts from the staging
+    # views, so it must neither be denied nor read masked values.
+    exempt_users := {"admin"}
+
+    exempt if input.context.identity.user in exempt_users
+
+    # `instance` is the OpenMetadata service name, `database` the Trino catalog.
+    om_table(catalog, schema, table) := resourceinfo.tableResourceInfo("trino", "trino", catalog, schema, table)
+
+    # --- Rule 1: mandatory metadata, a table needs an owner in OpenMetadata ---
+
+    has_owner(catalog, schema, table) if {
+      info := om_table(catalog, schema, table)
+      info.inCatalog
+      count(info.owners.users) + count(info.owners.teams) > 0
+    }
+
+    # Denies SELECT for everybody but the service accounts, including /admin.
+    # Only SELECT: tables stay visible in listings and autocompletion and fail
+    # with "Access Denied" when queried.
+    default metadata_denied(_) := false
+
+    metadata_denied(action) if {
+      action.operation == "SelectFromColumns"
+      table := action.resource.table
+      governed(table.catalogName, table.schemaName)
+      not exempt
+      not has_owner(table.catalogName, table.schemaName, table.tableName)
+    }
+
+    # --- Rule 2: mask columns tagged PII.Sensitive, unless the user is in /pii ---
+
+    pii_tag := "PII.Sensitive"
+
+    pii_member if "/pii" in input.context.identity.groups
+
+    pii_member if "/pii" in extra_groups
+
+    has_pii_tag(column) if {
+      some tag in column.tags
+      tag.fullyQualifiedName == pii_tag
+    }
+
+    # Unmasked only if the lookup worked, OpenMetadata knows the table and the
+    # column, and the column has no PII tag. Everything else is masked.
+    column_unmasked(column) if {
+      info := om_table(column.catalogName, column.schemaName, column.tableName)
+      info.inCatalog
+      om_column := info.columns[column.columnName]
+      not has_pii_tag(om_column)
+    }
+
+    # `column` is Trino's column resource (catalogName, schemaName, tableName,
+    # columnName, columnType). Only consulted where the policies above set no
+    # mask, so customer_lifetime_value keeps its hardcoded masks.
+    tag_mask(column) := mask_expression(object.get(column, "columnType", "")) if {
+      governed(column.catalogName, column.schemaName)
+      not exempt
+      not pii_member
+      not column_unmasked(column)
+    }
+
+    # A readable placeholder for text, NULL (untyped, so it fits any column) otherwise.
+    mask_expression(column_type) := "'***MASKED***'" if startswith(lower(column_type), "varchar")
+
+    mask_expression(column_type) := "NULL" if not startswith(lower(column_type), "varchar")

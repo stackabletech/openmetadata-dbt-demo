@@ -231,6 +231,59 @@ data:
                 raise
 
 
+    RIF_BOT_NAME = "resource-info-fetcher"
+    RIF_SECRET_NAME = os.environ.get("RIF_SECRET_NAME", "resource-info-fetcher-credentials")
+    K8S_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+
+
+    def ensure_rif_bot(token):
+        """Create or update the OM bot the OPA Resource Info Fetcher reads metadata with,
+        and return its JWT. The bot keeps OM's DefaultBotRole, which can read tables,
+        tags and owners but not change them."""
+        print(f"Creating/updating bot '{RIF_BOT_NAME}' ...")
+        user = api_request("/users", method="PUT", token=token, data={
+            "name": RIF_BOT_NAME,
+            "displayName": "Resource Info Fetcher (OPA)",
+            "email": f"{RIF_BOT_NAME}@stackable.demo",
+            "isBot": True,
+            "authenticationMechanism": {"authType": "JWT", "config": {"JWTTokenExpiry": "Unlimited"}},
+        })
+        api_request("/bots", method="PUT", token=token, data={
+            "name": RIF_BOT_NAME,
+            "displayName": "Resource Info Fetcher (OPA)",
+            "description": "Read-only access for the OPA resource-info-fetcher.",
+            "botUser": RIF_BOT_NAME,
+        })
+        auth = api_request(f"/users/auth-mechanism/{user['id']}", token=token)
+        jwt = auth.get("config", {}).get("JWTToken")
+        if not jwt:
+            print("ERROR: OpenMetadata returned no JWT for the bot.", file=sys.stderr)
+            sys.exit(1)
+        print(f"  Bot '{RIF_BOT_NAME}' ready.")
+        return jwt
+
+
+    def store_rif_token(jwt):
+        """Patch the bot JWT into the Secret the Resource Info Fetcher mounts. The opa
+        Application ships it with a placeholder and ignores its data."""
+        import base64
+        import ssl
+
+        namespace = open(f"{K8S_SA_DIR}/namespace").read().strip()
+        sa_token = open(f"{K8S_SA_DIR}/token").read().strip()
+        url = f"https://kubernetes.default.svc/api/v1/namespaces/{namespace}/secrets/{RIF_SECRET_NAME}"
+        body = json.dumps({"data": {"token": base64.b64encode(jwt.encode()).decode()}}).encode()
+        req = urllib.request.Request(url, data=body, method="PATCH", headers={
+            "Authorization": f"Bearer {sa_token}",
+            "Content-Type": "application/merge-patch+json",
+        })
+        context = ssl.create_default_context(cafile=f"{K8S_SA_DIR}/ca.crt")
+        print(f"Storing the bot token in Secret '{RIF_SECRET_NAME}' ...")
+        with urllib.request.urlopen(req, context=context) as resp:
+            resp.read()
+        print("  Done.")
+
+
     def deploy_pipeline(token, pipeline):
         """Deploy an ingestion pipeline to the pipeline service (without triggering a run)."""
         pipeline_id = pipeline["id"]
@@ -252,6 +305,7 @@ data:
         dbt_pipeline = create_dbt_pipeline(token, service)
         deploy_pipeline(token, metadata_pipeline)
         deploy_pipeline(token, dbt_pipeline)
+        store_rif_token(ensure_rif_bot(token))
         print("Done — Trino is registered in OpenMetadata with metadata and dbt pipelines.")
 
 
@@ -267,12 +321,14 @@ metadata:
   # suffix (v2 -> v3 ...). NOTE: do NOT use sync-option Replace=true here — for a
   # Job with no explicit selector, `kubectl replace` fails with "selector: Required
   # value / field is immutable" and the job never runs.
-  name: configure-openmetadata-v3
+  name: configure-openmetadata-v4
   namespace: platform
 spec:
   backoffLimit: 50
   template:
     spec:
+      # Patches the Resource Info Fetcher token Secret, see the RBAC below.
+      serviceAccountName: configure-openmetadata
       containers:
         - name: configure
           image: python:3.12-slim # renovate: datasource=docker depName=python
@@ -319,3 +375,36 @@ spec:
         - name: script
           configMap:
             name: openmetadata-init-script
+---
+# The Job writes the OpenMetadata bot JWT into the Resource Info Fetcher's Secret
+# (shipped as a placeholder by the opa Application). Only that one Secret.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configure-openmetadata
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configure-openmetadata
+  namespace: platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["resource-info-fetcher-credentials"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configure-openmetadata
+  namespace: platform
+subjects:
+  - kind: ServiceAccount
+    name: configure-openmetadata
+    namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: configure-openmetadata

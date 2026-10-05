@@ -25,6 +25,20 @@ spec:
           clientCredentialsSecret: user-info-fetcher-client-credentials
           adminRealm: stackable-demo
           userRealm: stackable-demo
+    # Resource Info Fetcher sidecar (custom opa-operator build, see
+    # infrastructure/opa-operator-custom.yaml): lets Rego look up a table's
+    # OpenMetadata tags and owners via data.stackable.opa.resourceinfo.v1.
+    # Listens on 127.0.0.1:9477. The token is the JWT of the OpenMetadata bot
+    # `resource-info-fetcher`, written into the Secret by configure-openmetadata.
+    resourceInfo:
+      backend:
+        openMetadata:
+          hostname: openmetadata.platform.svc.cluster.local
+          port: 8585
+          credentialsSecretName: resource-info-fetcher-credentials
+      cache:
+        # Short, so tag and owner changes in OpenMetadata show up quickly in the demo.
+        entryTimeToLive: 10s
   servers:
     roleGroups:
       default:

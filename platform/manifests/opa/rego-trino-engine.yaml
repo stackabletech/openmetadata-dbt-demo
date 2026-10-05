@@ -1470,7 +1470,12 @@ data:
     # entrypoint: true
     default allow := false
 
-    allow := allowWith(input.action)
+    # data2day demo extension (not upstream): additionally deny what the
+    # OpenMetadata-driven rule `metadata_denied` in trino_policies rejects.
+    allow if {
+      allowWith(input.action)
+      not data.trino_policies.metadata_denied(input.action)
+    }
 
     allowWith(action) if {
       # Fail if the requested permissions for the given operation are not
@@ -1622,6 +1627,9 @@ data:
       action := object.union(object.remove(input.action, {"filterResources"}), {"resource": resource})
 
       allowWith(action)
+
+      # data2day demo extension (not upstream), see `allow`.
+      not data.trino_policies.metadata_denied(action)
     }
 
     batch contains index if {
@@ -1711,6 +1719,23 @@ data:
       column_mask := {"expression": column.mask}
     }
 
+    # data2day demo extension (not upstream): where the policies set no mask,
+    # mask by OpenMetadata tag (`tag_mask` in trino_policies).
+    columnMask := column_mask if {
+      request := requested_column_mask(input.action)
+
+      column := column_constraints(
+        request.catalogName,
+        request.schemaName,
+        request.tableName,
+        request.columnName,
+      )
+
+      is_null(column.mask)
+
+      column_mask := {"expression": data.trino_policies.tag_mask(input.action.resource.column)}
+    }
+
     # METADATA
     # description: |
     #   Entry point for fetching column masks in batch, configured in the
@@ -1791,6 +1816,26 @@ data:
       column_mask := {
         "index": index,
         "viewExpression": {"expression": column.mask},
+      }
+    }
+
+    # data2day demo extension (not upstream), see the last `columnMask` rule.
+    batchColumnMasks contains column_mask if {
+      input.action.operation == "GetColumnMask"
+      some index, resource in input.action.filterResources
+
+      column := column_constraints(
+        resource.column.catalogName,
+        resource.column.schemaName,
+        resource.column.tableName,
+        resource.column.columnName,
+      )
+
+      is_null(column.mask)
+
+      column_mask := {
+        "index": index,
+        "viewExpression": {"expression": data.trino_policies.tag_mask(resource.column)},
       }
     }
 

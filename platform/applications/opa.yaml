@@ -17,9 +17,19 @@ spec:
     repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
     targetRevision: "feat/data2day"
     path: platform/manifests/opa/
+  # configure-openmetadata patches the OpenMetadata bot JWT into this Secret;
+  # don't revert it to the placeholder.
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: resource-info-fetcher-credentials
+      namespace: platform
+      jsonPointers:
+        - /data
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
     automated:
       selfHeal: true
       prune: true
