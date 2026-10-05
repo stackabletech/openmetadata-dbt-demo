@@ -164,3 +164,8 @@ dbt-run:
 # localStorage (paste into the browser console on the Cockpit page).
 cockpit-bookmarks:
     ./scripts/cockpit-bookmarks.sh
+
+# Write demo.html: the choreography with copy buttons, filled in for the current
+# cluster (node IP, ports, Cockpit bookmarks). Open it from disk, no server needed.
+demo-page out="demo.html":
+    ./scripts/demo-page.sh {{out}}
