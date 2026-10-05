@@ -491,6 +491,10 @@ data:
       access_type           = "CONFIDENTIAL"
       client_secret         = "openmetadata-secret"
       standard_flow_enabled = true
+      # OM's UI runs as a public OIDC client with response_type=id_token (chart
+      # default), i.e. the implicit flow. Without this, SSO login fails with
+      # "Implicit flow is disabled for the client".
+      implicit_flow_enabled = true
       # Lets the configure-openmetadata job and the dbt DAG obtain a demo-admin
       # bearer token via password grant (OM is in custom-oidc mode -> no basic login).
       direct_access_grants_enabled = true
