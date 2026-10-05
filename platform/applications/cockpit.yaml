@@ -20,8 +20,14 @@ spec:
         releaseName: cockpit
         valuesObject:
           image:
-            # name:tag@digest — the digest pins the exact main build.
-            tag: "0.0.0-dev@sha256:1b697bf704e42828c6a2ac9c0bcf03efbd2c56d4878fcd170ebd453e0d349052"
+            # Custom demo build of cockpit branch demo/data2day (local, commit ec948ab):
+            # feat/app-bookmark-dialog (dashboard bookmarks) + PR #350 (Trino
+            # autocomplete) + main @ 5fc67f2 + a fix for bookmark URLs with IP
+            # addresses. The chart (pinned above) is unchanged on that branch.
+            # name:tag@digest — the digest pins the exact build.
+            registry: oci.stackable.tech
+            repository: sandbox/cockpit
+            tag: "0.0.0-dev-data2day-ec948ab@sha256:1f26b2cc84beadf0b4b6bb9fdfe44c2b9b42ba5f246624f36fb53a063e34c626"
           sessionSecret:
             secretKeyRef:
               name: cockpit-secrets
