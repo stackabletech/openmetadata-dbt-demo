@@ -342,9 +342,15 @@ with DAG(
     wait_for_services = PythonSensor(
         task_id="wait_for_services",
         python_callable=check_services_ready,
-        poke_interval=30,
-        timeout=900,
-        mode="poke",
+        poke_interval=60,
+        # OpenMetadata (+ its OpenSearch index/migrations) and the trino-init
+        # schema job can take 15-25 min on a cold cluster, and this @once DAG
+        # fires early in bring-up. 15 min was too short -> the whole pipeline
+        # failed on first deploy with no auto-recovery. Give it 40 min.
+        timeout=2400,
+        # reschedule: release the KubernetesExecutor pod between pokes instead of
+        # blocking a slot for up to 40 min while waiting.
+        mode="reschedule",
     )
 
     dbt_tasks = DbtTaskGroup(

@@ -31,7 +31,7 @@ variable "location" {
 variable "node_count" {
   description = "Number of nodes in the user pool"
   type        = number
-  default     = 3
+  default     = 4
 }
 
 variable "node_vm_size" {
@@ -43,7 +43,7 @@ variable "node_vm_size" {
 variable "kubernetes_version" {
   description = "Kubernetes version"
   type        = string
-  default     = "1.33"
+  default     = "1.35"
 }
 
 variable "owner" {
