@@ -52,4 +52,4 @@ spec:
     podOverrides: *vectorPodOverrides
     roleGroups:
       default:
-        replicas: 2
+        replicas: 1

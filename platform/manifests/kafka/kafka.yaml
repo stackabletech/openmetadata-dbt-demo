@@ -18,7 +18,7 @@ spec:
         enableVectorAgent: true
     roleGroups:
       default:
-        replicas: 2
+        replicas: 1
   controllers:
     config:
       logging:

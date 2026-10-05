@@ -6,7 +6,7 @@ metadata:
   namespace: platform
 spec:
   clusterOperation:
-    stopped: false
+    stopped: true
   image:
     productVersion: 2.7.2
   clusterConfig:
