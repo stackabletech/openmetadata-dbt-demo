@@ -54,10 +54,10 @@ def link(url, text):
     return f'<a href="{url}" target="_blank" rel="noopener">{html.escape(text)}</a>'
 
 q_clv = """SELECT customer_id, customer_name, account_balance, lifetime_net_revenue
-FROM "hive-iceberg".demo.customer_lifetime_value
+FROM data2day.demo.customer_lifetime_value
 ORDER BY lifetime_net_revenue DESC LIMIT 10;"""
 q_os = """SELECT customer_name, customer_nation, net_revenue
-FROM "hive-iceberg".demo.order_summary
+FROM data2day.demo.order_summary
 ORDER BY net_revenue DESC LIMIT 10;"""
 
 body = f"""
@@ -79,7 +79,7 @@ body = f"""
 
 <section>
   <h2>What it shows</h2>
-  <p>Every Trino query is authorized by OPA. Two flavours, side by side in <code>hive-iceberg.demo</code>:</p>
+  <p>Every Trino query is authorized by OPA. Two flavours, side by side in <code>data2day.demo</code>:</p>
   <ul>
     <li><b>Part A, hardcoded per group</b> (<code>customer_lifetime_value</code>): the policy names the
       columns to mask; <code>/pii</code> members see clear text.</li>
@@ -122,7 +122,7 @@ body = f"""
     <li>Query a table without an owner, tab <i>Demo B</i>:
       {snippet("q_os", q_os)}
       <b>Access Denied</b>, also for <code>demo-admin</code>. The table is still listed, it just can't be read.</li>
-    <li>{link(om + "/table/trino.hive-iceberg.demo.order_summary", "OpenMetadata → order_summary")} →
+    <li>{link(om + "/table/trino.data2day.demo.order_summary", "OpenMetadata → order_summary")} →
       set owner <code>Data Engineering</code>.</li>
     <li>Wait <b>~10 seconds</b>, rerun: works, <code>customer_name</code> in clear text.</li>
     <li>Column <code>customer_name</code> → add tag:

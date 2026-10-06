@@ -554,3 +554,54 @@ data:
       add_to_id_token          = true
       add_to_access_token      = true
     }
+
+    # --- Lakekeeper (Iceberg REST catalog behind Trino catalog `data2day`) ---
+    # Lakekeeper validates tokens with audience `lakekeeper`, so both clients add it.
+    #
+    # Public client for the Lakekeeper UI (browser login, PKCE).
+    resource "keycloak_openid_client" "lakekeeper" {
+      realm_id                        = keycloak_realm.stackable_demo.id
+      client_id                       = "lakekeeper"
+      name                            = "Lakekeeper"
+      enabled                         = true
+      access_type                     = "PUBLIC"
+      standard_flow_enabled           = true
+      pkce_code_challenge_method      = "S256"
+      valid_redirect_uris             = ["*"]
+      valid_post_logout_redirect_uris = ["*"]
+      web_origins                     = ["+"]
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "lakekeeper_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.lakekeeper.id
+      name                     = "lakekeeper-audience"
+      included_client_audience = "lakekeeper"
+      add_to_id_token          = true
+      add_to_access_token      = true
+    }
+
+    # Machine client: Trino's Iceberg REST catalog (OAuth2 client credentials) and
+    # the lakekeeper-init Job (bootstrap, warehouse) authenticate with it. Its secret
+    # is also in the Secret lakekeeper-service-credentials (secrets/manifests/lakekeeper/).
+    resource "keycloak_openid_client" "lakekeeper_service" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = "lakekeeper-service"
+      name                     = "Lakekeeper service access (Trino, init)"
+      enabled                  = true
+      access_type              = "CONFIDENTIAL"
+      client_secret            = "lakekeeper-service-secret"
+      service_accounts_enabled = true
+      standard_flow_enabled    = false
+    }
+
+    resource "keycloak_openid_audience_protocol_mapper" "lakekeeper_service_audience" {
+      realm_id                 = keycloak_realm.stackable_demo.id
+      client_id                = keycloak_openid_client.lakekeeper_service.id
+      name                     = "lakekeeper-audience"
+      included_client_audience = "lakekeeper"
+      add_to_id_token          = true
+      add_to_access_token      = true
+      # The audience names the `lakekeeper` client, which has to exist first.
+      depends_on = [keycloak_openid_client.lakekeeper]
+    }

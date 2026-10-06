@@ -39,6 +39,8 @@ data:
     set -e
 
     LAKEKEEPER_URL="http://lakekeeper:8181"
+    TOKEN_URL="http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo/protocol/openid-connect/token"
+    WAREHOUSE="data2day"
 
     echo "=== Lakekeeper Init ==="
 
@@ -57,7 +59,7 @@ data:
       sleep 5
     done
 
-    # Step 2: Wait for GarageFS credentials Secret
+    # Step 2: Wait for the GarageFS credentials Secret (storage credential of the warehouse)
     echo "Waiting for garagefs-lakekeeper-credentials Secret..."
     for i in $(seq 1 60); do
       if kubectl get secret garagefs-lakekeeper-credentials >/dev/null 2>&1; then
@@ -72,23 +74,45 @@ data:
       sleep 5
     done
 
-    # Step 3: Read credentials from Secret
+    # Step 3: Read credentials from the Secrets
     KEY_ID=$(kubectl get secret garagefs-lakekeeper-credentials -o jsonpath='{.data.accessKeyId}' | base64 -d)
     KEY_SECRET=$(kubectl get secret garagefs-lakekeeper-credentials -o jsonpath='{.data.secretAccessKey}' | base64 -d)
-
-    if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ]; then
-      echo "ERROR: Failed to read credentials from Secret"
+    CLIENT_ID=$(kubectl get secret lakekeeper-service-credentials -o jsonpath='{.data.client-id}' | base64 -d)
+    CLIENT_SECRET=$(kubectl get secret lakekeeper-service-credentials -o jsonpath='{.data.client-secret}' | base64 -d)
+    if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ] || [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
+      echo "ERROR: Failed to read credentials from Secrets"
       exit 1
     fi
-    echo "  Credentials loaded (Key ID: $KEY_ID)"
+    echo "  Credentials loaded (S3 key ID: $KEY_ID, OIDC client: $CLIENT_ID)"
 
-    # Step 4: Bootstrap Lakekeeper (idempotent - 409 means already bootstrapped)
+    # Step 4: Get an access token from Keycloak (Lakekeeper requires OIDC). The client is
+    # created by the configure-keycloak Job, which may still be running: retry.
+    echo "Fetching access token from Keycloak..."
+    for i in $(seq 1 60); do
+      TOKEN=$(curl -s -X POST "$TOKEN_URL" \
+        -d grant_type=client_credentials -d scope=openid \
+        --data-urlencode "client_id=$CLIENT_ID" --data-urlencode "client_secret=$CLIENT_SECRET" \
+        | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+      if [ -n "$TOKEN" ]; then
+        echo "  Token obtained."
+        break
+      fi
+      if [ "$i" -eq 60 ]; then
+        echo "ERROR: no token from Keycloak after 60 attempts"
+        exit 1
+      fi
+      echo "  Attempt $i/60 - no token yet, retrying in 5s..."
+      sleep 5
+    done
+    AUTH="Authorization: Bearer $TOKEN"
+
+    # Step 5: Bootstrap Lakekeeper (idempotent - 409 means already bootstrapped).
+    # With OIDC, the bootstrapping principal is the lakekeeper-service account.
     echo "Bootstrapping Lakekeeper..."
     HTTP_CODE=$(curl -s -o /tmp/bootstrap_response.txt -w "%{http_code}" \
       -X POST "$LAKEKEEPER_URL/management/v1/bootstrap" \
-      -H "Content-Type: application/json" \
+      -H "$AUTH" -H "Content-Type: application/json" \
       -d '{"accept-terms-of-use": true}')
-
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
       echo "  Bootstrap successful."
     elif [ "$HTTP_CODE" = "409" ]; then
@@ -99,23 +123,23 @@ data:
       exit 1
     fi
 
-    # Step 5: Create warehouse (idempotent - check if exists first)
-    echo "Checking if warehouse 'garagefs' exists..."
-    WAREHOUSES=$(curl -sf "$LAKEKEEPER_URL/management/v1/warehouse" 2>/dev/null || echo "")
-    if echo "$WAREHOUSES" | grep -q '"garagefs"'; then
-      echo "  Warehouse 'garagefs' already exists, skipping."
+    # Step 6: Create the warehouse behind the Trino catalog `data2day` (idempotent)
+    echo "Checking if warehouse '$WAREHOUSE' exists..."
+    WAREHOUSES=$(curl -sf -H "$AUTH" "$LAKEKEEPER_URL/management/v1/warehouse" 2>/dev/null || echo "")
+    if echo "$WAREHOUSES" | grep -q "\"$WAREHOUSE\""; then
+      echo "  Warehouse '$WAREHOUSE' already exists, skipping."
     else
-      echo "  Creating warehouse 'garagefs'..."
+      echo "  Creating warehouse '$WAREHOUSE'..."
       HTTP_CODE=$(curl -s -o /tmp/warehouse_response.txt -w "%{http_code}" \
         -X POST "$LAKEKEEPER_URL/management/v1/warehouse" \
-        -H "Content-Type: application/json" \
+        -H "$AUTH" -H "Content-Type: application/json" \
         -d "{
-          \"warehouse-name\": \"garagefs\",
+          \"warehouse-name\": \"$WAREHOUSE\",
           \"project-id\": \"00000000-0000-0000-0000-000000000000\",
           \"storage-profile\": {
             \"type\": \"s3\",
             \"bucket\": \"iceberg-warehouse\",
-            \"key-prefix\": \"warehouse\",
+            \"key-prefix\": \"$WAREHOUSE\",
             \"endpoint\": \"http://garage.shared.svc.cluster.local:3900\",
             \"region\": \"garage\",
             \"path-style-access\": true,
@@ -142,8 +166,8 @@ data:
     fi
 
     echo "=== Lakekeeper Init Complete ==="
-    echo "  Warehouse: garagefs"
-    echo "  Storage: s3://iceberg-warehouse/warehouse"
+    echo "  Warehouse: $WAREHOUSE"
+    echo "  Storage: s3://iceberg-warehouse/$WAREHOUSE"
     echo "  Catalog endpoint: $LAKEKEEPER_URL/catalog"
 ---
 apiVersion: batch/v1

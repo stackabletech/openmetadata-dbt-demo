@@ -145,7 +145,7 @@ just dbt-run             # Run dbt models locally (requires Trino access)
 | `tpcds` | TPC-DS | Built-in | In-memory |
 | `hive` | Hive | Hive Metastore (PostgreSQL) | HDFS |
 | `hive-iceberg` | Iceberg | Hive Metastore (PostgreSQL) | HDFS |
-| `lakekeeper-iceberg` | Iceberg (REST) | Lakekeeper | GarageFS (S3) |
+| `data2day` | Iceberg (REST, OIDC) | Lakekeeper | GarageFS (S3) |
 
 ### dbt Project (TPC-H)
 

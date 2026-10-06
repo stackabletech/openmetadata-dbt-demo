@@ -35,6 +35,7 @@ airflow|Airflow|http://${node_ip}:$(nodeport platform airflow-webserver)|true
 custom|OpenMetadata|http://${node_ip}:$(nodeport platform openmetadata-nodeport)|true
 hdfs|HDFS NameNode|http://${node_ip}:$(nodeport platform listener-simple-hdfs-namenode-default-0)|false
 opensearch|OpenSearch Dashboards|http://${node_ip}:$(nodeport platform opensearch-dashboards-nodeport)|false
+custom|Lakekeeper|http://${node_ip}:$(nodeport platform lakekeeper)/ui|false
 custom|Keycloak|http://${node_ip}:$(nodeport platform keycloak-nodeport)|false
 custom|ArgoCD|http://${node_ip}:$(nodeport deployment argocd-server-nodeport)|false
 custom|Forgejo|http://${node_ip}:$(nodeport deployment forgejo-http-nodeport)|false
@@ -70,7 +71,7 @@ tabs = [
         "createdAt": created_ms,
         "sql": "-- Part A: masks hardcoded in the policy, per Keycloak group /pii\n"
                "SELECT customer_id, customer_name, account_balance, lifetime_net_revenue\n"
-               "FROM \"hive-iceberg\".demo.customer_lifetime_value\n"
+               "FROM data2day.demo.customer_lifetime_value\n"
                "ORDER BY lifetime_net_revenue DESC LIMIT 10;",
     },
     {
@@ -79,7 +80,7 @@ tabs = [
         "createdAt": created_ms + 1,
         "sql": "-- Part B: access needs an owner in OpenMetadata, PII.Sensitive tags mask\n"
                "SELECT customer_name, customer_nation, net_revenue\n"
-               "FROM \"hive-iceberg\".demo.order_summary\n"
+               "FROM data2day.demo.order_summary\n"
                "ORDER BY net_revenue DESC LIMIT 10;",
     },
 ]
