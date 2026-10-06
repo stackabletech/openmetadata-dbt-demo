@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Writes a self-contained HTML page with the demo choreography (DEMO.md) and copy
+# Writes a self-contained HTML page with the demo logins, the choreography (DEMO.md) and copy
 # buttons for every snippet, filled in with the current cluster's node IP, ports and
 # Cockpit bookmark snippet. Open it straight from disk (file://), no web server needed.
+#
+# The page contains the demo passwords (read from the cluster), so keep it local.
 #
 # Usage: ./scripts/demo-page.sh [output.html]    (default: ./demo.html, gitignored)
 set -euo pipefail
@@ -13,6 +15,15 @@ node_ip=$(kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}
 [ -n "$node_ip" ] || { echo "No node IP in ConfigMap platform/oidc-endpoints" >&2; exit 1; }
 context=$(kubectl config current-context)
 bookmarks=$("$here/cockpit-bookmarks.sh")
+
+# Logins for the box at the top of the page. Read from the cluster, so they always
+# match the deploy. demo.html is gitignored; don't commit or share it.
+secret() { kubectl -n platform get secret "$1" -o jsonpath="{.data.$2}" | base64 -d; }
+DEMO_USER_PASSWORD=$(secret keycloak-demo-passwords demo_user_password)
+DEMO_ADMIN_PASSWORD=$(secret keycloak-demo-passwords demo_admin_password)
+KEYCLOAK_ADMIN_USER=$(secret keycloak-bootstrap-admin username)
+KEYCLOAK_ADMIN_PASSWORD=$(secret keycloak-bootstrap-admin password)
+export DEMO_USER_PASSWORD DEMO_ADMIN_PASSWORD KEYCLOAK_ADMIN_USER KEYCLOAK_ADMIN_PASSWORD
 
 NODE_IP="$node_ip" CONTEXT="$context" BOOKMARKS="$bookmarks" OUT="$out" python3 - <<'PY'
 import html, os
@@ -28,6 +39,16 @@ def snippet(key, text, label="Copy"):
     snippets[key] = text
     return (f'<div class="snippet"><pre>{html.escape(text)}</pre>'
             f'<button data-copy="{key}">{label}</button></div>')
+
+def copy_button(key, text, label="Copy"):
+    snippets[key] = text
+    return f'<button class="small" data-copy="{key}">{label}</button>'
+
+def login_row(who, user, password, note, key):
+    return (f'<tr><td>{who}</td>'
+            f'<td><code>{html.escape(user)}</code> {copy_button(key + "_u", user)}</td>'
+            f'<td><code>{html.escape(password)}</code> {copy_button(key + "_p", password)}</td>'
+            f'<td class="note">{note}</td></tr>')
 
 def link(url, text):
     return f'<a href="{url}" target="_blank" rel="noopener">{html.escape(text)}</a>'
@@ -45,6 +66,16 @@ body = f"""
   <p class="meta">Cluster <code>{html.escape(ctx)}</code> · node IP <code>{ip}</code> · generated {generated}</p>
   <nav>{link(cockpit, "Cockpit")} {link(om, "OpenMetadata")} {link(keycloak + "/admin/master/console/#/stackable-demo", "Keycloak admin")}</nav>
 </header>
+
+<section class="logins">
+  <h2>Logins</h2>
+  <table>
+    <tr><th>For</th><th>User</th><th>Password</th><th></th></tr>
+    {login_row("Cockpit, OpenMetadata", "demo-user", os.environ["DEMO_USER_PASSWORD"], "no groups: masked, no access without owner", "du")}
+    {login_row("Cockpit, OpenMetadata", "demo-admin", os.environ["DEMO_ADMIN_PASSWORD"], "<code>/admin</code> + <code>/pii</code>, private window", "da")}
+    {login_row(link(keycloak + "/admin/master/console/#/stackable-demo/users", "Keycloak admin"), os.environ["KEYCLOAK_ADMIN_USER"], os.environ["KEYCLOAK_ADMIN_PASSWORD"], "for the <code>/pii</code> group step", "ka")}
+  </table>
+</section>
 
 <section>
   <h2>What it shows</h2>
@@ -68,8 +99,7 @@ body = f"""
       <code>allow pasting</code> once, then paste this snippet and press Enter. It adds bookmarks to all UIs and the editor tabs
       <i>Demo A</i> and <i>Demo B</i> with the queries below:
       {snippet("bookmarks", os.environ["BOOKMARKS"], "Copy setup snippet")}</li>
-    <li>Second user (<code>demo-admin</code>) in a private window. Passwords:
-      <code>secrets/manifests/keycloak-manifests/keycloak-demo-passwords.yaml</code>.</li>
+    <li>Second user (<code>demo-admin</code>) in a private window; logins at the top.</li>
   </ol>
 </section>
 
@@ -137,6 +167,15 @@ page = f"""<!doctype html>
   button {{ flex:none; cursor:pointer; border:1px solid var(--accent); color:var(--accent); background:transparent;
            border-radius:6px; padding:6px 12px; font:inherit; font-size:14px; }}
   button.done {{ border-color:var(--ok); color:var(--ok); }}
+  button.small {{ padding:2px 8px; font-size:12px; margin-left:4px; }}
+  .logins {{ border:2px solid var(--accent); border-radius:10px; padding:4px 16px 12px; margin-top:20px; }}
+  .logins h2 {{ border:none; margin-top:12px; }}
+  .logins table {{ border-collapse:collapse; width:100%; }}
+  .logins th {{ text-align:left; color:var(--muted); font-weight:normal; font-size:13px; }}
+  .logins td {{ padding:6px 8px 6px 0; vertical-align:middle; white-space:nowrap; }}
+  .logins td code {{ font-size:15px; }}
+  .logins td.note {{ white-space:normal; color:var(--muted); font-size:13px; }}
+  @media (max-width: 640px) {{ .logins td {{ white-space:normal; }} }}
 </style>
 </head>
 <body>
