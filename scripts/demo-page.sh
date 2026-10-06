@@ -65,8 +65,9 @@ body = f"""
       (Chrome: <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> = <code>{cockpit}</code>.)
       Without it Cockpit shows a 500 page.</li>
     <li>Open {link(cockpit, "Cockpit")}, log in as <code>demo-user</code>, press F12 → Console, type
-      <code>allow pasting</code> once, then paste the bookmarks snippet and press Enter:
-      {snippet("bookmarks", os.environ["BOOKMARKS"], "Copy bookmarks snippet")}</li>
+      <code>allow pasting</code> once, then paste this snippet and press Enter. It adds bookmarks to all UIs and the editor tabs
+      <i>Demo A</i> and <i>Demo B</i> with the queries below:
+      {snippet("bookmarks", os.environ["BOOKMARKS"], "Copy setup snippet")}</li>
     <li>Second user (<code>demo-admin</code>) in a private window. Passwords:
       <code>secrets/manifests/keycloak-manifests/keycloak-demo-passwords.yaml</code>.</li>
   </ol>
@@ -75,7 +76,7 @@ body = f"""
 <section>
   <h2>Part A: hardcoded masking per group</h2>
   <ol>
-    <li>As <code>demo-user</code> in Cockpit:
+    <li>As <code>demo-user</code> in Cockpit, tab <i>Demo A</i>:
       {snippet("q_clv", q_clv)}
       <code>customer_name</code> = <code>***MASKED***</code>, <code>account_balance</code> = <code>NULL</code>.
       In OpenMetadata these columns have <b>no</b> tags: the masks come from the policy.</li>
@@ -88,7 +89,7 @@ body = f"""
 <section>
   <h2>Part B: governance from the catalog</h2>
   <ol>
-    <li>Query a table without an owner:
+    <li>Query a table without an owner, tab <i>Demo B</i>:
       {snippet("q_os", q_os)}
       <b>Access Denied</b>, also for <code>demo-admin</code>. The table is still listed, it just can't be read.</li>
     <li>{link(om + "/table/trino.hive-iceberg.demo.order_summary", "OpenMetadata → order_summary")} →

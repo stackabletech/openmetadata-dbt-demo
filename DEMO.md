@@ -58,12 +58,14 @@ kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}'
   `about:config` → `dom.securecontext.allowlist` = `<node-ip>` (Firefox), or
   `chrome://flags/#unsafely-treat-insecure-origin-as-secure` = `http://<node-ip>:30300` (Chrome).
   Without it, Cockpit shows a 500 page.
-- **Bookmarks to all UIs** in the Cockpit dashboard:
+- **Bookmarks to all UIs and the demo queries** in Cockpit (dashboard bookmarks plus the
+  editor tabs "Demo A: hardcoded masks" and "Demo B: owner + tag"):
   ```bash
   just cockpit-bookmarks | wl-copy    # or pbcopy / xclip -sel clip
   ```
   Open Cockpit (`http://<node-ip>:30300`), press F12 → Console, paste, press Enter. Firefox wants
-  `allow pasting` typed once first. Rerun after every redeploy, it replaces its own bookmarks.
+  `allow pasting` typed once first. Rerun after every redeploy, it replaces its own bookmarks
+  and tabs and keeps yours (Cockpit allows 8 tabs; the leftmost of yours are dropped if needed).
 
 | UI | Port |
 |---|---|
@@ -77,7 +79,7 @@ All queries run in Cockpit, logged in as `demo-user` unless noted.
 
 ### Part A: hardcoded masking per group
 
-1. Query the table with hardcoded masks:
+1. Query the table with hardcoded masks (editor tab "Demo A"):
    ```sql
    SELECT customer_id, customer_name, account_balance, lifetime_net_revenue
    FROM "hive-iceberg".demo.customer_lifetime_value
@@ -90,7 +92,7 @@ All queries run in Cockpit, logged in as `demo-user` unless noted.
 
 ### Part B: governance from the catalog
 
-1. Query a table without an owner:
+1. Query a table without an owner (editor tab "Demo B"):
    ```sql
    SELECT customer_name, customer_nation, net_revenue
    FROM "hive-iceberg".demo.order_summary

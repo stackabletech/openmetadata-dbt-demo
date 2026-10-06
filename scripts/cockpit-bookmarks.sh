@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Prints a JavaScript snippet that stores bookmarks to the demo UIs in Stackable
-# Cockpit's dashboard (browser localStorage, key `dashboard_bookmarks`; needs a
-# Cockpit build with the bookmark feature, e.g. branch feat/app-bookmark-dialog).
+# Prints a JavaScript snippet that prepares Stackable Cockpit for the demo, all in the
+# browser's localStorage:
+#   - bookmarks to the demo UIs in the dashboard (key `dashboard_bookmarks`; needs a
+#     Cockpit build with the bookmark feature, e.g. branch feat/app-bookmark-dialog),
+#   - Trino editor tabs with the demo queries (keys `trino_tabs_index`, `trino_tab_<id>`).
 #
 # The URLs are read from the current cluster (kubectl context), because the node IP
 # and several NodePorts (Trino, Superset, Airflow, HDFS) change with every deploy.
@@ -13,8 +15,9 @@
 # the developer console (F12 -> Console), paste and press Enter. Firefox asks you to
 # type "allow pasting" once before it accepts pasted code.
 #
-# Existing bookmarks are kept; bookmarks this script created before (same name)
-# are replaced, so it can be rerun after a redeploy.
+# Existing bookmarks and editor tabs are kept; the ones this script created before
+# (same name / label) are replaced, so it can be rerun after a redeploy. Cockpit keeps
+# at most 8 editor tabs; the demo tabs come first and the oldest others are dropped.
 set -euo pipefail
 
 node_ip=$(kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}')
@@ -58,7 +61,31 @@ for line in os.environ["BOOKMARKS"].strip().splitlines():
         "createdAt": now,
     })
 
+# Trino editor tabs with the demo queries (same SQL as DEMO.md).
+created_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+tabs = [
+    {
+        "id": str(uuid.uuid4()),
+        "label": "Demo A: hardcoded masks",
+        "createdAt": created_ms,
+        "sql": "-- Part A: masks hardcoded in the policy, per Keycloak group /pii\n"
+               "SELECT customer_id, customer_name, account_balance, lifetime_net_revenue\n"
+               "FROM \"hive-iceberg\".demo.customer_lifetime_value\n"
+               "ORDER BY lifetime_net_revenue DESC LIMIT 10;",
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "label": "Demo B: owner + tag",
+        "createdAt": created_ms + 1,
+        "sql": "-- Part B: access needs an owner in OpenMetadata, PII.Sensitive tags mask\n"
+               "SELECT customer_name, customer_nation, net_revenue\n"
+               "FROM \"hive-iceberg\".demo.order_summary\n"
+               "ORDER BY net_revenue DESC LIMIT 10;",
+    },
+]
+
 print(f"""(() => {{
+  // Dashboard bookmarks.
   const KEY = 'dashboard_bookmarks';
   const demo = {json.dumps(items, indent=2)};
   const names = new Set(demo.map((b) => b.name));
@@ -66,7 +93,22 @@ print(f"""(() => {{
   try {{ existing = JSON.parse(localStorage.getItem(KEY) || '[]'); }} catch (e) {{}}
   const kept = existing.filter((b) => !(b.environment === 'data2day' && names.has(b.name)));
   localStorage.setItem(KEY, JSON.stringify([...kept, ...demo]));
-  console.log(`Stored ${{demo.length}} demo bookmarks (kept ${{kept.length}} others), reloading ...`);
+
+  // Trino editor tabs (Cockpit keeps at most 8).
+  const INDEX = 'trino_tabs_index', PREFIX = 'trino_tab_', MAX_TABS = 8;
+  const demoTabs = {json.dumps(tabs, indent=2)};
+  const labels = new Set(demoTabs.map((t) => t.label));
+  let index = null;
+  try {{ index = JSON.parse(localStorage.getItem(INDEX) || 'null'); }} catch (e) {{}}
+  const oldTabs = (index && Array.isArray(index.tabs)) ? index.tabs : [];
+  let others = oldTabs.filter((t) => !labels.has(t.label));
+  for (const t of oldTabs) if (labels.has(t.label)) localStorage.removeItem(PREFIX + t.id);
+  while (others.length + demoTabs.length > MAX_TABS) localStorage.removeItem(PREFIX + others.shift().id);
+  for (const t of demoTabs) localStorage.setItem(PREFIX + t.id, t.sql);
+  const allTabs = [...demoTabs.map(({{ sql, ...meta }}) => meta), ...others];
+  localStorage.setItem(INDEX, JSON.stringify({{ tabs: allTabs, activeTabId: demoTabs[0].id }}));
+
+  console.log(`Stored ${{demo.length}} bookmarks and ${{demoTabs.length}} editor tabs (kept ${{kept.length}} bookmarks, ${{others.length}} tabs), reloading ...`);
   location.reload();
 }})();""")
 PY

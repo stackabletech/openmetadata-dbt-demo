@@ -160,8 +160,9 @@ dbt-run:
     cd dags/dbt/tpch_demo
     dbt run --profiles-dir .
 
-# Print a JS snippet that stores bookmarks to the demo UIs in Cockpit's browser
-# localStorage (paste into the browser console on the Cockpit page).
+# Print a JS snippet that stores bookmarks to the demo UIs and the demo queries
+# (editor tabs) in Cockpit's browser localStorage (paste into the browser console
+# on the Cockpit page).
 cockpit-bookmarks:
     ./scripts/cockpit-bookmarks.sh
 
