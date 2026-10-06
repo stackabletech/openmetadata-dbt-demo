@@ -1,0 +1,55 @@
+---
+# The demo catalog: all dbt staging views and marts live in data2day.demo.
+# Iceberg tables managed by Lakekeeper (warehouse `data2day`, created by the
+# lakekeeper-init Job), data files in Garage (s3://iceberg-warehouse/data2day).
+#
+# Lakekeeper requires OIDC: Trino fetches a token from Keycloak with the client
+# credentials of `lakekeeper-service` (Secret lakekeeper-service-credentials, key
+# `credential` = "<client-id>:<client-secret>"). Without an explicit scope the Iceberg
+# REST client asks for scope `catalog`, which Keycloak rejects.
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: data2day
+  namespace: platform
+  labels:
+    trino: trino
+spec:
+  connector:
+    generic:
+      connectorName: iceberg
+      properties:
+        iceberg.catalog.type:
+          value: rest
+        iceberg.rest-catalog.uri:
+          value: "http://lakekeeper:8181/catalog"
+        iceberg.rest-catalog.warehouse:
+          value: "data2day"
+        iceberg.rest-catalog.security:
+          value: "OAUTH2"
+        iceberg.rest-catalog.oauth2.server-uri:
+          value: "http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo/protocol/openid-connect/token"
+        iceberg.rest-catalog.oauth2.credential:
+          valueFromSecret:
+            name: lakekeeper-service-credentials
+            key: credential
+        iceberg.rest-catalog.oauth2.scope:
+          value: "openid"
+        iceberg.rest-catalog.vended-credentials-enabled:
+          value: "false"
+        fs.native-s3.enabled:
+          value: "true"
+        s3.endpoint:
+          value: "http://garage.shared.svc.cluster.local:3900"
+        s3.region:
+          value: "garage"
+        s3.path-style-access:
+          value: "true"
+        s3.aws-access-key:
+          valueFromSecret:
+            name: garagefs-lakekeeper-credentials
+            key: accessKeyId
+        s3.aws-secret-key:
+          valueFromSecret:
+            name: garagefs-lakekeeper-credentials
+            key: secretAccessKey

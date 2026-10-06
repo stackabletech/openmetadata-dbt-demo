@@ -4,13 +4,13 @@
 
 The Stackable Data Platform (SDP) authorizes every Trino query through Open Policy Agent (OPA).
 The demo shows two ways of writing those rules, side by side, on the same dbt marts in
-`hive-iceberg.demo`:
+`data2day.demo`:
 
 1. **Hardcoded per group** (`customer_lifetime_value`). The Rego policy names the columns to mask.
    Members of the Keycloak group `/pii` see clear text, everyone else sees masked values. Changing
    who sees what means editing a group membership, but changing *what* is sensitive means editing
    the policy.
-2. **Driven by OpenMetadata** (`order_summary`, and every other table in `hive-iceberg.demo`).
+2. **Driven by OpenMetadata** (`order_summary`, and every other table in `data2day.demo`).
    The policy contains no table or column names. The OPA resource-info-fetcher asks OpenMetadata
    for each table's owner and tags:
    - **No owner → no access.** SELECT is denied for everybody, `/admin` included, until the table
@@ -82,7 +82,7 @@ All queries run in Cockpit, logged in as `demo-user` unless noted.
 1. Query the table with hardcoded masks (editor tab "Demo A"):
    ```sql
    SELECT customer_id, customer_name, account_balance, lifetime_net_revenue
-   FROM "hive-iceberg".demo.customer_lifetime_value
+   FROM data2day.demo.customer_lifetime_value
    ORDER BY lifetime_net_revenue DESC LIMIT 10;
    ```
    `customer_name` is `***MASKED***`, `account_balance` is `NULL`. In OpenMetadata the columns
@@ -95,7 +95,7 @@ All queries run in Cockpit, logged in as `demo-user` unless noted.
 1. Query a table without an owner (editor tab "Demo B"):
    ```sql
    SELECT customer_name, customer_nation, net_revenue
-   FROM "hive-iceberg".demo.order_summary
+   FROM data2day.demo.order_summary
    ORDER BY net_revenue DESC LIMIT 10;
    ```
    **Access Denied.** The table is still listed in the catalog browser; it just can't be read.
@@ -114,11 +114,11 @@ All queries run in Cockpit, logged in as `demo-user` unless noted.
 
 ## If something is off
 
-- **Everything in `hive-iceberg.demo` is denied, even owned tables:** the resource-info-fetcher
+- **Everything in `data2day.demo` is denied, even owned tables:** the resource-info-fetcher
   can't reach OpenMetadata. Check that Secret `platform/resource-info-fetcher-credentials` holds a
   JWT (starts with `eyJ`, written by Job `configure-openmetadata-v4`), not `placeholder`.
 - **The DAG hangs in `wait_for_services`:** check `trino-init`. It needs an active Trino worker.
 - **OpenMetadata answers 431:** too many cookies for the node IP; clear them or use a private
   window. (The header limit is raised to 64 KiB, this should be rare.)
-- **Avoid in Q&A:** `tpch.tiny.customer` is readable unmasked. Only `hive-iceberg.demo` is
+- **Avoid in Q&A:** `tpch.tiny.customer` is readable unmasked. Only `data2day.demo` is
   governed.

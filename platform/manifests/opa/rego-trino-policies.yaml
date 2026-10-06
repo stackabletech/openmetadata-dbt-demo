@@ -35,11 +35,10 @@ data:
         {"user": "admin", "catalog": ".*", "allow": "all"},
         {"group": "/admin", "catalog": ".*", "allow": "all"},
         # Everyone else may read the demo catalogs.
-        {"catalog": "hive-iceberg", "allow": "read-only"},
+        {"catalog": "data2day", "allow": "read-only"},
         {"catalog": "hive", "allow": "read-only"},
         {"catalog": "tpch", "allow": "read-only"},
         {"catalog": "tpcds", "allow": "read-only"},
-        {"catalog": "lakekeeper-iceberg", "allow": "read-only"},
         # Needed for JDBC/BI clients (system.jdbc, system.metadata).
         {"catalog": "system", "allow": "read-only"},
       ],
@@ -52,10 +51,10 @@ data:
         {"user": "admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
         {"group": "/admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
 
-        # --- PII demo on the dbt marts (catalog hive-iceberg, schema demo) ---
+        # --- PII demo on the dbt marts (catalog data2day, schema demo) ---
         # Two flavours, side by side for the talk:
         #   - customer_lifetime_value: masks HARDCODED here, per group (below).
-        #   - every other table in hive-iceberg.demo: masks driven by the
+        #   - every other table in data2day.demo: masks driven by the
         #     OpenMetadata tag PII.Sensitive (see `tag_mask` at the end).
         # First-match-wins: the `/pii` rule is listed *before* the masking rule
         # for the same table, so members of the `/pii` group see the raw value
@@ -64,13 +63,13 @@ data:
         # customer_lifetime_value: customer_name + account_balance are PII.
         {
           "group": "/pii",
-          "catalog": "hive-iceberg",
+          "catalog": "data2day",
           "schema": "demo",
           "table": "customer_lifetime_value",
           "privileges": ["SELECT"],
         },
         {
-          "catalog": "hive-iceberg",
+          "catalog": "data2day",
           "schema": "demo",
           "table": "customer_lifetime_value",
           "privileges": ["SELECT"],
@@ -82,13 +81,12 @@ data:
 
         # All other marts (and the rest of schema demo) are readable by everyone,
         # subject to the OpenMetadata-driven rules at the end of this file.
-        {"catalog": "hive-iceberg", "schema": "demo", "privileges": ["SELECT"]},
+        {"catalog": "data2day", "schema": "demo", "privileges": ["SELECT"]},
 
         # Read-only access to the sample/source catalogs for exploration.
         {"catalog": "tpch", "privileges": ["SELECT"]},
         {"catalog": "tpcds", "privileges": ["SELECT"]},
         {"catalog": "hive", "privileges": ["SELECT"]},
-        {"catalog": "lakekeeper-iceberg", "privileges": ["SELECT"]},
         # Needed for JDBC clients (e.g. system.metadata.table_comments).
         {"catalog": "system", "schema": "jdbc|metadata", "privileges": ["SELECT"]},
       ],
@@ -145,7 +143,7 @@ data:
 
     # Scope: the dbt marts and staging views. Other catalogs aren't affected.
     governed(catalog, schema) if {
-      catalog == "hive-iceberg"
+      catalog == "data2day"
       schema == "demo"
     }
 

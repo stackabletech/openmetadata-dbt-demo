@@ -12,7 +12,7 @@ tpch_demo:
       user: admin
       password: "{{ env_var('TRINO_PASSWORD') }}"
       schema: demo
-      catalog: hive-iceberg
+      catalog: data2day
       http_scheme: https
       ssl_verify: false
       session_properties:

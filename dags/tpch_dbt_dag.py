@@ -27,9 +27,9 @@ DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
 INGESTION_POLL_INTERVAL = 10  # seconds
 INGESTION_TIMEOUT = 600  # seconds
 
-TRINO_SCHEMA_CHECK = "hive-iceberg.demo"
+TRINO_SCHEMA_CHECK = "data2day.demo"
 
-# Trino denies SELECT on hive-iceberg.demo tables without an owner in OpenMetadata
+# Trino denies SELECT on data2day.demo tables without an owner in OpenMetadata
 # (rego-trino-policies.yaml). These marts get an owning team after ingestion so the
 # demo starts usable. order_summary is left out on purpose: the talk sets its owner
 # (and PII tags) live. The staging views stay unowned, i.e. closed for humans.
@@ -344,7 +344,7 @@ def set_om_owners(**context):
     print(f"  Team '{OM_OWNER_TEAM}' ready (id={team['id']}).")
 
     for table in OM_OWNED_TABLES:
-        fqn = f"trino.hive-iceberg.demo.{table}"
+        fqn = f"trino.data2day.demo.{table}"
         entity = om_request(f"/tables/name/{urllib.parse.quote(fqn, safe='')}?fields=owners", token=token)
         owners = entity.get("owners") or []
         if owners:

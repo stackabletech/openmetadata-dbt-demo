@@ -11,42 +11,42 @@ stacks:
       ################################
       # bootstrap argo
       ################################
-      - helmChart: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/argo-cd.yaml
+      - helmChart: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/argo-cd.yaml
       ################################
       # prerequisites
       ################################openmetadata-dbt-demo
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/sealed-secrets.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/sealed-secrets.yaml
       ################################
       # discover-node-ip — populates the oidc-endpoints ConfigMap in deployment + platform.
       # Applied here (not via ArgoCD) because Forgejo's pod blocks on this ConfigMap and
       # ArgoCD can't sync the keycloak-manifests until Forgejo serves the in-cluster mirror.
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/discover-node-ip.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/discover-node-ip.yaml
       ################################
       # project - operators
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/stackable-operators.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/stackable-operators.yaml
       ################################
       # applicationset - operators
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/stackable-operators-appset.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/stackable-operators-appset.yaml
       # opa-operator: custom build (resource-info-fetcher with OpenMetadata backend), not in the appset
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/opa-operator-custom.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/opa-operator-custom.yaml
       ################################
       # applicationset - ForgeJo-installed and clones this repo, argo then looks at the in-cluster Forgejo, so that
       # users can push changes without breaking the demo
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/forgejo.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/forgejo.yaml
       ################################
       # applicationset - demo
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/project.yaml
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/cluster-apps.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/project.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/cluster-apps.yaml
       ################################
       # keycloak — IdP for OIDC across all demo tools
       ################################
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/keycloak-operator.yaml
-      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day/infrastructure/keycloak.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/keycloak-operator.yaml
+      - plainYaml: https://raw.githubusercontent.com/stackabletech/openmetadata-dbt-demo/refs/heads/feat/data2day-lakekeeper/infrastructure/keycloak.yaml
     supportedNamespaces: ["deployment"]
     resourceRequests:
       cpu: 1750m
@@ -70,4 +70,4 @@ stacks:
         description: Target branch from repository to point ArgoCD at
         # Matches the branch this file is committed on (kept in sync by `just retarget`).
         # `just deploy <branch>` overrides it, but a bare `stackablectl` run uses this.
-        default: feat/data2day
+        default: feat/data2day-lakekeeper

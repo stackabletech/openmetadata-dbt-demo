@@ -71,7 +71,7 @@ spec:
               secretClass: tls
     # Our supporting manifests: NodePort + the configure-cockpit Job + its RBAC + SealedSecret.
     - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
-      targetRevision: "feat/data2day"
+      targetRevision: "feat/data2day-lakekeeper"
       path: platform/manifests/cockpit/
   # The configure-cockpit Job rewrites these three keys with the real node IP.
   # Tell ArgoCD not to fight that patch (otherwise selfHeal reverts to localhost).

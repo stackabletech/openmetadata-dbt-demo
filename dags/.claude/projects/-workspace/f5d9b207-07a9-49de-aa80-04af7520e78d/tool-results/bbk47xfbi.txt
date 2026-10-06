@@ -1,0 +1,857 @@
+# This file is an airflow DAG definition using Astronomer Cosmos for dbt orchestration.
+from datetime import datetime
+from pathlib import Path
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator, PythonVirtualenvOperator
+from airflow.sensors.python import PythonSensor
+from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, ExecutionConfig, RenderConfig
+from cosmos.constants import ExecutionMode, LoadMode
+
+DBT_PROJECT_PATH = Path("/stackable/app/git-0/current/dags/dbt/tpch_demo")
+DBT_TARGET_PATH = Path("/tmp/dbt-target")
+S3_BUCKET = "dbt-artifacts"
+S3_PREFIX = "tpch_demo"
+OM_HOST = "http://openmetadata:8585"
+OM_API = f"{OM_HOST}/api/v1"
+# OM runs in custom-oidc mode, so basic /users/login is forbidden. We get a
+# bearer token from Keycloak (demo-admin password grant via the openmetadata
+# client -> aud=openmetadata, accepted by OM). Password is injected into the
+# executor pod as KEYCLOAK_DEMO_ADMIN_PASSWORD (see the AirflowCluster).
+KEYCLOAK_TOKEN_URL = "http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo/protocol/openid-connect/token"
+OM_OIDC_CLIENT_ID = "openmetadata"
+OM_OIDC_CLIENT_SECRET = "openmetadata-secret"
+OM_ADMIN_USER = "demo-admin"
+METADATA_PIPELINE_FQN = "trino.trino_metadata_ingestion"
+DBT_PIPELINE_FQN = "trino.trino_dbt_ingestion"
+INGESTION_POLL_INTERVAL = 10  # seconds
+INGESTION_TIMEOUT = 600  # seconds
+
+TRINO_SCHEMA_CHECK = "hive-iceberg.demo"
+
+
+def check_services_ready(**context):
+    """Check that OpenMetadata API is responding and Trino has the required schema."""
+    import urllib.request
+    import urllib.error
+
+    # --- Check OpenMetadata health ---
+    try:
+        req = urllib.request.Request(f"{OM_HOST}/api/v1/system/version")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+        print("  OpenMetadata API is reachable.")
+    except Exception as e:
+        print(f"  OpenMetadata not ready: {e}")
+        return False
+
+    # --- Check Trino schema via Airflow TrinoHook ---
+    try:
+        from airflow.providers.trino.hooks.trino import TrinoHook
+
+        catalog, schema = TRINO_SCHEMA_CHECK.split(".", 1)
+        hook = TrinoHook(trino_conn_id="trino_default")
+        records = hook.get_records(f"SHOW SCHEMAS FROM \"{catalog}\" LIKE '{schema}'")
+        if any(row[0] == schema for row in records):
+            print(f"  Trino schema {TRINO_SCHEMA_CHECK} exists.")
+        else:
+            print(f"  Trino is up but schema {TRINO_SCHEMA_CHECK} not found yet.")
+            return False
+    except Exception as e:
+        print(f"  Trino not ready: {e}")
+        return False
+
+    print("  All services are ready.")
+    return True
+
+
+def upload_run_results_shard(context):
+    """Upload this task's run_results.json shard to GarageFS after dbt execution.
+
+    Runs as the Airflow on_success_callback / on_failure_callback for each
+    Cosmos-generated dbt task. Failed tasks often still produce a valid
+    run_results.json (e.g. test failures) that OpenMetadata wants to ingest, so
+    we upload on both success and failure.
+    """
+    import os
+    from pathlib import Path
+    from urllib.parse import quote
+    import boto3
+    from airflow.hooks.base import BaseHook
+
+    target_dir = Path(os.environ.get("DBT_TARGET_PATH", "/tmp/dbt-target"))
+    local = target_dir / "run_results.json"
+    if not local.exists():
+        print(f"  No run_results.json at {local}; nothing to upload")
+        return
+
+    run_id = quote(context["dag_run"].run_id, safe="")
+    task_id = context["ti"].task_id
+    key = f"_runs/{run_id}/run_results/{task_id}.json"
+
+    conn = BaseHook.get_connection("garagefs")
+    extras = conn.extra_dejson
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=extras.get("endpoint_url", "http://garage.shared.svc.cluster.local:3900"),
+        aws_access_key_id=conn.login,
+        aws_secret_access_key=conn.password,
+        region_name=extras.get("region_name", "garage"),
+    )
+    s3.upload_file(str(local), S3_BUCKET, key)
+    print(f"  Uploaded run_results shard -> s3://{S3_BUCKET}/{key}")
+
+
+def finalize_dbt_artifacts(
+    dbt_project_path: str,
+    dbt_target_path: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    run_id_raw: str,
+):
+    """Merge per-task run_results shards, regenerate manifest+catalog via
+    dbt docs generate, publish all three canonical artifacts to S3, and delete
+    the shard prefix.
+
+    Runs inside a PythonVirtualenvOperator with dbt-trino + boto3 installed
+    into the venv. Fully self-contained — imports live inside the body because
+    the callable is serialized into a subprocess, and we avoid `airflow.*`
+    imports entirely because uv's venv doesn't inherit the Stackable Airflow
+    image's site-packages reliably. The garagefs connection is read straight
+    from the AIRFLOW_CONN_GARAGEFS env var (which Airflow sets on executor
+    pods from the garagefs-airflow-credentials secret).
+    """
+    import json
+    import os
+    from pathlib import Path
+    from urllib.parse import quote, urlparse, parse_qs, unquote
+    import boto3
+    from dbt.cli.main import dbtRunner
+
+    run_id = quote(run_id_raw, safe="")
+
+    conn_uri = os.environ["AIRFLOW_CONN_GARAGEFS"]
+    parsed = urlparse(conn_uri)
+    extras = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=extras.get("endpoint_url", "http://garage.shared.svc.cluster.local:3900"),
+        aws_access_key_id=unquote(parsed.username or ""),
+        aws_secret_access_key=unquote(parsed.password or ""),
+        region_name=extras.get("region_name", "garage"),
+    )
+
+    # 1. List and download all run_results shards for this DAG run.
+    shard_prefix = f"_runs/{run_id}/run_results/"
+    resp = s3.list_objects_v2(Bucket=s3_bucket, Prefix=shard_prefix)
+    shard_keys = [obj["Key"] for obj in resp.get("Contents", [])]
+    print(f"Found {len(shard_keys)} shards at s3://{s3_bucket}/{shard_prefix}")
+    if not shard_keys:
+        raise RuntimeError(
+            f"No run_results shards under s3://{s3_bucket}/{shard_prefix}; "
+            "upstream dbt tasks did not upload anything"
+        )
+
+    # 2. Merge shards. Each shard's "results" array has one entry (Cosmos runs
+    #    one dbt node per task). We concatenate results, preserve metadata/args
+    #    from the first shard, and sum execution_time for elapsed_time.
+    merged_results = []
+    template = None
+    for key in shard_keys:
+        data = json.loads(s3.get_object(Bucket=s3_bucket, Key=key)["Body"].read())
+        if template is None:
+            template = data
+        merged_results.extend(data.get("results", []))
+    merged = {
+        "metadata": template["metadata"],
+        "args": template["args"],
+        "elapsed_time": sum(r.get("execution_time", 0) for r in merged_results),
+        "results": merged_results,
+    }
+
+    # 3. Write merged run_results.json into the pod-local dbt target dir.
+    target = Path(dbt_target_path)
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "run_results.json").write_text(json.dumps(merged))
+    print(f"Wrote merged run_results.json with {len(merged_results)} result entries")
+
+    # 4. dbt docs generate — compiles the project (writes manifest.json) and
+    #    queries Trino information_schema (writes catalog.json) into target.
+    os.environ["DBT_TARGET_PATH"] = str(target)
+    result = dbtRunner().invoke([
+        "docs", "generate",
+        "--project-dir", dbt_project_path,
+        "--profiles-dir", dbt_project_path,
+    ])
+    if not result.success:
+        raise RuntimeError(f"dbt docs generate failed: {result.exception}")
+    print("dbt docs generate succeeded")
+
+    # 5. Upload canonical artifacts to the OM-watched prefix.
+    for name in ("manifest.json", "catalog.json", "run_results.json"):
+        local = target / name
+        if not local.exists():
+            raise FileNotFoundError(f"Expected {name} at {local} after dbt docs generate")
+        s3.upload_file(str(local), s3_bucket, f"{s3_prefix}/{name}")
+        print(f"  Uploaded {name} -> s3://{s3_bucket}/{s3_prefix}/{name}")
+
+    # 6. Cleanup shard prefix.
+    s3.delete_objects(
+        Bucket=s3_bucket,
+        Delete={"Objects": [{"Key": k} for k in shard_keys]},
+    )
+    print(f"Deleted {len(shard_keys)} shards under {shard_prefix}")
+
+
+def _om_helpers():
+    """Return shared OpenMetadata API helper functions."""
+    import json
+    import urllib.request
+    import urllib.error
+
+    def om_request(path, method="GET", data=None, token=None):
+        url = f"{OM_API}{path}"
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        body = json.dumps(data).encode() if data else None
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+
+    def om_login():
+        import os
+        import urllib.parse
+        data = urllib.parse.urlencode({
+            "grant_type": "password",
+            "client_id": OM_OIDC_CLIENT_ID,
+            "client_secret": OM_OIDC_CLIENT_SECRET,
+            "username": OM_ADMIN_USER,
+            "password": os.environ.get("KEYCLOAK_DEMO_ADMIN_PASSWORD", ""),
+            "scope": "openid",
+        }).encode()
+        req = urllib.request.Request(
+            KEYCLOAK_TOKEN_URL, data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            token = json.loads(resp.read().decode())["access_token"]
+        print("  Obtained OpenMetadata token from Keycloak.")
+        return token
+
+    return om_request, om_login
+
+
+def trigger_om_metadata_ingestion(**context):
+    """Trigger the OpenMetadata metadata ingestion pipeline and wait for completion."""
+    import time
+
+    om_request, om_login = _om_helpers()
+    token = om_login()
+
+    # Look up metadata ingestion pipeline by FQN
+    pipeline = om_request(
+        f"/services/ingestionPipelines/name/{METADATA_PIPELINE_FQN}", token=token
+    )
+    pipeline_id = pipeline["id"]
+    print(f"  Found metadata pipeline: {METADATA_PIPELINE_FQN} (id={pipeline_id})")
+
+    # Record start time before triggering (milliseconds for OM API)
+    trigger_ts = int(time.time() * 1000)
+
+    # Trigger the pipeline
+    om_request(
+        f"/services/ingestionPipelines/trigger/{pipeline_id}",
+        method="POST",
+        token=token,
+    )
+    print("  Metadata ingestion triggered. Waiting for completion...")
+
+    # Poll for completion
+    elapsed = 0
+    while elapsed < INGESTION_TIMEOUT:
+        time.sleep(INGESTION_POLL_INTERVAL)
+        elapsed += INGESTION_POLL_INTERVAL
+
+        try:
+            # Refresh the token each poll: Keycloak access tokens expire (~300s by
+            # default), which is shorter than INGESTION_TIMEOUT, so a single token
+            # would die mid-loop on a slow ingestion.
+            token = om_login()
+            now_ts = int(time.time() * 1000)
+            status_resp = om_request(
+                f"/services/ingestionPipelines/{METADATA_PIPELINE_FQN}/pipelineStatus"
+                f"?startTs={trigger_ts}&endTs={now_ts}",
+                token=token,
+            )
+        except Exception as e:
+            print(f"  [{elapsed}s] Status check failed ({e}), will retry...")
+            continue
+
+        # ResultList<PipelineStatus>: {"data": [...], "paging": {...}}
+        statuses = status_resp.get("data", [])
+        if not statuses:
+            print(f"  [{elapsed}s] No status available yet...")
+            continue
+
+        latest = statuses[0]
+        state = latest.get("pipelineState", "unknown")
+        print(f"  [{elapsed}s] Pipeline state: {state}")
+
+        if state in ("success", "partialSuccess"):
+            print("  Metadata ingestion completed successfully.")
+            return
+        elif state in ("failed", "error"):
+            raise RuntimeError(
+                f"Metadata ingestion pipeline failed with state: {state}"
+            )
+
+    raise TimeoutError(
+        f"Metadata ingestion did not complete within {INGESTION_TIMEOUT}s"
+    )
+
+
+def trigger_om_dbt_ingestion(**context):
+    """Trigger the OpenMetadata dbt ingestion pipeline via REST API."""
+    om_request, om_login = _om_helpers()
+    token = om_login()
+
+    # Look up pipeline by FQN
+    pipeline = om_request(f"/services/ingestionPipelines/name/{DBT_PIPELINE_FQN}", token=token)
+    pipeline_id = pipeline["id"]
+    print(f"  Found dbt pipeline: {DBT_PIPELINE_FQN} (id={pipeline_id})")
+
+    # Trigger
+    try:
+        om_request(f"/services/ingestionPipelines/trigger/{pipeline_id}", method="POST", token=token)
+        print("  dbt ingestion triggered successfully.")
+    except Exception as e:
+        print(f"  Warning: Could not trigger dbt ingestion: {e}")
+        print("  The pipeline will run on its schedule or can be triggered from the OpenMetadata UI.")
+
+
+with DAG(
+    dag_id="dbt_tpch_demo",
+    schedule="@once",
+    start_date=datetime(2024, 1, 1),
+    catchup=False,
+    is_paused_upon_creation=False,
+    default_args={"retries": 1000},
+) as dag:
+
+    wait_for_services = PythonSensor(
+        task_id="wait_for_services",
+        python_callable=check_services_ready,
+        poke_interval=60,
+        # OpenMetadata (+ its OpenSearch index/migrations) and the trino-init
+        # schema job can take 15-25 min on a cold cluster, and this @once DAG
+        # fires early in bring-up. 15 min was too short -> the whole pipeline
+        # failed on first deploy with no auto-recovery. Give it 40 min.
+        timeout=2400,
+        # reschedule: release the KubernetesExecutor pod between pokes instead of
+        # blocking a slot for up to 40 min while waiting.
+        mode="reschedule",
+    )
+
+    dbt_tasks = DbtTaskGroup(
+        group_id="dbt_tpch",
+        project_config=ProjectConfig(
+            dbt_project_path=DBT_PROJECT_PATH,
+        ),
+        profile_config=ProfileConfig(
+            profiles_yml_filepath=DBT_PROJECT_PATH / "profiles.yml",
+            profile_name="tpch_demo",
+            target_name="dev",
+        ),
+        render_config=RenderConfig(
+            load_method=LoadMode.CUSTOM,
+        ),
+        execution_config=ExecutionConfig(
+            execution_mode=ExecutionMode.VIRTUALENV,
+            virtualenv_dir=Path("/tmp/dbt_venv"),
+        ),
+        operator_args={
+            "py_system_site_packages": False,
+            "py_requirements": ["dbt-trino"],
+            "install_deps": True,
+            # Cosmos VIRTUALENV runs dbt in a subprocess that does NOT inherit the
+            # task pod's environment by default, so profiles.yml's
+            # env_var('TRINO_PASSWORD') resolved empty -> dbt sent admin:"" and
+            # Trino returned 401. append_env merges the task env (which carries
+            # TRINO_PASSWORD from the executor podOverride) into the dbt subprocess.
+            "append_env": True,
+        },
+        default_args={
+            "retries": 1,
+            "on_success_callback": upload_run_results_shard,
+            "on_failure_callback": upload_run_results_shard,
+        },
+    )
+
+    finalize = PythonVirtualenvOperator(
+        task_id="finalize_dbt_artifacts",
+        python_callable=finalize_dbt_artifacts,
+        requirements=["dbt-trino", "boto3"],
+        system_site_packages=False,
+        python_version="3.12",
+        op_kwargs={
+            "dbt_project_path": str(DBT_PROJECT_PATH),
+            "dbt_target_path": str(DBT_TARGET_PATH),
+            "s3_bucket": S3_BUCKET,
+            "s3_prefix": S3_PREFIX,
+            "run_id_raw": "{{ dag_run.run_id }}",
+        },
+    )
+
+    trigger_metadata_ingestion = PythonOperator(
+        task_id="trigger_om_metadata_ingestion",
+        python_callable=trigger_om_metadata_ingestion,
+    )
+
+    trigger_dbt_ingestion = PythonOperator(
+        task_id="trigger_om_dbt_ingestion",
+        python_callable=trigger_om_dbt_ingestion,
+    )
+
+    wait_for_services >> dbt_tasks >> finalize >> trigger_metadata_ingestion >> trigger_dbt_ingestion
+name: tpch_demo
+version: "1.0.0"
+config-version: 2
+
+profile: tpch_demo
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  tpch_demo:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+tpch_demo:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      # LDAP = HTTP basic auth, validated by Trino's PASSWORD authenticator
+      # (trino-users static auth). Password comes from the TRINO_PASSWORD env
+      # injected into the executor pod from the trino-users Secret.
+      method: ldap
+      host: trino-coordinator
+      port: 8443
+      user: admin
+      password: "{{ env_var('TRINO_PASSWORD') }}"
+      schema: demo
+      catalog: hive-iceberg
+      http_scheme: https
+      ssl_verify: false
+      session_properties:
+        query_max_run_time: 5mversion: 2
+
+sources:
+  - name: tpch
+    database: tpch
+    schema: tiny
+    description: "TPC-H benchmark dataset (scale factor tiny) served by the Trino tpch catalog. Contains 8 tables modeling a parts supplier business with customers, orders, line items, parts, suppliers, nations, and regions."
+
+    tables:
+      - name: region
+        description: Geographic regions (5 rows). Top-level grouping for nations.
+        columns:
+          - name: regionkey
+            description: Unique region identifier (surrogate key).
+          - name: name
+            description: Region name (e.g. AFRICA, AMERICA, ASIA, EUROPE, MIDDLE EAST).
+          - name: comment
+            description: Free-text comment about the region.
+
+      - name: nation
+        description: Nations within regions (25 rows). Each nation belongs to one region.
+        columns:
+          - name: nationkey
+            description: Unique nation identifier (surrogate key).
+          - name: name
+            description: Nation name (e.g. UNITED STATES, GERMANY, CHINA).
+          - name: regionkey
+            description: Foreign key to region.
+          - name: comment
+            description: Free-text comment about the nation.
+
+      - name: supplier
+        description: Parts suppliers (100 rows at tiny scale). Each supplier is in one nation.
+        columns:
+          - name: suppkey
+            description: Unique supplier identifier (surrogate key).
+          - name: name
+            description: Supplier name (format Supplier#NNNNNNNNN).
+          - name: address
+            description: Street address of the supplier.
+          - name: nationkey
+            description: Foreign key to nation.
+          - name: phone
+            description: Phone number (format NN-NNN-NNN-NNNN).
+          - name: acctbal
+            description: Account balance in dollars.
+          - name: comment
+            description: Free-text comment about the supplier.
+
+      - name: part
+        description: Parts catalog (2,000 rows at tiny scale).
+        columns:
+          - name: partkey
+            description: Unique part identifier (surrogate key).
+          - name: name
+            description: Part name composed of randomly generated words.
+          - name: mfgr
+            description: Manufacturer name (format Manufacturer#N).
+          - name: brand
+            description: Brand name (format Brand#NN).
+          - name: type
+            description: Part type as a 3-word compound (e.g. STANDARD POLISHED BRASS).
+          - name: size
+            description: Part size as an integer from 1 to 50.
+          - name: container
+            description: Shipping container type (e.g. SM CASE, LG BOX, MED PKG).
+          - name: retailprice
+            description: Retail price in dollars.
+          - name: comment
+            description: Free-text comment about the part.
+
+      - name: partsupp
+        description: "Part-supplier relationships (8,000 rows at tiny scale). Maps which suppliers provide which parts, with cost and availability."
+        columns:
+          - name: partkey
+            description: Foreign key to part.
+          - name: suppkey
+            description: Foreign key to supplier.
+          - name: availqty
+            description: Number of units available from this supplier for this part.
+          - name: supplycost
+            description: Cost per unit from this supplier, in dollars.
+          - name: comment
+            description: Free-text comment about this part-supplier relationship.
+
+      - name: customer
+        description: Customers (1,500 rows at tiny scale). Each customer belongs to one nation.
+        columns:
+          - name: custkey
+            description: Unique customer identifier (surrogate key).
+          - name: name
+            description: Customer name (format Customer#NNNNNNNNN).
+          - name: address
+            description: Street address of the customer.
+          - name: nationkey
+            description: Foreign key to nation.
+          - name: phone
+            description: Phone number (format NN-NNN-NNN-NNNN).
+          - name: acctbal
+            description: Account balance in dollars. May be negative.
+          - name: mktsegment
+            description: "Market segment (AUTOMOBILE, BUILDING, FURNITURE, HOUSEHOLD, MACHINERY)."
+          - name: comment
+            description: Free-text comment about the customer.
+
+      - name: orders
+        description: Customer orders (15,000 rows at tiny scale). Each order belongs to one customer.
+        columns:
+          - name: orderkey
+            description: Unique order identifier (surrogate key).
+          - name: custkey
+            description: Foreign key to customer.
+          - name: orderstatus
+            description: "Order status: F = fulfilled, O = open, P = partially fulfilled."
+          - name: totalprice
+            description: Total order price in dollars.
+          - name: orderdate
+            description: Date the order was placed.
+          - name: orderpriority
+            description: "Priority level: 1-URGENT, 2-HIGH, 3-MEDIUM, 4-NOT SPECIFIED, 5-LOW."
+          - name: clerk
+            description: Clerk who processed the order (format Clerk#NNNNNNNNN).
+          - name: shippriority
+            description: Shipping priority flag (integer).
+          - name: comment
+            description: Free-text comment about the order.
+
+      - name: lineitem
+        description: "Order line items (60,175 rows at tiny scale). Each line item is one part on one order, supplied by one supplier. The most granular fact table."
+        columns:
+          - name: orderkey
+            description: Foreign key to orders.
+          - name: linenumber
+            description: Line number within the order (1-based).
+          - name: partkey
+            description: Foreign key to part.
+          - name: suppkey
+            description: Foreign key to supplier.
+          - name: quantity
+            description: Quantity ordered (1 to 50).
+          - name: extendedprice
+            description: Line item price before discount (quantity * retail price).
+          - name: discount
+            description: Discount percentage as a decimal (0.00 to 0.10).
+          - name: tax
+            description: Tax rate as a decimal (0.00 to 0.08).
+          - name: returnflag
+            description: "Return status: R = returned, A = accepted, N = not yet received."
+          - name: linestatus
+            description: "Shipping status: F = shipped, O = not yet shipped."
+          - name: shipdate
+            description: Date the line item was shipped.
+          - name: commitdate
+            description: Committed delivery date.
+          - name: receiptdate
+            description: Actual date the customer received the item.
+          - name: shipinstruct
+            description: Shipping instruction (DELIVER IN PERSON, COLLECT COD, TAKE BACK RETURN, NONE).
+          - name: shipmode
+            description: Shipping mode (AIR, FOB, MAIL, RAIL, REG AIR, SHIP, TRUCK).
+          - name: comment
+            description: Free-text comment about the line item.
+----
+== dbt/tpch_demo/models/staging/stg_customers.sql
+select
+    custkey as customer_id,
+    name as customer_name,
+    address as customer_address,
+    nationkey as nation_id,
+    phone as customer_phone,
+    acctbal as account_balance,
+    mktsegment as market_segment,
+    comment as customer_comment
+from {{ source('tpch', 'customer') }}
+== dbt/tpch_demo/models/staging/stg_line_items.sql
+select
+    orderkey as order_id,
+    linenumber as line_number,
+    partkey as part_id,
+    suppkey as supplier_id,
+    quantity,
+    extendedprice as extended_price,
+    discount,
+    tax,
+    returnflag as return_flag,
+    linestatus as line_status,
+    shipdate as ship_date,
+    commitdate as commit_date,
+    receiptdate as receipt_date,
+    shipinstruct as ship_instructions,
+    shipmode as ship_mode,
+    comment as line_item_comment
+from {{ source('tpch', 'lineitem') }}
+== dbt/tpch_demo/models/staging/stg_nations.sql
+select
+    nationkey as nation_id,
+    name as nation_name,
+    regionkey as region_id,
+    comment as nation_comment
+from {{ source('tpch', 'nation') }}
+== dbt/tpch_demo/models/staging/stg_orders.sql
+select
+    orderkey as order_id,
+    custkey as customer_id,
+    orderstatus as order_status,
+    totalprice as total_price,
+    orderdate as order_date,
+    orderpriority as order_priority,
+    clerk,
+    shippriority as ship_priority,
+    comment as order_comment
+from {{ source('tpch', 'orders') }}
+== dbt/tpch_demo/models/staging/stg_part_suppliers.sql
+select
+    partkey as part_id,
+    suppkey as supplier_id,
+    availqty as available_quantity,
+    supplycost as supply_cost,
+    comment as partsupplier_comment
+from {{ source('tpch', 'partsupp') }}
+== dbt/tpch_demo/models/staging/stg_parts.sql
+select
+    partkey as part_id,
+    name as part_name,
+    mfgr as manufacturer,
+    brand,
+    type as part_type,
+    size as part_size,
+    container,
+    retailprice as retail_price,
+    comment as part_comment
+from {{ source('tpch', 'part') }}
+== dbt/tpch_demo/models/staging/stg_regions.sql
+select
+    regionkey as region_id,
+    name as region_name,
+    comment as region_comment
+from {{ source('tpch', 'region') }}
+== dbt/tpch_demo/models/staging/stg_suppliers.sql
+select
+    suppkey as supplier_id,
+    name as supplier_name,
+    address as supplier_address,
+    nationkey as nation_id,
+    phone as supplier_phone,
+    acctbal as account_balance,
+    comment as supplier_comment
+from {{ source('tpch', 'supplier') }}
+== dbt/tpch_demo/models/marts/customer_lifetime_value.sql
+select
+    c.customer_id,
+    c.customer_name,
+    c.market_segment,
+    n.nation_name as customer_nation,
+    r.region_name as customer_region,
+    c.account_balance,
+    count(distinct o.order_id) as total_orders,
+    min(o.order_date) as first_order_date,
+    max(o.order_date) as last_order_date,
+    sum(li.extended_price * (1 - li.discount)) as lifetime_net_revenue,
+    sum(li.quantity) as lifetime_quantity,
+    avg(o.total_price) as avg_order_value,
+    sum(li.extended_price * (1 - li.discount))
+        / nullif(count(distinct o.order_id), 0) as revenue_per_order,
+    count(li.line_number) as total_line_items,
+    count(distinct li.part_id) as distinct_parts_ordered,
+    count(distinct li.supplier_id) as distinct_suppliers_used
+from {{ ref('stg_customers') }} c
+join {{ ref('stg_nations') }} n on c.nation_id = n.nation_id
+join {{ ref('stg_regions') }} r on n.region_id = r.region_id
+left join {{ ref('stg_orders') }} o on c.customer_id = o.customer_id
+left join {{ ref('stg_line_items') }} li on o.order_id = li.order_id
+group by
+    c.customer_id,
+    c.customer_name,
+    c.market_segment,
+    n.nation_name,
+    r.region_name,
+    c.account_balance
+== dbt/tpch_demo/models/marts/order_summary.sql
+select
+    o.order_id,
+    o.order_date,
+    o.order_status,
+    o.order_priority,
+    c.customer_name,
+    c.market_segment,
+    n.nation_name as customer_nation,
+    r.region_name as customer_region,
+    o.total_price,
+    count(li.line_number) as line_item_count,
+    sum(li.quantity) as total_quantity,
+    sum(li.extended_price) as gross_revenue,
+    sum(li.extended_price * (1 - li.discount)) as net_revenue,
+    sum(li.extended_price * (1 - li.discount) * (1 + li.tax)) as total_with_tax
+from {{ ref('stg_orders') }} o
+join {{ ref('stg_customers') }} c on o.customer_id = c.customer_id
+join {{ ref('stg_nations') }} n on c.nation_id = n.nation_id
+join {{ ref('stg_regions') }} r on n.region_id = r.region_id
+join {{ ref('stg_line_items') }} li on o.order_id = li.order_id
+group by
+    o.order_id,
+    o.order_date,
+    o.order_status,
+    o.order_priority,
+    c.customer_name,
+    c.market_segment,
+    n.nation_name,
+    r.region_name,
+    o.total_price
+== dbt/tpch_demo/models/marts/part_pricing_analysis.sql
+select
+    p.part_type,
+    p.brand,
+    p.manufacturer,
+    p.container,
+    count(distinct p.part_id) as part_count,
+    avg(p.retail_price) as avg_retail_price,
+    min(p.retail_price) as min_retail_price,
+    max(p.retail_price) as max_retail_price,
+    count(distinct ps.supplier_id) as supplier_count,
+    avg(ps.supply_cost) as avg_supply_cost,
+    avg(p.retail_price - ps.supply_cost) as avg_margin,
+    sum(ps.available_quantity) as total_available_inventory,
+    coalesce(sum(li.quantity), 0) as total_quantity_sold,
+    coalesce(sum(li.extended_price * (1 - li.discount)), 0) as total_net_revenue,
+    coalesce(avg(li.discount), 0) as avg_discount_applied
+from {{ ref('stg_parts') }} p
+join {{ ref('stg_part_suppliers') }} ps on p.part_id = ps.part_id
+left join {{ ref('stg_line_items') }} li
+    on p.part_id = li.part_id
+    and ps.supplier_id = li.supplier_id
+group by
+    p.part_type,
+    p.brand,
+    p.manufacturer,
+    p.container
+== dbt/tpch_demo/models/marts/revenue_by_region.sql
+select
+    r.region_name,
+    n.nation_name,
+    count(distinct c.customer_id) as customer_count,
+    count(distinct o.order_id) as order_count,
+    sum(li.extended_price * (1 - li.discount)) as net_revenue,
+    avg(o.total_price) as avg_order_value
+from {{ ref('stg_regions') }} r
+join {{ ref('stg_nations') }} n on r.region_id = n.region_id
+join {{ ref('stg_customers') }} c on n.nation_id = c.nation_id
+join {{ ref('stg_orders') }} o on c.customer_id = o.customer_id
+join {{ ref('stg_line_items') }} li on o.order_id = li.order_id
+group by
+    r.region_name,
+    n.nation_name
+== dbt/tpch_demo/models/marts/shipping_analysis.sql
+select
+    li.ship_mode,
+    r.region_name as customer_region,
+    n.nation_name as customer_nation,
+    count(*) as shipment_count,
+    sum(li.quantity) as total_quantity_shipped,
+    sum(li.extended_price * (1 - li.discount)) as net_revenue,
+    avg(date_diff('day', li.ship_date, li.receipt_date)) as avg_delivery_days,
+    avg(date_diff('day', li.commit_date, li.receipt_date)) as avg_receipt_vs_commit_days,
+    avg(date_diff('day', o.order_date, li.ship_date)) as avg_days_to_ship,
+    sum(case when li.receipt_date > li.commit_date then 1 else 0 end) as late_deliveries,
+    cast(sum(case when li.receipt_date > li.commit_date then 1 else 0 end) as double)
+        / count(*) as late_delivery_rate,
+    sum(case when li.return_flag = 'R' then 1 else 0 end) as returned_items,
+    cast(sum(case when li.return_flag = 'R' then 1 else 0 end) as double)
+        / count(*) as return_rate
+from {{ ref('stg_line_items') }} li
+join {{ ref('stg_orders') }} o on li.order_id = o.order_id
+join {{ ref('stg_customers') }} c on o.customer_id = c.customer_id
+join {{ ref('stg_nations') }} n on c.nation_id = n.nation_id
+join {{ ref('stg_regions') }} r on n.region_id = r.region_id
+group by
+    li.ship_mode,
+    r.region_name,
+    n.nation_name
+== dbt/tpch_demo/models/marts/supplier_performance.sql
+select
+    s.supplier_id,
+    s.supplier_name,
+    n.nation_name as supplier_nation,
+    r.region_name as supplier_region,
+    count(distinct li.order_id) as orders_fulfilled,
+    sum(li.quantity) as total_quantity_supplied,
+    sum(li.extended_price) as total_revenue,
+    sum(li.extended_price * (1 - li.discount)) as net_revenue,
+    avg(li.extended_price) as avg_item_price,
+    min(ps.supply_cost) as min_supply_cost,
+    avg(ps.supply_cost) as avg_supply_cost,
+    sum(ps.available_quantity) as total_available_quantity
+from {{ ref('stg_suppliers') }} s
+join {{ ref('stg_nations') }} n on s.nation_id = n.nation_id
+join {{ ref('stg_regions') }} r on n.region_id = r.region_id
+join {{ ref('stg_line_items') }} li on s.supplier_id = li.supplier_id
+join {{ ref('stg_part_suppliers') }} ps
+    on s.supplier_id = ps.supplier_id
+    and li.part_id = ps.part_id
+group by
+    s.supplier_id,
+    s.supplier_name,
+    n.nation_name,
+    r.region_name

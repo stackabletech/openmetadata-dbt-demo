@@ -56,7 +56,7 @@ spec:
                 bulk:
                   index: "logs-%Y.%m.%d"
     - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
-      targetRevision: "feat/data2day"
+      targetRevision: "feat/data2day-lakekeeper"
       path: platform/manifests/vector-aggregator/
   syncPolicy:
     syncOptions:

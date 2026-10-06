@@ -39,7 +39,7 @@ the browser warning on first visit.
 ## What to look at
 
 1. In **OpenMetadata**, open the Trino service and explore the
-   `hive-iceberg.demo.*` tables — they're dbt-built marts with per-column
+   `data2day.demo.*` tables — they're dbt-built marts with per-column
    descriptions and dbt test lineage.
 2. In **ArgoCD**, watch the continuously-reconciled application tree.
 3. In **Forgejo**, browse the in-cluster git mirror of this repository.

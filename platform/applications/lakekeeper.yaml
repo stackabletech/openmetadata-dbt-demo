@@ -16,10 +16,47 @@ spec:
       helm:
         releaseName: lakekeeper
         valuesObject:
-          service:
-            type: NodePort
-            nodePort:
-              http: 30181
+          # OpenID Connect against Keycloak. Keycloak runs without a fixed hostname, so
+          # a token's issuer depends on the URL it was fetched from:
+          #   - Trino and the lakekeeper-init Job fetch tokens in-cluster -> providerUri.
+          #   - The browser (Lakekeeper UI) logs in via the node IP -> additional issuer
+          #     and UI provider, set in catalog.extraEnv from the oidc-endpoints ConfigMap
+          #     (node-IP dependent, so not known here).
+          # Tokens must carry audience `lakekeeper` (Keycloak audience mappers on the
+          # clients `lakekeeper` and `lakekeeper-service`). authz stays `allowall`:
+          # every authenticated principal may do everything; access control for the
+          # data happens in Trino/OPA.
+          auth:
+            oauth2:
+              providerUri: "http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo"
+              audience: "lakekeeper"
+              ui:
+                clientID: "lakekeeper"
+                scopes: "openid profile email"
+          catalog:
+            # The UI needs to be reachable from the browser for the OIDC login. (The
+            # chart reads this from catalog.service; a top-level `service:` is ignored.)
+            service:
+              type: NodePort
+              nodePort:
+                http: 30181
+            extraEnv:
+              - name: NODE_IP
+                valueFrom:
+                  configMapKeyRef:
+                    name: oidc-endpoints
+                    key: node-ip
+              - name: ISSUER_URL
+                valueFrom:
+                  configMapKeyRef:
+                    name: oidc-endpoints
+                    key: issuer-url
+              - name: LAKEKEEPER__OPENID_ADDITIONAL_ISSUERS
+                value: "$(ISSUER_URL)"
+              - name: LAKEKEEPER__UI__OPENID_PROVIDER_URI
+                value: "$(ISSUER_URL)"
+              - name: LAKEKEEPER__UI__LAKEKEEPER_URL
+                value: "http://$(NODE_IP):30181"
   syncPolicy:
     syncOptions:
       - CreateNamespace=true

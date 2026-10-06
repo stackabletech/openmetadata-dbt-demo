@@ -30,7 +30,7 @@ resource "airflow_connection" "trino_default" {
   host          = "trino-coordinator"
   port          = 8443
   login         = "admin"
-  schema        = "hive-iceberg"
+  schema        = "data2day"
   extra = jsonencode({
     protocol = "https"
     verify   = false
