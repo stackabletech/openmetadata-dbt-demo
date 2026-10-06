@@ -166,9 +166,9 @@ dbt-run:
 cockpit-bookmarks:
     ./scripts/cockpit-bookmarks.sh
 
-# Write demo.html: the choreography with copy buttons, filled in for the current
-# cluster (node IP, ports, Cockpit bookmarks). Open it from disk, no server needed.
-demo-page out="demo.html":
+# Write demo-<kubectl context>.html: logins, choreography with copy buttons, filled in
+# for the current cluster (node IP, ports, Cockpit bookmarks). Open it from disk.
+demo-page out="":
     ./scripts/demo-page.sh {{out}}
 
 # Regenerate the generated Grafana dashboards (Trino queries/detail, NiFi authorization, the

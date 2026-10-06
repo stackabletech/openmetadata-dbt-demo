@@ -5,21 +5,23 @@
 #
 # The page contains the demo passwords (read from the cluster), so keep it local.
 #
-# Usage: ./scripts/demo-page.sh [output.html]    (default: ./demo.html, gitignored)
+# Usage: ./scripts/demo-page.sh [output.html]
+#   default: ./demo-<kubectl context>.html, e.g. demo-data2daylk.html (gitignored)
 set -euo pipefail
 
-out=${1:-demo.html}
 here=$(cd "$(dirname "$0")" && pwd)
 
 node_ip=$(kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}')
 [ -n "$node_ip" ] || { echo "No node IP in ConfigMap platform/oidc-endpoints" >&2; exit 1; }
 context=$(kubectl config current-context)
+# Context names can contain / or : (e.g. EKS ARNs); keep the file name simple.
+out=${1:-demo-$(printf %s "$context" | tr -c "A-Za-z0-9._-" "_").html}
 bookmarks=$("$here/cockpit-bookmarks.sh")
 airflow_port=$(kubectl -n platform get svc airflow-webserver -o jsonpath='{.spec.ports[0].nodePort}')
 branch=$(kubectl -n deployment get application cluster-apps -o jsonpath='{.spec.source.targetRevision}')
 
 # Logins for the box at the top of the page. Read from the cluster, so they always
-# match the deploy. demo.html is gitignored; don't commit or share it.
+# match the deploy. The page is gitignored; don't commit or share it.
 secret() { kubectl -n platform get secret "$1" -o jsonpath="{.data.$2}" | base64 -d; }
 DEMO_USER_PASSWORD=$(secret keycloak-demo-passwords demo_user_password)
 DEMO_ADMIN_PASSWORD=$(secret keycloak-demo-passwords demo_admin_password)
