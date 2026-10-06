@@ -25,6 +25,10 @@ spec:
           clientCredentialsSecret: user-info-fetcher-client-credentials
           adminRealm: stackable-demo
           userRealm: stackable-demo
+      cache:
+        # Default is 1m. Short, so adding a user to /pii in Keycloak shows up
+        # quickly in the demo (each OPA pod caches separately).
+        entryTimeToLive: 10s
     # Resource Info Fetcher sidecar (custom opa-operator build, see
     # infrastructure/opa-operator-custom.yaml): lets Rego look up a table's
     # OpenMetadata tags and owners via data.stackable.opa.resourceinfo.v1.
