@@ -20,14 +20,16 @@ spec:
         releaseName: cockpit
         valuesObject:
           image:
-            # Custom demo build of cockpit branch demo/data2day (local, commit ec948ab):
+            # Custom demo build of cockpit branch demo/data2day (local, commit cb12020):
             # feat/app-bookmark-dialog (dashboard bookmarks) + PR #350 (Trino
             # autocomplete) + main @ 5fc67f2 + a fix for bookmark URLs with IP
-            # addresses. The chart (pinned above) is unchanged on that branch.
+            # addresses, with #330 reverted: it made every query run as Trino
+            # user `anonymous` (OIDC username dropped). The chart (pinned above)
+            # is unchanged on that branch.
             # name:tag@digest — the digest pins the exact build.
             registry: oci.stackable.tech
             repository: sandbox/cockpit
-            tag: "0.0.0-dev-data2day-ec948ab@sha256:1f26b2cc84beadf0b4b6bb9fdfe44c2b9b42ba5f246624f36fb53a063e34c626"
+            tag: "0.0.0-dev-data2day-cb12020@sha256:8175060460d87c41f0f6168947e808499735f12e565da453a36fd6702c475d74"
           sessionSecret:
             secretKeyRef:
               name: cockpit-secrets
