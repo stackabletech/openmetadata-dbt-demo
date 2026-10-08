@@ -65,6 +65,10 @@ stringData:
             - "test_case_resolution_status_search_index*"
             - "test_case_result_search_index*"
           allowed_actions: ["indices_all"]
+        # OpenMetadata lists the aliases of all indices (GET /*/_alias); without this, that call
+        # fails with 403 every few minutes. Alias names only, no access to other indices' data.
+        - index_patterns: ["*"]
+          allowed_actions: ["indices:admin/aliases/get"]
     logs_writer:
       cluster_permissions:
         - cluster_monitor
