@@ -265,7 +265,10 @@ spec:
               opensearch:
                 type: elasticsearch
                 inputs: [route_opa_decisions._unmatched, opa_decisions.dropped]
-                endpoint: "https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"
+                endpoints: ["https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"]
+                # Fixed instead of auto-detected: if the version probe fails at startup, Vector falls
+                # back to the Elasticsearch 6 request format, whose `_type` OpenSearch 3 rejects (400).
+                api_version: v8
                 auth:
                   strategy: basic
                   user: "${OPENSEARCH_USER}"
@@ -278,7 +281,10 @@ spec:
               opensearch_opa_decisions:
                 type: elasticsearch
                 inputs: [opa_decisions]
-                endpoint: "https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"
+                endpoints: ["https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"]
+                # Fixed instead of auto-detected: if the version probe fails at startup, Vector falls
+                # back to the Elasticsearch 6 request format, whose `_type` OpenSearch 3 rejects (400).
+                api_version: v8
                 auth:
                   strategy: basic
                   user: "${OPENSEARCH_USER}"
