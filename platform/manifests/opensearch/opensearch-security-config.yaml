@@ -27,7 +27,7 @@ stringData:
       description: OpenMetadata search backend
     trino:
       hash: $2y$10$28JGXR0AqaV9gK2V.i7kNOu07E4526hHCykNWB664TovUWvVV12q2
-      description: Trino catalog `opensearch` (read-only)
+      description: Trino catalog `opensearch` (read-only, role trino_reader)
     logs:
       hash: $2y$10$LnPJaCbfHJYASAkEhwFDzuEDAs3YngxuL7m243O7Wa7jaD6QiRqTy
       backend_roles:
@@ -38,6 +38,21 @@ stringData:
     _meta:
       type: roles
       config_version: 2
+    # Trino catalog `opensearch`: read all indices plus the metadata Trino's OpenSearch connector
+    # needs to list indices and map them to tables (readall alone lacks the mapping and index APIs).
+    trino_reader:
+      cluster_permissions:
+        - cluster_monitor
+        - cluster_composite_ops_ro
+      index_permissions:
+        - index_patterns: ["*"]
+          allowed_actions:
+            - read
+            - indices_monitor
+            - "indices:admin/get"
+            - "indices:admin/mappings/get"
+            - "indices:admin/aliases/get"
+            - "indices:admin/shards/search_shards"
     openmetadata_app:
       cluster_permissions:
         - cluster_monitor
@@ -81,7 +96,7 @@ stringData:
       reserved: false
       backend_roles:
       - viewer
-      # Trino catalog `opensearch`
+    trino_reader:
       users:
       - trino
     kibana_server:

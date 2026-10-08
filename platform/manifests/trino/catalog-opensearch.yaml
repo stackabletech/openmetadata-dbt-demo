@@ -2,7 +2,7 @@
 # Read access to the OpenSearch indices (schema `default`: one table per index, e.g. the
 # product logs `"logs-2026.10.08"` and OPA decisions `"logs-opa-decisions-2026.10.08"`;
 # wildcards like `"logs-opa-decisions-*"` work too). Connects as the read-only OpenSearch user
-# `trino` (role readall). OPA only grants this catalog to admins (rego-trino-policies.yaml).
+# `trino` (role trino_reader). OPA only grants this catalog to admins (rego-trino-policies.yaml).
 apiVersion: trino.stackable.tech/v1alpha1
 kind: TrinoCatalog
 metadata:
