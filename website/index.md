@@ -32,7 +32,7 @@ a handful of supporting components.
 | **OpenMetadata**          | [http://{{ nodeport "openmetadata-nodeport" }}/](http://{{ nodeport "openmetadata-nodeport" }}/) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | —                                                                                            |
 | **Entropy Data**          | [http://{{ nodeport "entropy-data-nodeport" }}/myorga](http://{{ nodeport "entropy-data-nodeport" }}/myorga) | `demo-admin` / `demo-user` | *(see keycloak-demo-passwords secret)* | —                                                                                            |
 | **LakeKeeper**            | [http://{{ nodeport "lakekeeper" }}/ui/](http://{{ nodeport "lakekeeper" }}/ui/) | — | — | —                                                                                            |
-| **OpenSearch Dashboards** | [http://{{ nodeport "opensearch-dashboards-nodeport" }}/](http://{{ nodeport "opensearch-dashboards-nodeport" }}/) | `admin@open-metadata.org` | `admin` | —                                                                                            |
+| **OpenSearch Dashboards** | [http://{{ nodeport "opensearch-dashboards-nodeport" }}/](http://{{ nodeport "opensearch-dashboards-nodeport" }}/) | `demo-admin` / `demo-user` (Keycloak, "Log in with single sign-on") | *(see keycloak-demo-passwords secret)* | —                                                                                            |
 
 Most Stackable-managed services run with a self-signed certificate; accept
 the browser warning on first visit.

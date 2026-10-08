@@ -67,7 +67,17 @@ stringData:
     all_access:
       reserved: false
       backend_roles:
+      # The internal `admin` user and the Keycloak realm role `admin`
       - admin
+    # Keycloak realm role `viewer` (demo-user): read everything in Dashboards
+    kibana_user:
+      reserved: false
+      backend_roles:
+      - viewer
+    readall:
+      reserved: false
+      backend_roles:
+      - viewer
     kibana_server:
       reserved: true
       users:

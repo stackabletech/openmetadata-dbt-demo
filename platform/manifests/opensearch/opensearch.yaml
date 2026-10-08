@@ -11,9 +11,14 @@ spec:
     stopped: false
   clusterConfig:
     security:
+      # Apply the operator-managed settings below from the role group we have (the default,
+      # `security-config`, would make the operator create an extra role group).
+      managingRoleGroup: default
       settings:
+        # config and rolesMapping are managed by the operator, i.e. Git is the source of truth
+        # and changes are hot-reloaded. The other settings only initialize the security index.
         config:
-          managedBy: API
+          managedBy: operator
           content:
             value:
               _meta:
@@ -22,6 +27,25 @@ spec:
               config:
                 dynamic:
                   authc:
+                    # Keycloak login for OpenSearch Dashboards (and bearer tokens in general).
+                    # Tokens carry Keycloak realm roles (admin / viewer) in the `groups` claim,
+                    # mapped to OpenSearch roles in roles_mapping.yml. The JWKS is fetched via the
+                    # in-cluster Keycloak service; the issuer is not checked, because browser
+                    # tokens are issued by the node-IP issuer, which is only known at runtime.
+                    openid_auth_domain:
+                      description: Authenticate via OpenID Connect (Keycloak)
+                      http_enabled: true
+                      transport_enabled: true
+                      order: 0
+                      http_authenticator:
+                        type: openid
+                        challenge: false
+                        config:
+                          subject_key: preferred_username
+                          roles_key: groups
+                          openid_connect_url: http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo/.well-known/openid-configuration
+                      authentication_backend:
+                        type: noop
                     basic_internal_auth_domain:
                       description: Authenticate via HTTP Basic against internal users database
                       http_enabled: true
@@ -48,7 +72,7 @@ spec:
                 name: initial-opensearch-security-config
                 key: roles.yml
         rolesMapping:
-          managedBy: API
+          managedBy: operator
           content:
             valueFrom:
               secretKeyRef:
