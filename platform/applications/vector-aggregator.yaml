@@ -37,6 +37,225 @@ spec:
                 type: vector
                 address: 0.0.0.0:6000
                 version: "2"
+            transforms:
+              # OPA decision logs (OpaCluster logger `decision`) get their own index with
+              # structured fields; everything else goes to logs-* as before.
+              route_opa_decisions:
+                type: route
+                inputs: [vector]
+                route:
+                  decision: '.container == "opa" && .logger == "decision"'
+              opa_decisions:
+                type: remap
+                inputs: [route_opa_decisions.decision]
+                # Decisions that fail to parse go to logs-* unchanged instead of being lost
+                drop_on_error: true
+                reroute_dropped: true
+                source: |
+                  # Turns an OPA decision log entry, as shipped by the Stackable Vector agent, back into a
+                  # structured document. The agent keeps OPA's `msg` ("Decision Log") and appends all other
+                  # fields as `key=value` lines with dotted keys (lists as numeric indices); keys and values
+                  # with special characters are quoted with JSON-style escapes.
+
+                  raw = string!(.message)
+
+                  # --- 1. key=value lines -> map with the dotted keys ------------------------------------
+                  kv = {}
+                  for_each(split(raw, "\n")) -> |_i, line| {
+                    m = parse_regex(line, r'^"(?P<k>(?:[^"\\]|\\.)*)"=(?P<v>.*)$') ?? parse_regex(line, r'^(?P<k>[^"=][^=]*)=(?P<v>.*)$') ?? null
+                    if m != null {
+                      k = string!(m.k)
+                      if starts_with(line, "\"") {
+                        k = string(parse_json("\"" + k + "\"") ?? k) ?? k
+                      }
+                      v = string!(m.v)
+                      if starts_with(v, "\"") {
+                        v = string(parse_json(v) ?? v) ?? v
+                      }
+                      kv = set!(kv, [k], v)
+                    }
+                  }
+
+                  d = {}
+                  d.timestamp = .timestamp
+                  d.pod = .pod
+                  d.namespace = .namespace
+                  d.decision_id = get(kv, ["decision_id"]) ?? null
+                  d.query_id = get(kv, ["input.context.queryId"]) ?? null
+                  d.path = get(kv, ["path"]) ?? null
+                  d.operation = get(kv, ["input.action.operation"]) ?? null
+                  d.user = get(kv, ["input.context.identity.user"]) ?? null
+                  d.impersonated_user = get(kv, ["input.action.resource.user.user"]) ?? null
+                  d.opa = {
+                    "req_id": get(kv, ["req_id"]) ?? null,
+                    "requested_by": get(kv, ["requested_by"]) ?? null,
+                    "version": get(kv, ["labels.version"]) ?? null,
+                  }
+
+                  # --- 2. resources, results, lookups -------------------------------------------------------
+                  single = {}        # input.action.resource.<kind>.<field>
+                  filter = {}        # filterResources index -> {field: value}
+                  columns = []       # input.action.resource.table.columns.N / filterResources.0.table.columns.N
+                  result_items = {}  # result index -> {field: value}
+                  nd_raw = []        # [{request, body}] of http.send calls (raw_body keeps empty lists)
+
+                  for_each(kv) -> |k, v| {
+                    if starts_with(k, "input.action.resource.") {
+                      mc = parse_regex(k, r'^input\.action\.resource\.table\.columns\.\d+$') ?? null
+                      if mc != null {
+                        columns = push(columns, v)
+                      } else {
+                        ms = parse_regex(k, r'^input\.action\.resource\.(?P<kind>\w+)\.(?P<f>\w+)$') ?? null
+                        if ms != null { single = set!(single, [string!(ms.f)], v) }
+                      }
+                    } else if starts_with(k, "input.action.filterResources.") {
+                      mcol = parse_regex(k, r'^input\.action\.filterResources\.\d+\.table\.columns\.\d+$') ?? null
+                      if mcol != null {
+                        columns = push(columns, v)
+                      } else {
+                        mf = parse_regex(k, r'^input\.action\.filterResources\.(?P<i>\d+)\.(?P<kind>\w+)\.(?P<f>\w+)$') ?? null
+                        if mf != null { filter = set!(filter, [string!(mf.i), string!(mf.f)], v) }
+                      }
+                    } else if starts_with(k, "result.") {
+                      mr = parse_regex(k, r'^result\.(?P<i>\d+)(?:\.(?P<f>.+))?$') ?? null
+                      if mr != null {
+                        f = string(mr.f) ?? "value"
+                        result_items = set!(result_items, [string!(mr.i), f], v)
+                      }
+                    } else if starts_with(k, "nd_builtin_cache.http.send.[") && ends_with(k, "].raw_body") {
+                      req_json = replace(replace(k, "nd_builtin_cache.http.send.[", "", count: 1), r'\]\.raw_body$', "")
+                      req = parse_json(req_json) ?? {}
+                      body = parse_json(v) ?? null
+                      nd_raw = push(nd_raw, {"url": get(req, ["url"]) ?? "", "body": body})
+                    }
+                  }
+
+                  # Single resource (allow checks): catalog / schema / table / columns
+                  d.catalog = get(single, ["catalogName"]) ?? null
+                  if d.catalog == null { d.catalog = get(single, ["name"]) ?? null }
+                  d.schema = get(single, ["schemaName"]) ?? null
+                  d.table = get(single, ["tableName"]) ?? null
+
+                  # Batch requests: one "catalog.schema.table.column" string per filter resource, by index
+                  names = {}
+                  batch_tables = {}
+                  for_each(filter) -> |i, f| {
+                    cat = get(f, ["catalogName"]) ?? null
+                    if cat == null { cat = get(f, ["name"]) ?? null }
+                    parts = compact([
+                      cat,
+                      get(f, ["schemaName"]) ?? null,
+                      get(f, ["tableName"]) ?? null,
+                      get(f, ["columnName"]) ?? null,
+                    ])
+                    names = set!(names, [i], join!(parts, "."))
+                    cn = get(f, ["columnName"]) ?? null
+                    if cn != null { columns = push(columns, cn) }
+                    tbl = get(f, ["tableName"]) ?? null
+                    if tbl != null {
+                      batch_tables = set!(batch_tables, [join!(compact([cat, get(f, ["schemaName"]) ?? null, tbl]), ".")], {"catalog": cat, "schema": get(f, ["schemaName"]) ?? null, "table": tbl})
+                    }
+                  }
+                  # Only a batch about a single table (column masks, column filters) names it as `table`
+                  if d.table == null && length(batch_tables) == 1 {
+                    t = values(batch_tables)[0]
+                    d.catalog = t.catalog
+                    d.schema = t.schema
+                    d.table = t.table
+                  }
+                  if length(names) > 0 { d.resources = values(names) }
+                  if length(columns) > 0 { d.columns = columns }
+
+                  # Results: plain (allow: true/false), batch (allowed indices), column masks, row filters
+                  plain = get(kv, ["result"]) ?? null
+                  if plain != null {
+                    d.result = plain
+                    if d.path == "trino/allow" { d.allowed = plain == "true" }
+                  } else if d.path == "trino/allow" {
+                    d.result = "undefined"
+                    d.allowed = false
+                  }
+                  masks = []
+                  filters = []
+                  allowed = []
+                  for_each(result_items) -> |_i, r| {
+                    expr = get(r, ["viewExpression.expression"]) ?? null
+                    if expr != null {
+                      idx = string(get(r, ["index"]) ?? "") ?? ""
+                      masks = push(masks, {"column": get(names, [idx]) ?? idx, "expression": expr})
+                    }
+                    rf = get(r, ["expression.expression"]) ?? null
+                    if rf == null { rf = get(r, ["expression"]) ?? null }
+                    if rf != null { filters = push(filters, rf) }
+                    val = get(r, ["value"]) ?? null
+                    if val != null { allowed = push(allowed, get(names, [string!(val)]) ?? val) }
+                  }
+                  if length(masks) > 0 { d.masks = masks }
+                  if length(filters) > 0 { d.row_filters = filters }
+                  if length(allowed) > 0 { d.allowed_resources = allowed }
+                  if d.path == "trino/batch" && length(names) > 0 {
+                    denied = []
+                    for_each(values(names)) -> |_i, n| {
+                      if !includes(allowed, n) { denied = push(denied, n) }
+                    }
+                    d.denied_resources = denied
+                  }
+
+                  # Lookups: User Info Fetcher (groups) and Resource Info Fetcher (OpenMetadata metadata)
+                  resource_info = []
+                  for_each(nd_raw) -> |_i, c| {
+                    url = c.url
+                    body = c.body
+                    if contains(url, ":9476/user") && is_object(body) {
+                      d.groups = array(get(body, ["groups"]) ?? []) ?? []
+                    } else if contains(url, ":9477/metadata/") && is_object(body) {
+                      owners = []
+                      for_each(array(get(body, ["owners", "teams"]) ?? []) ?? []) -> |_j, o| {
+                        owners = push(owners, "team:" + (string(get(o, ["fullyQualifiedName"]) ?? "") ?? ""))
+                      }
+                      for_each(array(get(body, ["owners", "users"]) ?? []) ?? []) -> |_j, o| {
+                        owners = push(owners, "user:" + (string(get(o, ["fullyQualifiedName"]) ?? "") ?? ""))
+                      }
+                      tags = []
+                      for_each(array(get(body, ["tags"]) ?? []) ?? []) -> |_j, t| {
+                        tags = push(tags, string(get(t, ["fullyQualifiedName"]) ?? "") ?? "")
+                      }
+                      column_tags = []
+                      for_each(object(get(body, ["columns"]) ?? {}) ?? {}) -> |col, cinfo| {
+                        ct = []
+                        for_each(array(get(cinfo, ["tags"]) ?? []) ?? []) -> |_j, t| {
+                          ct = push(ct, string(get(t, ["fullyQualifiedName"]) ?? "") ?? "")
+                        }
+                        if length(ct) > 0 { column_tags = push(column_tags, {"column": col, "tags": ct}) }
+                      }
+                      resource_info = push(resource_info, {
+                        "fqn": get(body, ["fullyQualifiedName"]) ?? null,
+                        "in_catalog": get(body, ["inCatalog"]) ?? null,
+                        "owners": owners,
+                        "has_owner": length(owners) > 0,
+                        "tags": tags,
+                        "column_tags": column_tags,
+                      })
+                    }
+                  }
+                  if length(resource_info) > 0 { d.resource_info = resource_info }
+
+                  # --- 3. summary + full text without the bulky parts -----------------------------------
+                  target = join(compact([d.catalog, d.schema, d.table]), ".") ?? ""
+                  outcome = if d.allowed == true { "allowed" } else if d.allowed == false { "DENIED" } else if length(masks) > 0 { to_string(length(masks)) + " column mask(s)" } else if d.path == "trino/batch" { to_string(length(allowed)) + " of " + to_string(length(names)) + " allowed" } else if length(filters) > 0 { to_string(length(filters)) + " row filter(s)" } else if d.path == "trino/rowFilters" { "no row filter" } else if d.path == "trino/batchColumnMasks" { "no column mask" } else { d.path }
+                  as_user = null
+                  if d.impersonated_user != null { as_user = "-> " + string!(d.impersonated_user) }
+                  d.message = join!(compact([d.user, as_user, d.operation, target, outcome]), " ")
+                  kept = []
+                  for_each(split(raw, "\n")) -> |_i, line| {
+                    if !starts_with(line, "\"nd_builtin_cache") && !starts_with(line, "metrics.") && !starts_with(line, "input.action.filterResources.") {
+                      kept = push(kept, line)
+                    }
+                  }
+                  d.decision = join!(kept, "\n")
+
+                  # Drop unset top-level fields, but keep empty lists (groups: [] is meaningful)
+                  . = compact(d, recursive: false, string: false, object: false, array: false)
             sinks:
               console:
                 type: console
@@ -45,7 +264,7 @@ spec:
                   codec: json
               opensearch:
                 type: elasticsearch
-                inputs: [vector]
+                inputs: [route_opa_decisions._unmatched, opa_decisions.dropped]
                 endpoint: "https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"
                 auth:
                   strategy: basic
@@ -55,6 +274,19 @@ spec:
                   verify_certificate: false
                 bulk:
                   index: "logs-%Y.%m.%d"
+              # Matches the `logs-*` index pattern the `logs` user may write to
+              opensearch_opa_decisions:
+                type: elasticsearch
+                inputs: [opa_decisions]
+                endpoint: "https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"
+                auth:
+                  strategy: basic
+                  user: "${OPENSEARCH_USER}"
+                  password: "${OPENSEARCH_PASSWORD}"
+                tls:
+                  verify_certificate: false
+                bulk:
+                  index: "logs-opa-decisions-%Y.%m.%d"
     - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "feat/entropy"
       path: platform/manifests/vector-aggregator/
