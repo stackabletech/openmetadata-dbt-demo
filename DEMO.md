@@ -108,6 +108,20 @@ All queries run in Cockpit, logged in as `demo-user` unless noted.
 6. Optional: tag `net_revenue` too, it comes back as `NULL`. As `demo-admin` (in `/pii`) both
    columns stay readable.
 
+### Reviewing the decisions in OpenSearch Dashboards
+
+Every OPA decision for Trino lands in the index `logs-opa-decisions-*`. In OpenSearch Dashboards
+(`http://<node-ip>:30601`, log in via single sign-on as `demo-admin`) open Discover → saved search
+**OPA decisions**. Each document is one decision; `message` summarizes it, e.g.
+`demo-user GetColumnMask data2day.demo.customer_lifetime_value 5 column mask(s)`.
+
+- `query_id` is Trino's query ID (Trino UI / `system.runtime.queries`). Filter on it to see all
+  decisions of one query. The `ExecuteQuery` check itself carries no query ID.
+- `groups` are the Keycloak groups the User Info Fetcher returned for the user.
+- `resource_info` is what the Resource Info Fetcher returned from OpenMetadata: `owners`,
+  `has_owner`, `tags`, `column_tags`. Part B's denial on `order_summary` shows `has_owner: false`.
+- `masks` lists column → mask expression; `allowed: false` marks denials.
+
 ### Reset after a rehearsal
 
 - Keycloak: remove `demo-user` from `/pii`.

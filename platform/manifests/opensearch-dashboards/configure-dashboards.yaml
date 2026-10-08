@@ -1,0 +1,109 @@
+---
+# Saved objects for reviewing OPA decisions in OpenSearch Dashboards: the index pattern
+# `logs-opa-decisions-*` (written by the vector-aggregator) and a saved search "OPA decisions".
+# Idempotent: objects are created with fixed IDs and overwritten on every run.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configure-dashboards-script
+  namespace: platform
+data:
+  configure.py: |
+    import base64
+    import json
+    import os
+    import sys
+    import time
+    import urllib.error
+    import urllib.request
+
+    URL = os.environ.get("DASHBOARDS_URL", "http://opensearch-dashboards:5601")
+    AUTH = "Basic " + base64.b64encode(
+        f"{os.environ['OPENSEARCH_USERNAME']}:{os.environ['OPENSEARCH_PASSWORD']}".encode()
+    ).decode()
+
+
+    def call(method, path, body=None):
+        req = urllib.request.Request(
+            URL + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={"Authorization": AUTH, "Content-Type": "application/json", "osd-xsrf": "true"},
+            method=method,
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode() or "{}")
+
+
+    def wait_ready():
+        for i in range(90):
+            try:
+                status = call("GET", "/api/status")
+                if status.get("status", {}).get("overall", {}).get("state") == "green":
+                    return
+                print(f"Dashboards not green yet ({i + 1}/90)")
+            except Exception as e:
+                print(f"Dashboards not reachable yet ({i + 1}/90): {e}")
+            time.sleep(10)
+        sys.exit("Dashboards did not become ready")
+
+
+    def put(kind, obj_id, attributes, references=()):
+        call("POST", f"/api/saved_objects/{kind}/{obj_id}?overwrite=true",
+             {"attributes": attributes, "references": list(references)})
+        print(f"Saved {kind}/{obj_id}")
+
+
+    wait_ready()
+    put("index-pattern", "opa-decisions", {
+        "title": "logs-opa-decisions-*",
+        "timeFieldName": "timestamp",
+    })
+    put("search", "opa-decisions", {
+        "title": "OPA decisions",
+        "description": "Authorization decisions of OPA for Trino, one document per decision. "
+                       "Filter by query_id to see all decisions of one query.",
+        "columns": ["message", "query_id", "groups", "masks.column", "resource_info.has_owner",
+                    "resource_info.column_tags.tags"],
+        "sort": [["timestamp", "desc"]],
+        "kibanaSavedObjectMeta": {
+            "searchSourceJSON": json.dumps({
+                "query": {"query": "", "language": "kuery"},
+                "filter": [],
+                "indexRefName": "kibanaSavedObjectMeta.searchSourceJSON.index",
+            }),
+        },
+    }, [{"name": "kibanaSavedObjectMeta.searchSourceJSON.index", "type": "index-pattern", "id": "opa-decisions"}])
+    print("Done")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-dashboards-v1
+  namespace: platform
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: python:3.12-slim # renovate: datasource=docker depName=python
+          command: ["python", "-u", "/scripts/configure.py"]
+          env:
+            - name: OPENSEARCH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-kibanaserver-credentials
+                  key: username
+            - name: OPENSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-kibanaserver-credentials
+                  key: password
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: configure-dashboards-script
