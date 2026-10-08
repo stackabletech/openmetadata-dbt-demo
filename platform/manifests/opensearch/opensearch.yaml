@@ -15,8 +15,9 @@ spec:
       # `security-config`, would make the operator create an extra role group).
       managingRoleGroup: default
       settings:
-        # config and rolesMapping are managed by the operator, i.e. Git is the source of truth
-        # and changes are hot-reloaded. The other settings only initialize the security index.
+        # config, internalUsers and rolesMapping are managed by the operator, i.e. Git is the
+        # source of truth and changes are hot-reloaded. The other settings only initialize the
+        # security index.
         config:
           managedBy: operator
           content:
@@ -57,8 +58,9 @@ spec:
                       authentication_backend:
                         type: intern
                   authz: {}
+        # Operator-managed as well, so that users added here (e.g. `trino`) reach running clusters.
         internalUsers:
-          managedBy: API
+          managedBy: operator
           content:
             valueFrom:
               secretKeyRef:
