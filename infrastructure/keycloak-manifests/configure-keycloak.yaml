@@ -522,6 +522,29 @@ data:
       add_to_access_token      = true
     }
 
+    resource "keycloak_openid_client" "entropy_data" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "entropy-data"
+      name                  = "Entropy Data"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "entropy-data-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "entropy_data_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.entropy_data.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
     resource "keycloak_openid_client" "cockpit" {
       realm_id                        = keycloak_realm.stackable_demo.id
       client_id                       = "cockpit"

@@ -25,7 +25,7 @@ spec:
       - repo: http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git
         # Must track the deployed branch, not main — the DAGs + dbt profile differ
         # per branch. `just retarget <branch>` rewrites this.
-        branch: feat/data2day-lakekeeper
+        branch: feat/entropy
         gitFolder: "dags"
         depth: 2
     vectorAggregatorConfigMapName: vector-aggregator-discovery

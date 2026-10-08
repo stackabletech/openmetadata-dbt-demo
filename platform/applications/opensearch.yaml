@@ -11,7 +11,7 @@ spec:
     namespace: platform
   source:
     repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
-    targetRevision: "feat/data2day-lakekeeper"
+    targetRevision: "feat/entropy"
     path: platform/manifests/opensearch/
   syncPolicy:
     syncOptions:

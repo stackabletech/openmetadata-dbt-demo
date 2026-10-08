@@ -33,6 +33,7 @@ trino|Trino|https://${node_ip}:$(nodeport platform trino-coordinator)/ui/|true
 superset|Superset|http://${node_ip}:$(nodeport platform simple-superset-node)|true
 airflow|Airflow|http://${node_ip}:$(nodeport platform airflow-webserver)|true
 custom|OpenMetadata|http://${node_ip}:$(nodeport platform openmetadata-nodeport)|true
+custom|Entropy Data|http://${node_ip}:$(nodeport platform entropy-data-nodeport)/myorga|true
 hdfs|HDFS NameNode|http://${node_ip}:$(nodeport platform listener-simple-hdfs-namenode-default-0)|false
 opensearch|OpenSearch Dashboards|http://${node_ip}:$(nodeport platform opensearch-dashboards-nodeport)|false
 custom|Lakekeeper|http://${node_ip}:$(nodeport platform lakekeeper)/ui|false
