@@ -11,6 +11,8 @@ spec:
     # reports version 0.0.0-dev and would otherwise pick the nightly OPA image.
     stackableVersion: 26.3.0
   clusterConfig:
+    # Ship OPA's logs, incl. decision logs (see servers.config.logging), to OpenSearch.
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
     # User Info Fetcher sidecar: lets Rego resolve a user's Keycloak group
     # membership via data.stackable.opa.userinfo.v1.userInfoByUsername(...).
     # Our Keycloak is plain HTTP (keycloak-service:8080) and is NOT a Stackable
@@ -44,6 +46,31 @@ spec:
         # Short, so tag and owner changes in OpenMetadata show up quickly in the demo.
         entryTimeToLive: 10s
   servers:
+    config:
+      logging:
+        enableVectorAgent: true
+        containers:
+          opa:
+            # Decision logs (one entry per authorization request from Trino) go to the log
+            # file, which the Vector agent ships; the console keeps only warnings so that
+            # `kubectl logs` stays readable.
+            console:
+              level: WARN
+            file:
+              level: INFO
+            loggers:
+              decision:
+                level: INFO
+    # OPA runs on every node (DaemonSet), so keep the Vector sidecar small (as for Trino).
+    podOverrides:
+      spec:
+        containers:
+          - name: vector
+            resources:
+              requests:
+                memory: 128Mi
+              limits:
+                memory: 512Mi
     roleGroups:
       default:
         replicas: 1
