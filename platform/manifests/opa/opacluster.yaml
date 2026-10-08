@@ -64,11 +64,11 @@ spec:
     configOverrides:
       config.json:
         jsonMergePatch:
-          decision_logs:
-            # Also log the results of non-deterministic builtins, i.e. the http.send calls to the
-            # User Info Fetcher (Keycloak groups) and Resource Info Fetcher (OpenMetadata tags,
-            # owners), so a decision shows the data it was based on.
-            nd_builtin_cache: true
+          # Record the results of non-deterministic builtins during evaluation and include them
+          # in the decision logs, i.e. the http.send calls to the User Info Fetcher (Keycloak
+          # groups) and Resource Info Fetcher (OpenMetadata tags, owners), so a decision shows
+          # the data it was based on. A top-level OPA setting, not part of decision_logs.
+          nd_builtin_cache: true
     # OPA runs on every node (DaemonSet), so keep the Vector sidecar small (as for Trino).
     podOverrides:
       spec:
