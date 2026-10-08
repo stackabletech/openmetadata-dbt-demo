@@ -8,7 +8,9 @@ spec:
   clusterOperation:
     stopped: false
   image:
-    productVersion: "477"
+    # 479 (not the 477 LTS): from 478 on, the OPA plugin sends the query ID with every
+    # authorization request (input.context.queryId), so OPA decision logs can be grouped by query.
+    productVersion: "479"
   clusterConfig:
     catalogLabelSelector:
       matchLabels:
