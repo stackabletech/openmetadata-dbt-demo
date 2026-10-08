@@ -592,7 +592,10 @@ data:
       pkce_code_challenge_method      = "S256"
       valid_redirect_uris             = ["*"]
       valid_post_logout_redirect_uris = ["*"]
-      web_origins                     = ["+"]
+      # The UI exchanges the code for a token from the browser (XHR), so the token
+      # endpoint must send CORS headers. "+" only allows the origins of concrete
+      # redirect URIs and does not cover the "*" above, so allow all origins.
+      web_origins                     = ["*"]
     }
 
     resource "keycloak_openid_audience_protocol_mapper" "lakekeeper_audience" {
