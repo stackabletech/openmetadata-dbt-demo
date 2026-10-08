@@ -12,7 +12,9 @@ spec:
   sources:
     - repoURL: "https://opensearch-project.github.io/helm-charts"
       chart: opensearch-dashboards
-      targetRevision: "2.30.0" # renovate: registryUrl=https://opensearch-project.github.io/helm-charts datasource=helm depName=opensearch-dashboards
+      # Chart 3.4.0 ships Dashboards 3.4.0. Dashboards must match the OpenSearch major version
+      # (platform/manifests/opensearch/opensearch.yaml); 2.x refuses to start against 3.x.
+      targetRevision: "3.4.0" # renovate: registryUrl=https://opensearch-project.github.io/helm-charts datasource=helm depName=opensearch-dashboards
       helm:
         releaseName: opensearch-dashboards
         valuesObject:
