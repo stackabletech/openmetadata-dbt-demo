@@ -15,8 +15,8 @@ spec:
       # `security-config`, would make the operator create an extra role group).
       managingRoleGroup: default
       settings:
-        # config, internalUsers and rolesMapping are managed by the operator, i.e. Git is the
-        # source of truth and changes are hot-reloaded. The other settings only initialize the
+        # config, internalUsers, roles and rolesMapping are managed by the operator, i.e. Git is
+        # the source of truth and changes are hot-reloaded. The other settings only initialize the
         # security index.
         config:
           managedBy: operator
@@ -58,7 +58,8 @@ spec:
                       authentication_backend:
                         type: intern
                   authz: {}
-        # Operator-managed as well, so that users added here (e.g. `trino`) reach running clusters.
+        # Operator-managed as well, so that users and roles added here (e.g. `trino`,
+        # `trino_reader`) reach running clusters.
         internalUsers:
           managedBy: operator
           content:
@@ -67,7 +68,7 @@ spec:
                 name: initial-opensearch-security-config
                 key: internal_users.yml
         roles:
-          managedBy: API
+          managedBy: operator
           content:
             valueFrom:
               secretKeyRef:
