@@ -1,6 +1,7 @@
 ---
 # Saved objects for reviewing OPA decisions in OpenSearch Dashboards: the index pattern
-# `logs-opa-decisions-*` (written by the vector-aggregator) and a saved search "OPA decisions".
+# `logs-opa-decisions-*` (written by the vector-aggregator), saved searches, visualizations and
+# the dashboard "OPA decisions".
 # Idempotent: objects are created with fixed IDs and overwritten on every run.
 apiVersion: v1
 kind: ConfigMap
@@ -53,32 +54,206 @@ data:
         print(f"Saved {kind}/{obj_id}")
 
 
+    INDEX_REF = [{"name": "kibanaSavedObjectMeta.searchSourceJSON.index", "type": "index-pattern", "id": "opa-decisions"}]
+    # Technical users (dbt, ingestion, Entropy sync; Cockpit's impersonation checks) dominate the volume
+    HUMANS = "not user:(admin or cockpit)"
+
+
+    def source(query=""):
+        return {"searchSourceJSON": json.dumps({
+            "query": {"query": query, "language": "kuery"},
+            "filter": [],
+            "indexRefName": "kibanaSavedObjectMeta.searchSourceJSON.index",
+        })}
+
+
+    def terms(agg_id, field, label, size=10, order_by="1", **extra):
+        params = {"field": field, "orderBy": order_by, "order": "desc", "size": size,
+                  "otherBucket": False, "missingBucket": False, "customLabel": label}
+        params.update(extra)
+        return {"id": agg_id, "enabled": True, "type": "terms", "schema": "bucket", "params": params}
+
+
+    def metric(agg_id, kind, label, field=None):
+        params = {"customLabel": label}
+        if field:
+            params["field"] = field
+        return {"id": agg_id, "enabled": True, "type": kind, "schema": "metric", "params": params}
+
+
+    TABLE_PARAMS = {"perPage": 10, "showPartialRows": False, "showMetricsAtAllLevels": False,
+                    "showTotal": False, "totalFunc": "sum", "percentageCol": ""}
+
+
+    def table_vis(vis_id, title, description, query, aggs):
+        put("visualization", vis_id, {
+            "title": title,
+            "description": description,
+            "visState": json.dumps({"title": title, "type": "table", "params": TABLE_PARAMS, "aggs": aggs}),
+            "uiStateJSON": "{}",
+            "version": 1,
+            "kibanaSavedObjectMeta": source(query),
+        }, INDEX_REF)
+
+
+    def search(search_id, title, description, columns, sort):
+        put("search", search_id, {
+            "title": title,
+            "description": description,
+            "columns": columns,
+            "sort": [["timestamp", sort]],
+            "kibanaSavedObjectMeta": source(),
+        }, INDEX_REF)
+
+
     wait_ready()
     put("index-pattern", "opa-decisions", {
         "title": "logs-opa-decisions-*",
         "timeFieldName": "timestamp",
     })
-    put("search", "opa-decisions", {
+
+    COLUMNS = ["message", "query_id", "groups", "masks.column", "resource_info.has_owner",
+               "resource_info.owners", "resource_info.column_tags.tags"]
+    search("opa-decisions", "OPA decisions",
+           "Authorization decisions of OPA for Trino, one document per decision, newest first. "
+           "Filter by query_id to see all decisions of one query.", COLUMNS, "desc")
+    search("opa-decisions-chronological", "OPA decisions (chronological)",
+           "Same as 'OPA decisions', oldest first: the order in which Trino asked OPA.", COLUMNS, "asc")
+
+    # --- 1. Who saw what, and why ------------------------------------------------------------
+    table_vis("opa-masked-columns", "OPA: masked columns per user",
+              "Columns OPA masked, per user; counts distinct queries. Iceberg's hidden columns "
+              "($partition, $path, ...) are left out: they are always masked, because OpenMetadata "
+              "does not know them.",
+              'path:"trino/batchColumnMasks" and masks.column:*',
+              [metric("1", "cardinality", "Queries", "query_id.keyword"),
+               terms("2", "user.keyword", "User"),
+               terms("3", "masks.column.keyword", "Masked column", size=50, exclude=".*[$].*")])
+
+    table_vis("opa-denials", "OPA: denied access",
+              "Denied checks with what the policy based them on: Keycloak groups (User Info Fetcher) "
+              "and whether OpenMetadata knows an owner (Resource Info Fetcher).",
+              "allowed:false",
+              [metric("1", "cardinality", "Queries", "query_id.keyword"),
+               metric("5", "max", "Last seen", "timestamp"),
+               terms("2", "user.keyword", "User"),
+               terms("3", "table.keyword", "Table", size=20, missingBucket=True, missingBucketLabel="-"),
+               terms("4", "resource_info.has_owner", "Has owner in OpenMetadata", size=2,
+                     missingBucket=True, missingBucketLabel="-"),
+               terms("6", "groups.keyword", "Groups", size=10, missingBucket=True,
+                     missingBucketLabel="(no groups)")])
+
+    title = "OPA: decisions over time"
+    put("visualization", "opa-decisions-over-time", {
+        "title": title,
+        "description": "Checks per time slot: allowed, denied, and column-mask decisions that masked something.",
+        "visState": json.dumps({
+            "title": title,
+            "type": "histogram",
+            "params": {
+                "type": "histogram",
+                "grid": {"categoryLines": False},
+                "categoryAxes": [{"id": "CategoryAxis-1", "type": "category", "position": "bottom", "show": True,
+                                  "style": {}, "scale": {"type": "linear"}, "labels": {"show": True, "filter": True, "truncate": 100},
+                                  "title": {}}],
+                "valueAxes": [{"id": "ValueAxis-1", "name": "LeftAxis-1", "type": "value", "position": "left", "show": True,
+                               "style": {}, "scale": {"type": "linear", "mode": "normal"},
+                               "labels": {"show": True, "rotate": 0, "filter": False, "truncate": 100},
+                               "title": {"text": "Checks"}}],
+                "seriesParams": [{"show": True, "type": "histogram", "mode": "stacked",
+                                  "data": {"label": "Checks", "id": "1"}, "valueAxis": "ValueAxis-1",
+                                  "drawLinesBetweenPoints": True, "lineWidth": 2, "showCircles": True}],
+                "addTooltip": True, "addLegend": True, "legendPosition": "right", "times": [],
+                "addTimeMarker": False, "labels": {"show": False}, "thresholdLine": {"show": False},
+            },
+            "aggs": [
+                metric("1", "count", "Checks"),
+                {"id": "2", "enabled": True, "type": "date_histogram", "schema": "segment",
+                 "params": {"field": "timestamp", "useNormalizedOpenSearchInterval": True, "interval": "auto",
+                            "drop_partials": False, "min_doc_count": 1, "extended_bounds": {}}},
+                {"id": "3", "enabled": True, "type": "filters", "schema": "group", "params": {"filters": [
+                    {"input": {"query": "allowed:true", "language": "kuery"}, "label": "allowed"},
+                    {"input": {"query": "allowed:false", "language": "kuery"}, "label": "denied"},
+                    {"input": {"query": "masks.column:*", "language": "kuery"}, "label": "masked columns"},
+                ]}},
+            ],
+        }),
+        "uiStateJSON": json.dumps({"vis": {"colors": {"allowed": "#54B399", "denied": "#E7664C",
+                                                      "masked columns": "#D6BF57"}}}),
+        "version": 1,
+        "kibanaSavedObjectMeta": source(),
+    }, INDEX_REF)
+
+    # --- 2. Query drill-down -----------------------------------------------------------------
+    table_vis("opa-checks-per-query", "OPA: checks per query",
+              "Latest Trino queries and how many authorization checks they caused. Click a query ID "
+              "to filter the dashboard on it. ExecuteQuery checks carry no query ID and are not counted.",
+              "query_id:*",
+              [metric("1", "count", "Checks"),
+               metric("2", "max", "Time", "timestamp"),
+               metric("4", "cardinality", "Tables", "table.keyword"),
+               metric("5", "cardinality", "Masked columns", "masks.column.keyword"),
+               terms("3", "query_id.keyword", "Query ID", size=20, order_by="2"),
+               terms("6", "user.keyword", "User", size=1)])
+
+    controls = [("user.keyword", "User"), ("query_id.keyword", "Query ID"), ("table.keyword", "Table")]
+    title = "OPA: filters"
+    put("visualization", "opa-filters", {
+        "title": title,
+        "visState": json.dumps({
+            "title": title,
+            "type": "input_control_vis",
+            "params": {
+                "controls": [{"id": str(i), "fieldName": f, "label": label, "type": "list", "parent": "",
+                              "indexPatternRefName": f"control_{i}_index_pattern",
+                              "options": {"type": "terms", "multiselect": True, "dynamicOptions": True,
+                                          "size": 20, "order": "desc"}}
+                             for i, (f, label) in enumerate(controls)],
+                "updateFiltersOnChange": True, "useTimeFilter": True, "pinFilters": False,
+            },
+            "aggs": [],
+        }),
+        "uiStateJSON": "{}",
+        "version": 1,
+        "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query": {"query": "", "language": "kuery"}, "filter": []})},
+    }, [{"name": f"control_{i}_index_pattern", "type": "index-pattern", "id": "opa-decisions"} for i in range(len(controls))])
+
+    # --- Dashboard ---------------------------------------------------------------------------
+    layout = [  # (type, id, x, y, w, h)
+        ("visualization", "opa-filters", 0, 0, 48, 6),
+        ("visualization", "opa-masked-columns", 0, 6, 24, 14),
+        ("visualization", "opa-denials", 24, 6, 24, 14),
+        ("visualization", "opa-decisions-over-time", 0, 20, 24, 14),
+        ("visualization", "opa-checks-per-query", 24, 20, 24, 14),
+        ("search", "opa-decisions-chronological", 0, 34, 48, 20),
+    ]
+    panels, refs = [], []
+    for i, (kind, obj_id, x, y, w, h) in enumerate(layout):
+        panels.append({"version": "3.4.0", "gridData": {"x": x, "y": y, "w": w, "h": h, "i": str(i + 1)},
+                       "panelIndex": str(i + 1), "embeddableConfig": {}, "panelRefName": f"panel_{i}"})
+        refs.append({"name": f"panel_{i}", "type": kind, "id": obj_id})
+    put("dashboard", "opa-decisions", {
         "title": "OPA decisions",
-        "description": "Authorization decisions of OPA for Trino, one document per decision. "
-                       "Filter by query_id to see all decisions of one query.",
-        "columns": ["message", "query_id", "groups", "masks.column", "resource_info.has_owner",
-                    "resource_info.column_tags.tags"],
-        "sort": [["timestamp", "desc"]],
-        "kibanaSavedObjectMeta": {
-            "searchSourceJSON": json.dumps({
-                "query": {"query": "", "language": "kuery"},
-                "filter": [],
-                "indexRefName": "kibanaSavedObjectMeta.searchSourceJSON.index",
-            }),
-        },
-    }, [{"name": "kibanaSavedObjectMeta.searchSourceJSON.index", "type": "index-pattern", "id": "opa-decisions"}])
+        "description": "Who saw what, and why: OPA's authorization decisions for Trino with the Keycloak "
+                       "groups and OpenMetadata metadata they were based on. Technical users (admin, "
+                       "cockpit) are filtered out by the dashboard query.",
+        "hits": 0,
+        "panelsJSON": json.dumps(panels),
+        "optionsJSON": json.dumps({"hidePanelTitles": False, "useMargins": True}),
+        "version": 1,
+        "timeRestore": True,
+        "timeFrom": "now-24h",
+        "timeTo": "now",
+        "refreshInterval": {"pause": False, "value": 30000},
+        "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
+            "query": {"query": HUMANS, "language": "kuery"}, "filter": []})},
+    }, refs)
     print("Done")
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-dashboards-v1
+  name: configure-dashboards-v2
   namespace: platform
 spec:
   backoffLimit: 20
