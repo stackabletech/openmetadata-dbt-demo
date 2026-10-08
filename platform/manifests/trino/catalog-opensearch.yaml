@@ -1,0 +1,41 @@
+---
+# Read access to the OpenSearch indices (schema `default`: one table per index, e.g. the
+# product logs `"logs-2026.10.08"` and OPA decisions `"logs-opa-decisions-2026.10.08"`;
+# wildcards like `"logs-opa-decisions-*"` work too). Connects as the read-only OpenSearch user
+# `trino` (role readall). OPA only grants this catalog to admins (rego-trino-policies.yaml).
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: opensearch
+  namespace: platform
+  labels:
+    trino: trino
+spec:
+  connector:
+    generic:
+      connectorName: opensearch
+      properties:
+        opensearch.host:
+          value: simple-opensearch-nodes-default.platform.svc.cluster.local
+        opensearch.port:
+          value: "9200"
+        opensearch.default-schema-name:
+          value: default
+        # OpenSearch's certificate is issued by the secret-operator CA (SecretClass `tls`), which
+        # is in Trino's client truststore; the service name above is in the certificate.
+        opensearch.tls.enabled:
+          value: "true"
+        opensearch.tls.truststore-path:
+          value: /stackable/client_tls/truststore.p12
+        opensearch.tls.truststore-password:
+          value: changeit
+        opensearch.security:
+          value: PASSWORD
+        opensearch.auth.user:
+          valueFromSecret:
+            name: opensearch-trino-credentials
+            key: username
+        opensearch.auth.password:
+          valueFromSecret:
+            name: opensearch-trino-credentials
+            key: password

@@ -25,6 +25,9 @@ stringData:
       backend_roles:
       - openmetadata
       description: OpenMetadata search backend
+    trino:
+      hash: $2y$10$28JGXR0AqaV9gK2V.i7kNOu07E4526hHCykNWB664TovUWvVV12q2
+      description: Trino catalog `opensearch` (read-only)
     logs:
       hash: $2y$10$LnPJaCbfHJYASAkEhwFDzuEDAs3YngxuL7m243O7Wa7jaD6QiRqTy
       backend_roles:
@@ -78,6 +81,9 @@ stringData:
       reserved: false
       backend_roles:
       - viewer
+      # Trino catalog `opensearch`
+      users:
+      - trino
     kibana_server:
       reserved: true
       users:

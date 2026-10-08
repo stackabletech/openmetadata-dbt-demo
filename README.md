@@ -148,6 +148,7 @@ just dbt-run             # Run dbt models locally (requires Trino access)
 | `hive` | Hive | Hive Metastore (PostgreSQL) | HDFS |
 | `hive-iceberg` | Iceberg | Hive Metastore (PostgreSQL) | HDFS |
 | `data2day` | Iceberg (REST, OIDC) | Lakekeeper | GarageFS (S3) |
+| `opensearch` | OpenSearch (read-only, admins only) | — | OpenSearch indices (product logs, OPA decisions, OpenMetadata search) |
 
 ### dbt Project (TPC-H)
 
