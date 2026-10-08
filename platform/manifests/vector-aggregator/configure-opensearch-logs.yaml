@@ -1,0 +1,139 @@
+---
+# Marks the list-valued fields of the logs-* indices for Trino's OpenSearch connector (catalog
+# `opensearch`). OpenSearch has no array type, so the connector reads a field as a single value
+# unless the index mapping's `_meta.trino.<field>.isArray` says otherwise, and then fails on
+# lists ("Expected a string or numeric value for field 'errors'"). Lists come from the Stackable
+# Vector agent (`errors`) and the OPA decision parser in the vector-aggregator.
+#
+# Sets the markers on the existing indices and, via an index template, on every new daily index.
+# Idempotent. Runs as the `logs` user (role logs_writer).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configure-opensearch-logs-script
+  namespace: platform
+data:
+  configure.py: |
+    import base64
+    import json
+    import os
+    import ssl
+    import sys
+    import time
+    import urllib.error
+    import urllib.request
+
+    URL = "https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"
+    AUTH = "Basic " + base64.b64encode(
+        f"{os.environ['OPENSEARCH_USER']}:{os.environ['OPENSEARCH_PASSWORD']}".encode()
+    ).decode()
+    CTX = ssl.create_default_context(cafile="/stackable/tls/ca.crt")
+
+    ARRAY = {"isArray": True}
+    TRINO_META = {
+        # Stackable Vector agent: parse errors of a log line
+        "errors": ARRAY,
+        # OPA decision parser (logs-opa-decisions-*)
+        "groups": ARRAY,
+        "columns": ARRAY,
+        "resources": ARRAY,
+        "allowed_resources": ARRAY,
+        "denied_resources": ARRAY,
+        "row_filters": ARRAY,
+        "masks": ARRAY,
+        "resource_info": {
+            "isArray": True,
+            "owners": ARRAY,
+            "tags": ARRAY,
+            "column_tags": {"isArray": True, "tags": ARRAY},
+        },
+    }
+    TEMPLATE = "logs-trino-meta"
+    PRIORITY = 100
+
+
+    def call(method, path, body=None):
+        req = urllib.request.Request(
+            URL + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={"Authorization": AUTH, "Content-Type": "application/json"},
+            method=method,
+        )
+        with urllib.request.urlopen(req, context=CTX, timeout=30) as resp:
+            return json.loads(resp.read().decode() or "{}")
+
+
+    def retry(what, fn):
+        # The role may not be active yet right after a security config change (OpenSearch restarts)
+        for i in range(60):
+            try:
+                return fn()
+            except Exception as e:
+                detail = e.read().decode()[:300] if isinstance(e, urllib.error.HTTPError) else e
+                print(f"{what} failed ({i + 1}/60): {detail}")
+                time.sleep(10)
+        sys.exit(f"{what} did not succeed")
+
+
+    templates = retry("Listing index templates", lambda: call("GET", "/_index_template"))
+    for t in templates.get("index_templates", []):
+        it = t["index_template"]
+        if t["name"] != TEMPLATE and it.get("priority", 0) >= PRIORITY and any(
+            p in ("*", "logs-*") or p.startswith("logs") for p in it["index_patterns"]
+        ):
+            print(f"WARNING: index template {t['name']} ({it['index_patterns']}, priority "
+                  f"{it.get('priority')}) may take precedence over {TEMPLATE}")
+
+    retry("Writing the index template", lambda: call("PUT", f"/_index_template/{TEMPLATE}", {
+        "index_patterns": ["logs-*"],
+        "priority": PRIORITY,
+        "template": {"mappings": {"_meta": {"trino": TRINO_META}}},
+        "_meta": {"description": "Array markers for Trino's OpenSearch connector"},
+    }))
+    print(f"Index template {TEMPLATE} written")
+
+    # Existing indices; allow_no_indices so that a fresh cluster without logs yet is fine
+    result = retry("Updating existing indices", lambda: call(
+        "PUT", "/logs-*/_mapping?allow_no_indices=true", {"_meta": {"trino": TRINO_META}}))
+    print(f"Existing logs-* indices updated: {result}")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-opensearch-logs-v1
+  namespace: platform
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: python:3.12-slim # renovate: datasource=docker depName=python
+          command: ["python", "-u", "/scripts/configure.py"]
+          envFrom:
+            - secretRef:
+                name: opensearch-logs-credentials
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: tls
+              mountPath: /stackable/tls
+      volumes:
+        - name: script
+          configMap:
+            name: configure-opensearch-logs-script
+        # CA of the secret-operator SecretClass `tls`, which issued OpenSearch's certificate
+        - name: tls
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/scope: pod
+              spec:
+                storageClassName: secrets.stackable.tech
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "1"
