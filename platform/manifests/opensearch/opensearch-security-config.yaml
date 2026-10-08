@@ -73,6 +73,9 @@ stringData:
       cluster_permissions:
         - cluster_monitor
         - cluster_composite_ops
+        # Index template for logs-* with the `_meta.trino` array markers, written by the Job
+        # in platform/manifests/vector-aggregator/configure-opensearch-logs.yaml
+        - "indices:admin/index_template/*"
       index_permissions:
         - index_patterns: ["logs-*"]
           allowed_actions:
