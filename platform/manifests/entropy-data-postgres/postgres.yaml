@@ -1,0 +1,73 @@
+---
+# Entropy Data needs the pgvector extension, which the Bitnami PostgreSQL image used by
+# the other components does not ship. Hence a small dedicated StatefulSet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: entropy-data-postgres
+  namespace: shared
+spec:
+  selector:
+    app.kubernetes.io/name: entropy-data-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: entropy-data-postgres
+  namespace: shared
+spec:
+  serviceName: entropy-data-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: entropy-data-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: entropy-data-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16 # renovate: datasource=docker depName=pgvector/pgvector
+          env:
+            - name: POSTGRES_DB
+              value: entropydata
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: entropy-data-database
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: entropy-data-database
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d entropydata"]
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

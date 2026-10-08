@@ -1,8 +1,10 @@
 ---
+# Entropy Data needs the pgvector extension, which the Bitnami PostgreSQL image of the
+# postgres ApplicationSet does not ship. Hence a small dedicated StatefulSet.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: lakekeeper-init
+  name: entropy-data-postgres
   namespace: deployment
   annotations:
     argocd.argoproj.io/sync-wave: "1"
@@ -10,11 +12,11 @@ spec:
   project: dbt-openmetadata-demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: platform
+    namespace: shared
   source:
     repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
     targetRevision: "feat/entropy"
-    path: platform/manifests/lakekeeper-init/
+    path: platform/manifests/entropy-data-postgres/
   syncPolicy:
     syncOptions:
       - CreateNamespace=true

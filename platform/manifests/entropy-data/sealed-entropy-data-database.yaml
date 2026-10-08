@@ -1,0 +1,19 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  annotations:
+    sealedsecrets.bitnami.com/cluster-wide: "true"
+  name: entropy-data-database
+  namespace: platform
+spec:
+  encryptedData:
+    password: AgAfCNZrJCznjSR1E1s559BCeR/WW84L9RdIpiL0DLq4uixj9O94gOXVTTIYNAsYFLVa0SFMEnbhWYfxQHg2Ue/zZ988PXLkc7jtS972qKaXjJgZMJQOlc5vZ23WeTepOlF2/JcdF91cDVmD0GhfGKrgqB2Wkt0iNbyDV0EYOUJpbZH66UV2c1ZX2wA7HRaLC9uqQG+LWvfp8l9br2vh7LbhXe9WDdmjzClgx2jtTD22paPNGcE0/IhZS+hgUhveKj75Bxdm1pfiBQicRbeA47Bt2qdEmKES6DLfymdo0uEqHjbCXx79qFZNpe9p4NXoFad/6/odCZbMgdNa4QCnmPF/W++iFoE1Lv47MvxYb3SigWzPs63G0Y2WpMqnxSrSNyBUbFocjhd/aPMiKNCHLnOx8atr3Qx7KgQGIa4jixBqtKAVA2N6HMKY9XKiBx9UV+TJKnQaXgEmG8yem/qgDv/g9Bemc4aATD/cc2hkhCOPZkMobCDYSv2Mmp6NOIwzRhD1w+m5qbBbUlhMqQQIcDq1N63B0VThF6Na/ImAR+6ytEFHLL4mEq917+tfx79pK4PyOfdqub/rsUlPdee8/WlgchKwsgafCIaMkUOpMY50GIhNgiCP+D1Rrw9jwf7r7Rgl2FSuT0+NkISBm1Qzt/wAZevgomwqTS/eEVRlJhC4Ex8akCkyvyTaogicsoErK/66cTrrmtspkiyyKJchqTCSr2Qf+s4JaSE=
+    username: AgCg296jqxkcRCYIMXS6r6FbcivUeu+LgG9O9FxGj09993IN/B+U28TX3Ajjv49yyNuP9ekvs9K8JsDIEF/QyJ28erB/TzmyMToan7RXf6lQquszUomIv9LK0Io7xcWPDWA6b5L+szwmA0KLKbRi9Z9Se3yRYDsI2KYDVwlgzI0jewhWgDLljQHmhWwJf/lOnzZwhrUNVmPdgs8sOH15nxKUk62PAkZoxaehhbF+BJz+nXA6Uba2j71kfEyDtnj4SyaUTipOfpHreB8N/JXjOgKZ8is6SSLrPPhIIO7GiZQZHlvJCt2HARz4HbpcJ5UydiZzni3eMGKXs/ti6VE4MxxH/vOxsHvr2edeOTqjhnTJOMvLCKVu52buEVZxGgv0IcOVw/hyOVnxJfI6BDLdta1tPdL2Fp+Td2m0u7psBooEBKg1yyj1aDSlqBrA696P5ffHk24bGL6FCzHqNh1dUUeed6BhiTyrIlHK9QxWVAvBIt2vNK5xE0M62qlpNPoicQuvxi2j71nts6ypscSB9QVV4xeEI9QiNs6oygSgakoBGEM4uJvZX7cpagoEEdmcMEVN5W+hwTXdfTkFfUbJSF1Rtx4wXLVR4OEmoZ0L3hy/TEPyUu6bsfPTDvRrIckesKWDrf/OjfAfOh/hLEgcJTFyBFWxhJ4cuD69FiVTMhW0k7CsEUIs/wYgTdEHNUs/4DltC8AqOpW2HB0iqA==
+  template:
+    metadata:
+      annotations:
+        sealedsecrets.bitnami.com/cluster-wide: "true"
+      name: entropy-data-database
+      namespace: platform
+    type: Opaque

@@ -1,0 +1,12 @@
+---
+# Stackable CA as ConfigMap, imported into Entropy Data's JVM truststore so the
+# Trino integration can talk to the TLS-enabled Trino coordinator.
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: TrustStore
+metadata:
+  name: entropy-data-tls-truststore
+  namespace: platform
+spec:
+  secretClassName: tls
+  format: tls-pem
+  targetKind: ConfigMap

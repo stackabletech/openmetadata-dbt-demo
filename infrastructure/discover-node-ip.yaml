@@ -73,6 +73,8 @@ spec:
                   --from-literal=landing-base-url="http://${NODE_IP}:30088" \
                   --from-literal=landing-redirect-uri="http://${NODE_IP}:30088/oauth2/callback" \
                   --from-literal=keycloak-host="${NODE_IP}:30900" \
+                  --from-literal=entropy-data-base-url="http://${NODE_IP}:30808" \
+                  --from-literal=entropy-data-host="${NODE_IP}:30808" \
                   --from-literal=ISSUER_URL="http://${NODE_IP}:30900/realms/stackable-demo" \
                   --from-literal=ARGOCD_BASE_URL="http://${NODE_IP}:30080" \
                   --from-literal=ARGOCD_REDIRECT_URI="http://${NODE_IP}:30080/auth/callback" \

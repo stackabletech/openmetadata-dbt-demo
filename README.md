@@ -105,6 +105,7 @@ After deployment, these services are accessible (via NodePort or LoadBalancer de
 | Forgejo | `stackable` / `stackable` |
 | Airflow Webserver | `admin` / `admin` |
 | OpenMetadata | `admin@open-metadata.org` / `admin` |
+| Entropy Data | Keycloak SSO: `demo-admin` (superadmin) / `demo-user`, organization `myorga` |
 | Trino | `admin` (no password, HTTPS) |
 | NiFi | See sealed secret |
 
@@ -128,6 +129,7 @@ just dbt-run             # Run dbt models locally (requires Trino access)
 | Component | Description |
 |-----------|-------------|
 | **[OpenMetadata](https://open-metadata.org/)** | Data catalog and metadata governance |
+| **[Entropy Data](https://www.entropy-data.com/)** | Data product marketplace (Community Edition, [Helm chart](https://github.com/entropy-data/entropy-data-helm)); syncs the `tpch` and `data2day` Trino catalogs as assets. Setup adapted from [entropy-data/entropydata-dbt-demo](https://github.com/entropy-data/entropydata-dbt-demo) |
 | **[Apache Superset](https://superset.apache.org/)** | Data exploration and visualization |
 | **[dbt Core](https://www.getdbt.com/)** | Data transformation framework (TPC-H models) |
 | **[Astronomer Cosmos](https://astronomer.github.io/astronomer-cosmos/)** | dbt orchestration in Airflow |
@@ -202,6 +204,9 @@ platform/                          # Everything ArgoCD manages after bootstrap
     ├── lakekeeper-init/           # Lakekeeper bootstrap + warehouse creation
     ├── openmetadata-init/         # OpenMetadata service + pipeline registration
     ├── openmetadata/              # OpenMetadata sealed secrets
+    ├── entropy-data/              # Entropy Data NodePort, CA truststore, sealed DB secret
+    ├── entropy-data-postgres/     # pgvector PostgreSQL for Entropy Data (namespace shared)
+    ├── entropy-data-init/         # Org myorga, SSO auto join, API key, team, Trino integration
     ├── superset/                  # Apache Superset deployment
     ├── superset-postgres/         # PostgreSQL for Superset
     └── ...                        # HDFS, Hive, Kafka, NiFi, ZooKeeper, etc.

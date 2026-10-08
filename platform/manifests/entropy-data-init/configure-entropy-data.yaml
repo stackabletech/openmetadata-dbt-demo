@@ -1,0 +1,517 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: entropy-data-init-script
+  namespace: platform
+data:
+  configure.py: |
+    #!/usr/bin/env python3
+    """Bootstrap Entropy Data (Community Edition) for the demo.
+
+    1. Log in as the Keycloak user demo-admin (a superadmin) through Entropy Data's OIDC flow,
+       so the organization is bound to Keycloak, and enable SSO auto join so every Keycloak
+       user becomes a member on first login.
+    2. Create the organization and an organization-scoped API key (web forms, CE has no
+       provisioning API for this) and store the key in the Secret entropy-data-api-key.
+    3. Use the API key to create the team that owns the demo assets.
+    4. Set up the Trino integration (asset sync of catalogs, schemas and tables) and run it once.
+
+    Idempotent: re-runs reuse the stored API key as long as it is still valid.
+    """
+
+    import base64
+    import html
+    import http.cookiejar
+    import json
+    import os
+    import re
+    import ssl
+    import sys
+    import time
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    from html.parser import HTMLParser
+
+    ED_INTERNAL = os.environ.get("ED_INTERNAL_URL", "http://entropy-data:8080")
+    ED_PUBLIC = os.environ["ED_PUBLIC_URL"]  # e.g. http://<node-ip>:30808, the Keycloak SSO host
+    KC_USERNAME = os.environ.get("KC_USERNAME", "demo-admin")
+    KC_PASSWORD = os.environ["KC_PASSWORD"]
+    ORG_VANITY = os.environ.get("ORG_VANITY_URL", "myorga")
+    ORG_NAME = os.environ.get("ORG_NAME", "myorga")
+    SECRET_NAME = os.environ.get("API_KEY_SECRET", "entropy-data-api-key")
+    TRINO_URL = os.environ.get("TRINO_URL", "https://trino-coordinator:8443")
+    TRINO_USER = os.environ.get("TRINO_USER", "admin")
+    TRINO_PASSWORD = os.environ["TRINO_PASSWORD"]
+    INTEGRATION_ID = "trino"
+    MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "90"))
+    RETRY_INTERVAL = int(os.environ.get("RETRY_INTERVAL", "10"))
+
+    SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+
+
+    # --- Kubernetes Secret helpers -------------------------------------------------
+
+    def k8s(method, path, body=None):
+        token = open(f"{SA_DIR}/token").read()
+        ctx = ssl.create_default_context(cafile=f"{SA_DIR}/ca.crt")
+        req = urllib.request.Request(
+            f"https://kubernetes.default.svc{path}",
+            data=json.dumps(body).encode() if body else None,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method=method,
+        )
+        with urllib.request.urlopen(req, context=ctx) as resp:
+            return json.loads(resp.read().decode())
+
+
+    def namespace():
+        return open(f"{SA_DIR}/namespace").read().strip()
+
+
+    def read_secret(name):
+        try:
+            secret = k8s("GET", f"/api/v1/namespaces/{namespace()}/secrets/{name}")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return {}
+            raise
+        return {k: base64.b64decode(v).decode() for k, v in (secret.get("data") or {}).items()}
+
+
+    def write_secret(name, data):
+        ns = namespace()
+        body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": name, "namespace": ns},
+            "type": "Opaque",
+            "stringData": data,
+        }
+        try:
+            k8s("POST", f"/api/v1/namespaces/{ns}/secrets", body)
+        except urllib.error.HTTPError as e:
+            if e.code != 409:
+                raise
+            k8s("PUT", f"/api/v1/namespaces/{ns}/secrets/{name}", body)
+        print(f"  Stored in Secret {ns}/{name}.")
+
+
+    def read_api_key():
+        return read_secret(SECRET_NAME).get("api-key")
+
+
+    def store_api_key(api_key):
+        write_secret(SECRET_NAME, {"api-key": api_key, "organization": ORG_VANITY})
+
+
+    # --- Entropy Data REST API -----------------------------------------------------
+
+    def api(path, method="GET", data=None, api_key=None):
+        req = urllib.request.Request(
+            f"{ED_INTERNAL}/api{path}",
+            data=json.dumps(data).encode() if data is not None else None,
+            headers={"Content-Type": "application/json", "x-api-key": api_key},
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                body = resp.read().decode()
+                return json.loads(body) if body else None
+        except urllib.error.HTTPError as e:
+            print(f"  HTTP {e.code} for {method} {path}: {e.read().decode()}", file=sys.stderr)
+            raise
+
+
+    def api_key_valid(api_key):
+        try:
+            api("/teams", api_key=api_key)
+            return True
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return False
+            raise
+
+
+    # --- Browser-style session (OIDC login + web forms) ----------------------------
+
+    class PlainHttpCookiePolicy(http.cookiejar.DefaultCookiePolicy):
+        """Also send Secure cookies over http. Keycloak marks its cookies Secure for *.localhost
+        hosts (a secure context for browsers), and everything in the demo runs over plain http."""
+
+        def return_ok_secure(self, cookie, request):
+            return True
+
+
+    class Browser:
+        def __init__(self):
+            self.opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar(PlainHttpCookiePolicy()))
+            )
+
+        def get(self, url):
+            with self.opener.open(url) as resp:
+                return resp.geturl(), resp.status, resp.read().decode()
+
+        def post(self, url, fields):
+            data = urllib.parse.urlencode(fields, doseq=True).encode()
+            req = urllib.request.Request(url, data=data, method="POST")
+            with self.opener.open(req) as resp:
+                return resp.geturl(), resp.status, resp.read().decode()
+
+
+    def csrf(page):
+        m = (
+            re.search(r'name="_csrf"\s+value="([^"]+)"', page)
+            or re.search(r'value="([^"]+)"\s+name="_csrf"', page)
+            or re.search(r'<meta\s+name="_csrf"\s+content="([^"]+)"', page)
+        )
+        if not m:
+            raise RuntimeError("No CSRF token found on page")
+        return html.unescape(m.group(1))
+
+
+    def sso_login(browser):
+        print(f"Logging in to {ED_PUBLIC} as Keycloak user {KC_USERNAME} ...")
+        url, _, page = browser.get(f"{ED_PUBLIC}/oauth2/authorization/azuresso")
+        m = re.search(r'<form[^>]+id="kc-form-login"[^>]+action="([^"]+)"', page) or re.search(
+            r'<form[^>]+action="([^"]+)"[^>]+id="kc-form-login"', page
+        )
+        if not m:
+            raise RuntimeError(f"Keycloak login form not found at {url}")
+        url, _, _ = browser.post(
+            html.unescape(m.group(1)),
+            {"username": KC_USERNAME, "password": KC_PASSWORD, "credentialId": ""},
+        )
+        if not url.startswith(ED_PUBLIC):
+            raise RuntimeError(f"OIDC login did not return to Entropy Data (ended at {url})")
+        print(f"  Logged in (landed on {url}).")
+
+
+    def ensure_organization(browser):
+        try:
+            browser.get(f"{ED_PUBLIC}/{ORG_VANITY}/settings/api-keys")
+            print(f"  Organization '{ORG_VANITY}' already exists.")
+            return
+        except urllib.error.HTTPError as e:
+            if e.code not in (403, 404):
+                raise
+        print(f"Creating organization '{ORG_VANITY}' ...")
+        _, _, page = browser.get(f"{ED_PUBLIC}/welcome")
+        # host must be sent as pre-filled by the form; an empty value fails form binding silently
+        host = html.unescape(re.search(r'name="host" value="([^"]*)"', page).group(1))
+        url, _, _ = browser.post(
+            f"{ED_PUBLIC}/organizations/save",
+            {"fullName": ORG_NAME, "vanityUrl": ORG_VANITY, "host": host, "_csrf": csrf(page)},
+        )
+        if not url.startswith(f"{ED_PUBLIC}/{ORG_VANITY}"):
+            raise RuntimeError(f"Organization was not created (ended at {url})")
+        print(f"  Organization created (landed on {url}).")
+
+
+    class FormParser(HTMLParser):
+        """Collects the submittable fields of the first <form> whose action matches."""
+
+        def __init__(self, action):
+            super().__init__()
+            self.action, self.inside, self.fields = action, False, []
+            self.select, self.textarea = None, None
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "form" and a.get("action", "").rstrip("/") == self.action:
+                self.inside = True
+            if not self.inside:
+                return
+            if tag == "input" and a.get("name") and not a.get("disabled"):
+                if a.get("type") in ("checkbox", "radio") and "checked" not in a:
+                    return
+                self.fields.append((a["name"], a.get("value", "on" if a.get("type") == "checkbox" else "")))
+            elif tag == "select" and a.get("name"):
+                self.select = a["name"]
+            elif tag == "option" and self.select and "selected" in a:
+                self.fields.append((self.select, a.get("value", "")))
+            elif tag == "textarea" and a.get("name"):
+                self.textarea = [a["name"], ""]
+
+        def handle_data(self, data):
+            if self.textarea:
+                self.textarea[1] += data
+
+        def handle_endtag(self, tag):
+            if tag == "form" and self.inside:
+                self.inside = False
+            elif tag == "select":
+                self.select = None
+            elif tag == "textarea" and self.textarea:
+                self.fields.append(tuple(self.textarea))
+                self.textarea = None
+
+
+    def enable_sso_auto_join(browser):
+        """Superadmin-only: let every Keycloak user join the organization on first login."""
+        _, _, page = browser.get(f"{ED_PUBLIC}/admin/organizations")
+        m = re.search(r'href="/admin/organizations/([0-9a-f-]{36})"[^<]*(?:<[^>]*>[^<]*){0,6}?\b' + re.escape(ORG_VANITY) + r'\b', page)
+        if not m:
+            raise RuntimeError(f"Organization '{ORG_VANITY}' not found in the admin console")
+        action = f"/admin/organizations/{m.group(1)}"
+        _, _, page = browser.get(f"{ED_PUBLIC}{action}")
+        parser = FormParser(action)
+        parser.feed(page)
+        fields = [(k, v) for k, v in parser.fields if k != "ssoAutoJoin"] + [("ssoAutoJoin", "true")]
+        browser.post(f"{ED_PUBLIC}{action}", fields)
+        _, _, page = browser.get(f"{ED_PUBLIC}{action}")
+        if not re.search(r'<input[^>]*name="ssoAutoJoin"[^>]*checked', page):
+            raise RuntimeError("Could not enable SSO auto join")
+        print(f"  SSO auto join enabled for '{ORG_VANITY}'.")
+
+
+    def create_api_key(browser, scope="organization", display_name=None):
+        print(f"Creating {scope} API key ...")
+        _, _, page = browser.get(f"{ED_PUBLIC}/{ORG_VANITY}/settings/api-keys/add")
+        fields = {
+            "displayName": display_name or f"demo-bootstrap-{int(time.time())}",
+            "scope": scope,
+            "expiresAt": "",
+            "_csrf": csrf(page),
+        }
+        if scope == "organization":
+            fields["permissionMode"] = "all"
+        _, _, page = browser.post(f"{ED_PUBLIC}/{ORG_VANITY}/settings/api-keys/save", fields)
+        m = re.search(r'<input[^>]*x-model\.fill="apiKey"[^>]*>', page)
+        value = re.search(r'value="([^"]+)"', m.group(0)) if m else None
+        if not value:
+            raise RuntimeError("API key not found in response page")
+        return html.unescape(value.group(1))
+
+
+    # --- Demo content ----------------------------------------------------------------
+
+    TEAM = {
+        "id": "analytics-engineering",
+        "name": "Analytics Engineering",
+        "type": "Team",
+        "description": "Owns the dbt models in dags/dbt/tpch_demo/.",
+    }
+
+    def provision(api_key):
+        print(f"Creating team '{TEAM['id']}' ...")
+        api(f"/teams/{TEAM['id']}", method="PUT", data=TEAM, api_key=api_key)
+
+
+    TRINO_INTEGRATION = {
+        "source": "trino",
+        "name": "Trino",
+        "description": "Catalogs, schemas and tables of the demo Trino cluster.",
+        "scheduleExpression": "0 0 2 * * *",  # daily, 02:00 UTC
+        "assetOwnerTeamExternalId": TEAM["id"],
+        "filters": {
+            "catalogIncludePatterns": ["tpch", "data2day"],
+            "schemaIncludePatterns": ["tiny", "demo"],
+        },
+    }
+
+
+    def create_trino_integration_via_web(browser):
+        """Fallback for releases without PUT /api/integrations/ingest/{id} (added after 2.1.5)."""
+        cfg = TRINO_INTEGRATION
+        _, _, page = browser.get(f"{ED_PUBLIC}/{ORG_VANITY}/settings/integrations/add/start")
+        fields = [
+            ("_csrf", csrf(page)),
+            ("source", cfg["source"]),
+            ("name", cfg["name"]),
+            ("externalId", INTEGRATION_ID),
+            ("description", cfg["description"]),
+            ("enabled", "true"),
+            ("assetOwnerTeamExternalId", cfg["assetOwnerTeamExternalId"]),
+            ("credentialsForm.type", "password"),
+            ("credentialsForm.credentials[trinoServerUrl]", TRINO_URL),
+            ("credentialsForm.credentials[trinoUsername]", TRINO_USER),
+            ("credentialsForm.credentials[trinoPassword]", TRINO_PASSWORD),
+            ("filtersForm.filterType", "patterns"),
+            ("scheduleForm.scheduleType", "cron"),
+            ("scheduleForm.cronExpression", cfg["scheduleExpression"]),
+        ]
+        for name, patterns in cfg["filters"].items():
+            fields += [(f"filtersForm.filters[{name}][{i}]", p) for i, p in enumerate(patterns)]
+        url, _, _ = browser.post(f"{ED_PUBLIC}/{ORG_VANITY}/settings/integrations/add", fields)
+        if f"/{ORG_VANITY}/settings/integrations" not in url:
+            raise RuntimeError(f"Creating the Trino integration failed (ended at {url})")
+
+
+    def setup_trino_integration(api_key):
+        print(f"Creating/updating Trino integration '{INTEGRATION_ID}' ...")
+        try:
+            api(
+                f"/integrations/ingest/{INTEGRATION_ID}",
+                method="PUT",
+                data={
+                    "configuration": TRINO_INTEGRATION,
+                    "credential": {
+                        "type": "password",
+                        "details": {
+                            "trinoServerUrl": TRINO_URL,
+                            "trinoUsername": TRINO_USER,
+                            "trinoPassword": TRINO_PASSWORD,
+                        },
+                    },
+                    "enabled": True,
+                },
+                api_key=api_key,
+            )
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            try:
+                api(f"/integrations/{INTEGRATION_ID}", api_key=api_key)
+                print("  Integration exists (this release has no update API, leaving it as is).")
+            except urllib.error.HTTPError as e2:
+                if e2.code != 404:
+                    raise
+                print("  This release has no create API, using the integration wizard instead.")
+                browser = Browser()
+                sso_login(browser)
+                create_trino_integration_via_web(browser)
+                print("  Integration created.")
+
+        # Run endpoints: /api/integrations/{id}/... works on 2.1.5 and stays as an alias of /api/integrations/ingest/{id}/...
+        print("Triggering a Trino integration run ...")
+        try:
+            print(f"  {api(f'/integrations/{INTEGRATION_ID}/run', method='POST', api_key=api_key)['message']}")
+        except urllib.error.HTTPError as e:
+            if e.code != 409:  # 409: a run is already in progress, just wait for it
+                raise
+        for _ in range(MAX_RETRIES):
+            time.sleep(RETRY_INTERVAL)
+            try:
+                run = api(f"/integrations/{INTEGRATION_ID}/runs/latest", api_key=api_key)
+            except urllib.error.HTTPError as e:
+                if e.code == 404:  # not picked up yet
+                    continue
+                raise
+            print(f"  Run status: {run['status']} ({run['assetsProcessed']} assets processed)")
+            if run.get("completedAt"):
+                print(
+                    f"  Run finished: {run['status']}, created={run['assetsCreated']} updated={run['assetsUpdated']} "
+                    f"deleted={run['assetsDeleted']} {run.get('message') or ''}"
+                )
+                return
+        print("  WARNING: Trino integration run did not finish in time; check Settings > Integrations.", file=sys.stderr)
+
+
+    def wait_for(url):
+        print(f"Waiting for {url} ...")
+        for i in range(MAX_RETRIES):
+            try:
+                urllib.request.urlopen(url, timeout=10).read()
+                print("  ready.")
+                return
+            except Exception as e:
+                print(f"  Attempt {i + 1}/{MAX_RETRIES}: {e}")
+                time.sleep(RETRY_INTERVAL)
+        sys.exit(f"ERROR: {url} did not become ready.")
+
+
+    def main():
+        wait_for(f"{ED_INTERNAL}/login")
+        api_key = read_api_key()
+        if api_key and api_key_valid(api_key):
+            print("Reusing existing API key.")
+        else:
+            browser = Browser()
+            sso_login(browser)
+            ensure_organization(browser)
+            enable_sso_auto_join(browser)
+            api_key = create_api_key(browser)
+            store_api_key(api_key)
+        provision(api_key)
+        setup_trino_integration(api_key)
+        print(f"Done. Open {ED_PUBLIC}/{ORG_VANITY}")
+
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configure-entropy-data
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configure-entropy-data
+  namespace: platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["entropy-data-api-key"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configure-entropy-data
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: configure-entropy-data
+subjects:
+  - kind: ServiceAccount
+    name: configure-entropy-data
+    namespace: platform
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-entropy-data-v1
+  namespace: platform
+spec:
+  backoffLimit: 50
+  template:
+    spec:
+      serviceAccountName: configure-entropy-data
+      containers:
+        - name: configure
+          image: python:3.12-slim # renovate: datasource=docker depName=python
+          command: ["python", "-u", "/scripts/configure.py"]
+          env:
+            - name: ED_INTERNAL_URL
+              value: "http://entropy-data:8080"
+            - name: ED_PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: entropy-data-base-url
+            # The per-rolegroup headless service is in the TLS certificate's SAN, the
+            # `trino-coordinator` role service is not (see platform/applications/cockpit.yaml).
+            - name: TRINO_URL
+              value: "https://trino-coordinator-default-headless.platform.svc.cluster.local:8443"
+            - name: TRINO_USER
+              value: admin
+            - name: TRINO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: trino-users
+                  key: admin
+            - name: KC_USERNAME
+              value: demo-admin
+            - name: KC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-demo-passwords
+                  key: demo_admin_password
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      restartPolicy: OnFailure
+      volumes:
+        - name: script
+          configMap:
+            name: entropy-data-init-script

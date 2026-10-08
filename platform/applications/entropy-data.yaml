@@ -1,0 +1,121 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: entropy-data
+  namespace: deployment
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  sources:
+    # The chart is not published to a Helm repository, so ArgoCD renders it straight from Git.
+    - repoURL: "https://github.com/entropy-data/entropy-data-helm.git"
+      targetRevision: "474fcb98542c8ef962130b3c5b7ef034057bbfa8" # entropy-data-helm main, incl. #2 (initContainers, extraVolumes)
+      path: .
+      helm:
+        releaseName: entropy-data
+        valuesObject:
+          replicaCount: 1
+          image:
+            name: entropydata/entropy-data-ce
+            tag: "2.1.5" # renovate: datasource=docker depName=entropydata/entropy-data-ce
+          entropydata:
+            host: http://entropy-data:8080 # overridden by APPLICATION_HOST_WEB below
+          database:
+            url: jdbc:postgresql://entropy-data-postgres.shared.svc.cluster.local:5432/entropydata
+            secretName: entropy-data-database
+            usernameKey: username
+            passwordKey: password
+          # No mail server in the demo. Sending fails silently; email verification is not required to log in.
+          smtp:
+            host: localhost
+            port: "25"
+            secretName: ""
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit"
+            - name: APPLICATION_HOST_WEB
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: entropy-data-base-url
+            - name: APPLICATION_SEMANTICS_ENABLED
+              value: "true"
+            # demo-admin from Keycloak gets superadmin rights across all organizations
+            - name: APPLICATION_SUPERADMINS
+              value: demo-admin@stackable.demo
+            # Keycloak OIDC. Entropy Data's generic OIDC login uses the registration id "azuresso",
+            # which is only active for requests whose Host header is listed in APPLICATION_SSO_AZURE_HOSTS.
+            # In-cluster calls via http://entropy-data:8080 (API keys) are not affected.
+            - name: APPLICATION_SSO_AZURE_HOSTS
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: entropy-data-host
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AZURE_ISSUER_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: issuer-url
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURESSO_PROVIDER
+              value: azure
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURESSO_CLIENT_ID
+              value: entropy-data
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURESSO_CLIENT_SECRET
+              value: entropy-data-secret
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURESSO_AUTHORIZATION_GRANT_TYPE
+              value: authorization_code
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURESSO_REDIRECT_URI
+              value: "{baseUrl}/{action}/oauth2/code/{registrationId}"
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURESSO_CLIENT_AUTHENTICATION_METHOD
+              value: client_secret_basic
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_AZURESSO_SCOPE
+              value: openid,profile,email
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          # JDK default CAs plus the Stackable CA (for Trino over HTTPS)
+          initContainers:
+            - name: import-stackable-ca
+              image: entropydata/entropy-data-ce:2.1.5 # same image, ships keytool
+              command:
+                - sh
+                - -c
+                - |
+                  cp "$JAVA_HOME/lib/security/cacerts" /truststore/cacerts
+                  chmod u+w /truststore/cacerts
+                  keytool -importcert -noprompt -alias stackable-ca \
+                    -file /ca/ca.crt -keystore /truststore/cacerts -storepass changeit
+              volumeMounts:
+                - name: stackable-ca
+                  mountPath: /ca
+                  readOnly: true
+                - name: truststore
+                  mountPath: /truststore
+          extraVolumes:
+            - name: stackable-ca
+              configMap:
+                name: entropy-data-tls-truststore
+            - name: truststore
+              emptyDir: {}
+          extraVolumeMounts:
+            - name: truststore
+              mountPath: /truststore
+              readOnly: true
+    - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
+      targetRevision: "feat/entropy"
+      path: platform/manifests/entropy-data/
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true

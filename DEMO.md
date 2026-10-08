@@ -71,6 +71,7 @@ kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}'
 |---|---|
 | Cockpit | 30300 |
 | OpenMetadata | 30585 |
+| Entropy Data (organization `myorga`) | 30808 |
 | Keycloak admin (realm `stackable-demo`) | 30900 |
 
 ## Choreography

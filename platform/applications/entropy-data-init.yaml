@@ -2,10 +2,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: lakekeeper-init
+  name: entropy-data-init
   namespace: deployment
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   project: dbt-openmetadata-demo
   destination:
@@ -14,7 +14,7 @@ spec:
   source:
     repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
     targetRevision: "feat/entropy"
-    path: platform/manifests/lakekeeper-init/
+    path: platform/manifests/entropy-data-init/
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
