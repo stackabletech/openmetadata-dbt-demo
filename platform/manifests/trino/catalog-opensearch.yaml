@@ -21,12 +21,13 @@ spec:
           value: "9200"
         opensearch.default-schema-name:
           value: default
-        # OpenSearch's certificate is issued by the secret-operator CA (SecretClass `tls`), which
-        # is in Trino's client truststore; the service name above is in the certificate.
+        # OpenSearch's certificate is issued by the secret-operator CA of SecretClass `tls`. Trino's
+        # internal TLS truststore holds exactly that CA (client_tls only has the public CAs); the
+        # service name above is in the certificate.
         opensearch.tls.enabled:
           value: "true"
         opensearch.tls.truststore-path:
-          value: /stackable/client_tls/truststore.p12
+          value: /stackable/internal_tls/truststore.p12
         opensearch.tls.truststore-password:
           value: changeit
         opensearch.security:
