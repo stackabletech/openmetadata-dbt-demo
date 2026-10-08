@@ -19,11 +19,14 @@ options:
       # demo-landing link pointing to /auth/login, users in the happy
       # path never see ArgoCD's login UI.
       admin.enabled: "false"
-      # $<configmap>:<key> is resolved by argocd-server at request time
-      # against the named ConfigMap in the same namespace. discover-node-ip
-      # populates oidc-endpoints during stackablectl bootstrap, so the
-      # value is already there when argocd-server first reads it.
-      url: $oidc-endpoints:argocd-base-url
+      # `url` (https://<node-ip>:30080) is not set here: it depends on the node IP,
+      # and argocd-server does not resolve $<secret>:<key> references in `url`.
+      # discover-node-ip patches it into argocd-cm during stackablectl bootstrap.
+      #
+      # $<secret>:<key> in oidc.config is resolved by argocd-server against the
+      # named Secret (labelled app.kubernetes.io/part-of=argocd) in the same
+      # namespace; it does not work with ConfigMaps. discover-node-ip writes the
+      # Secret oidc-endpoints and then restarts argocd-server.
       oidc.config: |
         name: Keycloak
         issuer: $oidc-endpoints:issuer-url

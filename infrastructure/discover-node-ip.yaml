@@ -33,6 +33,42 @@ subjects:
     name: discover-node-ip
     namespace: deployment
 ---
+# Write the oidc-endpoints Secret for argocd-cm and restart argocd-server (see the Job script).
+# Patching argocd-cm is covered by the configmaps rule of the ClusterRole above.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: discover-node-ip-argocd
+  namespace: deployment
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["argocd-server"]
+    verbs: ["get", "patch"]
+  # The oidc-endpoints Secret for argocd-cm (see the Job script). `create` cannot be
+  # restricted by resourceNames.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["oidc-endpoints"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: discover-node-ip-argocd
+  namespace: deployment
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: discover-node-ip-argocd
+subjects:
+  - kind: ServiceAccount
+    name: discover-node-ip
+    namespace: deployment
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -66,8 +102,8 @@ spec:
                   --namespace="$ns" \
                   --from-literal=node-ip="$NODE_IP" \
                   --from-literal=issuer-url="http://${NODE_IP}:30900/realms/stackable-demo" \
-                  --from-literal=argocd-base-url="http://${NODE_IP}:30080" \
-                  --from-literal=argocd-redirect-uri="http://${NODE_IP}:30080/auth/callback" \
+                  --from-literal=argocd-base-url="https://${NODE_IP}:30080" \
+                  --from-literal=argocd-redirect-uri="https://${NODE_IP}:30080/auth/callback" \
                   --from-literal=forgejo-base-url="http://${NODE_IP}:30000" \
                   --from-literal=forgejo-redirect-uri="http://${NODE_IP}:30000/user/oauth2/keycloak/callback" \
                   --from-literal=landing-base-url="http://${NODE_IP}:30088" \
@@ -76,17 +112,30 @@ spec:
                   --from-literal=entropy-data-base-url="http://${NODE_IP}:30808" \
                   --from-literal=entropy-data-host="${NODE_IP}:30808" \
                   --from-literal=ISSUER_URL="http://${NODE_IP}:30900/realms/stackable-demo" \
-                  --from-literal=ARGOCD_BASE_URL="http://${NODE_IP}:30080" \
-                  --from-literal=ARGOCD_REDIRECT_URI="http://${NODE_IP}:30080/auth/callback" \
+                  --from-literal=ARGOCD_BASE_URL="https://${NODE_IP}:30080" \
+                  --from-literal=ARGOCD_REDIRECT_URI="https://${NODE_IP}:30080/auth/callback" \
                   --from-literal=FORGEJO_BASE_URL="http://${NODE_IP}:30000" \
                   --from-literal=FORGEJO_REDIRECT_URI="http://${NODE_IP}:30000/user/oauth2/keycloak/callback" \
                   --from-literal=LANDING_BASE_URL="http://${NODE_IP}:30088" \
                   --from-literal=LANDING_REDIRECT_URI="http://${NODE_IP}:30088/oauth2/callback" \
                   --from-literal=KEYCLOAK_HOST="${NODE_IP}:30900" \
                   --dry-run=client -o yaml | kubectl apply -f -
-                # argocd-cm uses `$oidc-endpoints:<key>` to pull issuer/url from this ConfigMap.
-                # That substitution only fires when the source CM carries the part-of=argocd label,
-                # otherwise the literal "$oidc-endpoints:issuer-url" reaches the OIDC client and
-                # login fails with `unsupported protocol scheme ""`.
-                kubectl label cm oidc-endpoints -n "$ns" app.kubernetes.io/part-of=argocd --overwrite
               done
+              # argocd-cm's oidc.config uses `$oidc-endpoints:issuer-url`. ArgoCD resolves that syntax
+              # only from *Secrets* labelled app.kubernetes.io/part-of=argocd, not from ConfigMaps.
+              # Without this Secret the literal reaches the OIDC client and login fails with
+              # `unsupported protocol scheme ""`. The value is not sensitive.
+              kubectl create secret generic oidc-endpoints \
+                --namespace=deployment \
+                --from-literal=issuer-url="http://${NODE_IP}:30900/realms/stackable-demo" \
+                --dry-run=client -o yaml | kubectl apply -f -
+              kubectl label secret oidc-endpoints -n deployment app.kubernetes.io/part-of=argocd --overwrite
+              # argocd-cm's `url` must be a literal (no $secret:key resolution there), and with SSO
+              # configured argocd-server exits on startup if it is not a valid URL. It must be the
+              # https URL: argocd-server serves TLS and redirects http to https, and SSO rejects a
+              # return URL whose scheme/host/port differs from `url`. stackablectl
+              # installs ArgoCD before this Job runs, so argocd-cm exists and argocd-server is
+              # already up without the Secret and the url: restart it so it starts with both.
+              kubectl -n deployment patch configmap argocd-cm --type merge \
+                -p "{\"data\":{\"url\":\"https://${NODE_IP}:30080\"}}"
+              kubectl -n deployment rollout restart deployment/argocd-server
