@@ -522,6 +522,42 @@ data:
       add_to_access_token      = true
     }
 
+    resource "keycloak_openid_client" "opensearch_dashboards" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "opensearch-dashboards"
+      name                  = "OpenSearch Dashboards"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "opensearch-dashboards-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "opensearch_dashboards_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.opensearch_dashboards.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    # Realm roles (admin / viewer) as a flat `groups` claim; OpenSearch reads it via
+    # roles_key and maps it in roles_mapping.yml. Mirrors airflow-realm-roles.
+    resource "keycloak_openid_user_realm_role_protocol_mapper" "opensearch_dashboards_realm_roles" {
+      realm_id            = keycloak_realm.stackable_demo.id
+      client_id           = keycloak_openid_client.opensearch_dashboards.id
+      name                = "opensearch-dashboards-realm-roles"
+      claim_name          = "groups"
+      multivalued         = true
+      add_to_id_token     = true
+      add_to_access_token = true
+      add_to_userinfo     = true
+    }
+
     resource "keycloak_openid_client" "entropy_data" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "entropy-data"

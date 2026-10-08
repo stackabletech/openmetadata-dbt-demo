@@ -31,6 +31,17 @@ spec:
                 secretKeyRef:
                   name: opensearch-kibanaserver-credentials
                   key: password
+            # Browser-facing Keycloak issuer and node IP for the OIDC login below
+            - name: ISSUER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: issuer-url
+            - name: NODE_IP
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: node-ip
           config:
             opensearch_dashboards.yml: |
               server.host: "0.0.0.0"
@@ -40,6 +51,18 @@ spec:
               opensearch.ssl.verificationMode: none
               opensearch.requestHeadersWhitelist: [authorization, securitytenant]
               opensearch_security.multitenancy.enabled: false
+              # Login via Keycloak (demo-admin / demo-user) next to the internal users
+              # (basic auth). Realm roles map to OpenSearch roles in the security config
+              # (platform/manifests/opensearch/opensearch-security-config.yaml).
+              opensearch_security.auth.multiple_auth_enabled: true
+              opensearch_security.auth.type: ["basicauth", "openid"]
+              opensearch_security.openid.connect_url: "${ISSUER_URL}/.well-known/openid-configuration"
+              opensearch_security.openid.client_id: "opensearch-dashboards"
+              opensearch_security.openid.client_secret: "opensearch-dashboards-secret"
+              opensearch_security.openid.base_redirect_url: "http://${NODE_IP}:30601"
+              opensearch_security.openid.scope: "openid profile email"
+              # Plain http in the demo
+              opensearch_security.cookie.secure: false
     - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "feat/entropy"
       path: platform/manifests/opensearch-dashboards/
