@@ -35,6 +35,9 @@ spec:
             enabled: false
           kubeProxy:
             enabled: false
+          # Would create a Service in kube-system, which the ArgoCD project does not allow
+          coreDns:
+            enabled: false
           defaultRules:
             rules:
               etcd: false
