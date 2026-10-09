@@ -1,0 +1,116 @@
+---
+# Keeps the Secret `prometheus-tls-certificate` filled with a client certificate (and the CA) of
+# the secret-operator SecretClass `tls`, for the ServiceMonitors in servicemonitors.yaml.
+# Prometheus Operator cannot mount secret-operator volumes into Prometheus itself, so this Pod
+# mounts one and copies it into a Secret; it restarts itself every 6 hours for a fresh
+# certificate. Taken from Stackable's monitoring stack (github.com/stackabletech/demos,
+# stacks/monitoring, Apache-2.0).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: create-prometheus-tls-certificate
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: create-prometheus-tls-certificate
+  namespace: platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["prometheus-tls-certificate"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: create-prometheus-tls-certificate
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: create-prometheus-tls-certificate
+subjects:
+  - kind: ServiceAccount
+    name: create-prometheus-tls-certificate
+    namespace: platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: create-prometheus-tls-certificate
+  namespace: platform
+  labels:
+    app: create-prometheus-tls-certificate
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: create-prometheus-tls-certificate
+  template:
+    metadata:
+      labels:
+        app: create-prometheus-tls-certificate
+    spec:
+      serviceAccountName: create-prometheus-tls-certificate
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: create-prometheus-tls-certificate
+          image: oci.stackable.tech/sdp/tools:1.0.0-stackable26.3.0
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - bash
+            - -euo
+            - pipefail
+            - -c
+            - |
+              kubectl create secret generic prometheus-tls-certificate \
+                --from-file=/prometheus-tls-certificate/ca.crt \
+                --from-file=/prometheus-tls-certificate/tls.crt \
+                --from-file=/prometheus-tls-certificate/tls.key \
+                --dry-run=client -o yaml \
+                | kubectl apply -f -
+              echo "Sleeping 6 hours, then deleting this Pod for a fresh certificate"
+              sleep 21600
+              kubectl --namespace "$POD_NAMESPACE" delete pod "$POD_NAME"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: prometheus-tls-certificate
+              mountPath: /prometheus-tls-certificate
+      volumes:
+        - name: prometheus-tls-certificate
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/format: tls-pem
+                  secrets.stackable.tech/scope: service=prometheus
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem

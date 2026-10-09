@@ -1,0 +1,145 @@
+---
+# Scrape all Stackable products. The operators label their metrics Services with
+# `prometheus.io/scrape: "true"` and annotate them with prometheus.io/{scheme,port,path}.
+# Based on Stackable's monitoring stack (github.com/stackabletech/demos, stacks/monitoring,
+# Apache-2.0), but scraping every pod directly instead of the Service address, so that
+# multi-replica roles (e.g. the OPA DaemonSet) report per pod.
+#
+# HTTP products: Airflow, HDFS, Hive, Kafka, OPA, Superset, Trino, ZooKeeper (port `metrics`).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stackable
+  namespace: platform
+  annotations:
+    # The CRD comes with the kube-prometheus-stack chart in the same Application
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  namespaceSelector:
+    matchNames: [platform]
+  selector:
+    matchLabels:
+      stackable.tech/vendor: Stackable
+      prometheus.io/scrape: "true"
+  jobLabel: app.kubernetes.io/name
+  endpoints:
+    - port: metrics
+      scheme: http
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+          targetLabel: __metrics_path__
+          regex: (.+)
+  podTargetLabels:
+    - app.kubernetes.io/name
+    - app.kubernetes.io/instance
+    - app.kubernetes.io/component
+    - app.kubernetes.io/role-group
+    - app.kubernetes.io/version
+---
+# NiFi serves metrics over HTTPS only and authenticates the client: mTLS with a certificate of
+# the secret-operator CA (see prometheus-tls-certificate.yaml). The pod's FQDN below the headless
+# Service is in NiFi's certificate. NiFi is stopped by default in this demo (nifi.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stackable-nifi
+  namespace: platform
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  namespaceSelector:
+    matchNames: [platform]
+  selector:
+    matchLabels:
+      stackable.tech/vendor: Stackable
+      prometheus.io/scrape: "true"
+      app.kubernetes.io/name: nifi
+  jobLabel: app.kubernetes.io/name
+  endpoints:
+    - port: https
+      scheme: https
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+          targetLabel: __metrics_path__
+          regex: (.+)
+        # <pod>.<rolegroup>-headless.<namespace>.svc.cluster.local:<port>
+        - sourceLabels:
+            - __meta_kubernetes_pod_name
+            - __meta_kubernetes_service_name
+            - __meta_kubernetes_namespace
+            - __meta_kubernetes_service_annotation_prometheus_io_port
+          targetLabel: __address__
+          regex: (.+);(.+?)(?:-metrics)?;(.+);(\d+)
+          replacement: ${1}.${2}-headless.${3}.svc.cluster.local:${4}
+      tlsConfig:
+        ca:
+          secret:
+            name: prometheus-tls-certificate
+            key: ca.crt
+        cert:
+          secret:
+            name: prometheus-tls-certificate
+            key: tls.crt
+        keySecret:
+          name: prometheus-tls-certificate
+          key: tls.key
+  podTargetLabels:
+    - app.kubernetes.io/name
+    - app.kubernetes.io/instance
+    - app.kubernetes.io/component
+    - app.kubernetes.io/role-group
+    - app.kubernetes.io/version
+---
+# OpenSearch: prometheus-exporter plugin behind HTTPS and the security plugin, so basic auth as
+# the read-only OpenSearch user `prometheus` (role prometheus_monitor). The metrics Service is the
+# headless one; the pod's FQDN below it is in OpenSearch's certificate.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stackable-opensearch
+  namespace: platform
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  namespaceSelector:
+    matchNames: [platform]
+  selector:
+    matchLabels:
+      stackable.tech/vendor: Stackable
+      prometheus.io/scrape: "true"
+      app.kubernetes.io/name: opensearch
+  jobLabel: app.kubernetes.io/name
+  endpoints:
+    - port: http
+      scheme: https
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+          targetLabel: __metrics_path__
+          regex: (.+)
+        # <pod>.<headless service>.<namespace>.svc.cluster.local:<port>
+        - sourceLabels:
+            - __meta_kubernetes_pod_name
+            - __meta_kubernetes_service_name
+            - __meta_kubernetes_namespace
+            - __meta_kubernetes_service_annotation_prometheus_io_port
+          targetLabel: __address__
+          regex: (.+);(.+);(.+);(\d+)
+          replacement: ${1}.${2}.${3}.svc.cluster.local:${4}
+      basicAuth:
+        username:
+          name: opensearch-prometheus-credentials
+          key: username
+        password:
+          name: opensearch-prometheus-credentials
+          key: password
+      tlsConfig:
+        ca:
+          secret:
+            name: prometheus-tls-certificate
+            key: ca.crt
+  podTargetLabels:
+    - app.kubernetes.io/name
+    - app.kubernetes.io/instance
+    - app.kubernetes.io/component
+    - app.kubernetes.io/role-group
+    - app.kubernetes.io/version
