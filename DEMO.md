@@ -151,16 +151,19 @@ wait ~10 s (Airflow + User Info Fetcher caches), reload Airflow.
 
 #### Multi-tenancy: one Airflow, two teams
 
-DAGs belong to a team by ID prefix (`marketing_*`, `finance_*`), users by Keycloak group (`/marketing`,
-`/finance`); `demo-marketing` and `demo-finance` share `demo-user`'s password. Example DAGs:
+DAGs belong to a team by tag (`team:marketing`, `team:finance`, set in the DAG code), users by Keycloak
+group (`/marketing`, `/finance`); `demo-marketing` and `demo-finance` share `demo-user`'s password.
+Airflow uses a small extension of Stackable's OPA auth manager (`platform/manifests/airflow/
+opa-tags-auth-manager.yaml`): it sends the DAG's tags to OPA and lets OPA filter the DAG list. Example DAGs:
 `marketing_campaign_report`, `finance_monthly_close` (three short tasks each, manual trigger only).
 
 1. `demo-marketing`: the DAG list shows `marketing_campaign_report` and `dbt_tpch_demo` — the finance
    DAG is not there at all. Trigger the marketing DAG: works. `dbt_tpch_demo`: read-only.
 2. `demo-finance` (private window): sees `finance_monthly_close` instead, can run it.
 3. `demo-user` (no team): sees all DAGs, read-only. `demo-admin`: everything.
-4. Grafana → **Airflow authorization** → *Team DAGs: access per user and team*: `demo-marketing` was
-   denied the finance DAG (that is how Airflow filtered it from the list).
+4. Grafana → **Airflow authorization** → *DAG list: hidden DAGs per user*: OPA kept
+   `finance_monthly_close` out of `demo-marketing`'s list; *Team DAGs: access per user and team* shows
+   the allowed and denied checks per team.
 
 Moving a user between teams is a Keycloak group change, effective after ~10 s.
 

@@ -1,0 +1,105 @@
+---
+# Airflow auth manager for the demo: Stackable's OpaFabAuthManager plus
+#   1. the DAG's tags in every DAG authorization request (input.details.tags), so the Rego policy can
+#      decide by tag (e.g. `team:marketing`) instead of by DAG ID, and
+#   2. the DAG list decided by OPA as well: OpaFabAuthManager inherits get_authorized_dag_ids from
+#      Airflow's FAB auth manager, which lists every DAG to every user with the Viewer role. Here the
+#      list is one OPA request (rule `authorized_dag_ids`) with all DAGs and their tags.
+# User groups are still resolved in OPA (User Info Fetcher, Keycloak), not sent by Airflow.
+#
+# Mounted into all Airflow containers (site-packages) and enabled via envOverrides
+# AIRFLOW__CORE__AUTH_MANAGER in airflow.yaml. A candidate for Stackable's opa-auth-manager upstream.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-opa-tags-auth-manager
+  namespace: platform
+data:
+  opa_tags_auth_manager.py: |
+    """OpaFabAuthManager that sends DAG tags to OPA and lets OPA filter the DAG list."""
+
+    from __future__ import annotations
+
+    from typing import TYPE_CHECKING, Optional
+
+    from airflow.models.dag import DagModel, DagTag
+    from airflow.utils.session import create_session
+    from opa_auth_manager.opa_fab_auth_manager import OpaFabAuthManager, OpaInput
+    from sqlalchemy import select
+
+    if TYPE_CHECKING:
+        from airflow.api_fastapi.auth.managers.models.resource_details import DagAccessEntity, DagDetails
+        from airflow.providers.fab.auth_manager.models import User
+
+
+    def _user(user) -> dict:
+        return {"id": user.get_id(), "name": user.get_name()}
+
+
+    class OpaTagsAuthManager(OpaFabAuthManager):
+        """Adds `details.tags` to is_authorized_dag and filters DAG lists through OPA."""
+
+        @staticmethod
+        def _tags(dag_ids: Optional[list[str]] = None) -> dict[str, list[str]]:
+            """Tags per DAG ID (all DAGs if dag_ids is None)."""
+            stmt = select(DagTag.dag_id, DagTag.name)
+            if dag_ids is not None:
+                stmt = stmt.where(DagTag.dag_id.in_(dag_ids))
+            tags: dict[str, list[str]] = {}
+            with create_session() as session:
+                for dag_id, name in session.execute(stmt):
+                    tags.setdefault(dag_id, []).append(name)
+            return {dag_id: sorted(names) for dag_id, names in tags.items()}
+
+        def is_authorized_dag(
+            self,
+            *,
+            method,
+            access_entity: Optional[DagAccessEntity] = None,
+            details: Optional[DagDetails] = None,
+            user: User,
+        ) -> bool:
+            dag_id = details.id if details else None
+            tags = self._tags([dag_id]).get(dag_id, []) if dag_id else []
+            return bool(
+                self._is_authorized_in_opa(
+                    "is_authorized_dag",
+                    OpaInput(
+                        {
+                            "input": {
+                                "method": method,
+                                "access_entity": access_entity.name if access_entity else None,
+                                "details": {"id": dag_id, "tags": tags},
+                                "user": _user(user),
+                            }
+                        }
+                    ),
+                )
+            )
+
+        def _authorized_dag_ids(self, dag_ids: list[str], user, method) -> set[str]:
+            """One OPA request for a whole list of DAGs; fails closed (empty set)."""
+            if not dag_ids:
+                return set()
+            tags = self._tags(dag_ids)
+            result = self._is_authorized_in_opa(
+                "authorized_dag_ids",
+                OpaInput(
+                    {
+                        "input": {
+                            "method": method,
+                            "dags": [{"id": d, "tags": tags.get(d, [])} for d in sorted(dag_ids)],
+                            "user": _user(user),
+                        }
+                    }
+                ),
+            )
+            return set(result) if isinstance(result, list) else set()
+
+        def get_authorized_dag_ids(self, *, user, method="GET", session=None) -> set[str]:
+            with create_session() as s:
+                dag_ids = list(s.scalars(select(DagModel.dag_id)))
+            return self._authorized_dag_ids(dag_ids, user, method)
+
+        def filter_authorized_dag_ids(self, *, dag_ids: set[str], user, method="GET") -> set[str]:
+            return self._authorized_dag_ids(list(dag_ids), user, method)
