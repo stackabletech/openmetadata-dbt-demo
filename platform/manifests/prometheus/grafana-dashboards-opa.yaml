@@ -1,0 +1,557 @@
+---
+# Grafana dashboard "OPA decisions" on the OpenSearch data source `opensearch-opa-decisions`
+# (index logs-opa-decisions-*, written by the vector-aggregator). Same content as the dashboard of
+# the same name in OpenSearch Dashboards (platform/manifests/opensearch-dashboards/).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-opa
+  namespace: platform
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: Governance
+data:
+  opa-decisions.json: |
+    {
+      "uid": "opa-decisions",
+      "title": "OPA decisions",
+      "tags": [
+        "opa",
+        "trino",
+        "governance"
+      ],
+      "description": "Who saw what, and why: OPA's authorization decisions for Trino with the Keycloak groups and OpenMetadata metadata they were based on (index logs-opa-decisions-*). Technical users (admin, cockpit) are left out.",
+      "editable": true,
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "name": "user",
+            "label": "User",
+            "type": "query",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-opa-decisions"
+            },
+            "query": "{\"find\": \"terms\", \"field\": \"user.keyword\"}",
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "allValue": "*",
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "Filters",
+            "type": "adhoc",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-opa-decisions"
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Decisions over time",
+          "description": "Authorization checks per time slot: allowed, denied, and column-mask decisions that masked something.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "filters",
+                  "settings": {
+                    "filters": [
+                      {
+                        "query": "allowed:true",
+                        "label": "allowed"
+                      },
+                      {
+                        "query": "allowed:false",
+                        "label": "denied"
+                      },
+                      {
+                        "query": "_exists_:masks.column",
+                        "label": "masked columns"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "allowed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "denied"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "masked columns"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 2,
+          "type": "table",
+          "title": "Masked columns per user",
+          "description": "Columns OPA masked, per user; counts distinct queries. Iceberg's hidden columns ($partition, $path, ...) are left out: they are always masked, because OpenMetadata does not know them.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND path:\"trino/batchColumnMasks\" AND _exists_:masks.column",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "cardinality",
+                  "field": "query_id.keyword"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "masks.column.keyword",
+                  "settings": {
+                    "size": "100",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                }
+              ]
+            }
+          ],
+          "transformations": [
+            {
+              "id": "filterByValue",
+              "options": {
+                "type": "exclude",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "masks.column.keyword",
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": ".*\\$.*"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "masks.column.keyword": "Masked column",
+                  "Unique Count": "Queries"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "table",
+          "title": "Denied access",
+          "description": "Denied checks with what the policy based them on: Keycloak groups (User Info Fetcher) and whether OpenMetadata knows an owner (Resource Info Fetcher).",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 8,
+            "w": 12,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND allowed:false",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "cardinality",
+                  "field": "query_id.keyword"
+                },
+                {
+                  "id": "5",
+                  "type": "max",
+                  "field": "timestamp"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "table.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "-"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "resource_info.has_owner",
+                  "settings": {
+                    "size": "2",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "-"
+                  }
+                },
+                {
+                  "id": "6",
+                  "type": "terms",
+                  "field": "groups.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "(no groups)"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "table.keyword": "Table",
+                  "resource_info.has_owner": "Has owner in OpenMetadata",
+                  "groups.keyword": "Groups",
+                  "Unique Count": "Queries",
+                  "Max": "Last seen"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "table",
+          "title": "Checks per query",
+          "description": "Latest Trino queries and how many authorization checks they caused. Add an ad-hoc filter query_id.keyword = <id> to see one query's decisions below. ExecuteQuery checks carry no query ID.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 17,
+            "w": 12,
+            "h": 12
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND _exists_:query_id",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                },
+                {
+                  "id": "2",
+                  "type": "max",
+                  "field": "timestamp"
+                },
+                {
+                  "id": "4",
+                  "type": "cardinality",
+                  "field": "table.keyword"
+                },
+                {
+                  "id": "5",
+                  "type": "cardinality",
+                  "field": "masks.column.keyword"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "query_id.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "2",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "6",
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "1",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "query_id.keyword": "Query ID",
+                  "user.keyword": "User",
+                  "Count": "Checks",
+                  "Max": "Time",
+                  "Unique Count table.keyword": "Tables",
+                  "Unique Count masks.column.keyword": "Masked columns"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "logs",
+          "title": "Decisions",
+          "description": "One line per decision (field `message`); expand a line for groups, OpenMetadata metadata, masks.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 17,
+            "w": 12,
+            "h": 12
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "logs"
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true
+          }
+        }
+      ]
+    }
