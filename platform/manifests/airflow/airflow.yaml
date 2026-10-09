@@ -11,6 +11,17 @@ spec:
     productVersion: 3.1.6
     pullPolicy: IfNotPresent
   clusterConfig:
+    # Authorization via OPA (Stackable's OPA auth manager) instead of Airflow's FAB roles: rules in
+    # the `airflow` Rego package (platform/manifests/opa/rego-airflow-policies.yaml), keyed off the
+    # Keycloak groups like Trino's. Decisions are logged to OpenSearch (logs-opa-decisions-*).
+    authorization:
+      opa:
+        configMapName: opa
+        package: airflow
+        cache:
+          # Short, so policy and group changes show up quickly in the demo
+          entryTimeToLive: 10s
+          maxEntries: 10000
     loadExamples: false
     exposeConfig: false
     credentialsSecret: airflow-credentials
