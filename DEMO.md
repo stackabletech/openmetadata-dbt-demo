@@ -132,6 +132,23 @@ details, its OPA decisions (with Keycloak groups and OpenMetadata owners/tags), 
 query and Trino log lines mentioning it. "open ↗" leads to the query in the Trino web UI
 (`https://<node-ip>:30443`). The dashboard **OPA decisions** links to the same drill-down.
 
+### Airflow authorization with OPA
+
+Airflow's own roles no longer decide: Stackable's OPA auth manager asks OPA for every action
+(Rego package `airflow`, `platform/manifests/opa/rego-airflow-policies.yaml`), based on the same
+Keycloak groups as Trino.
+
+1. Log in to Airflow as `demo-user` (no groups): DAG `dbt_tpch_demo`, its runs and task logs are
+   visible; triggering, clearing or pausing it fails, *Admin* (connections, variables, config) is
+   not available, XCom is hidden.
+2. Log in as `demo-admin` (`/admin`) in a private window: everything works.
+3. Grafana → *Governance* → **Airflow authorization**: the denied requests with user, rule
+   (`dag`, `connection`, ...), method, resource and the user's Keycloak groups; permissions per user;
+   the decision log. Airflow caches decisions for 10 s.
+
+To show a policy change live: add `demo-user` to the Keycloak group `/admin` (Keycloak admin console),
+wait ~10 s (Airflow + User Info Fetcher caches), reload Airflow.
+
 ### Reset after a rehearsal
 
 - Keycloak: remove `demo-user` from `/pii`.
