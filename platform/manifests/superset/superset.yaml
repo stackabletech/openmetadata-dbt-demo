@@ -5,11 +5,13 @@ metadata:
   name: simple-superset
   namespace: platform
 spec:
-  clusterOperation:
-    stopped: false
   image:
     productVersion: 6.0.0
   clusterConfig:
+    # For Superset this lives under clusterConfig (spec.clusterOperation is not in its CRD and made
+    # every sync of this Application fail)
+    clusterOperation:
+      stopped: false
     credentialsSecret: simple-superset-credentials
     vectorAggregatorConfigMapName: vector-aggregator-discovery
     authentication:
