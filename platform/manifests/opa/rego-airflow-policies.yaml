@@ -1,0 +1,104 @@
+---
+# Airflow authorization policy (package `airflow`), queried by Stackable's OPA auth manager in
+# Airflow (spec.clusterConfig.authorization.opa in platform/manifests/airflow/airflow.yaml). Every
+# rule gets {method, user: {id, name}, details | access_entity | access_view | resource_name};
+# undefined or failed lookups deny (the auth manager also denies if OPA is unreachable).
+#
+# Same model as for Trino: Keycloak groups, resolved per request by the User Info Fetcher.
+#   - `/admin` (and the local break-glass user `admin`): everything
+#   - everyone else: read-only on DAGs, runs, tasks and task logs; no triggering, clearing or
+#     pausing; no XCom, connections, variables, configuration or user/role administration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-policies
+  namespace: platform
+  labels:
+    opa.stackable.tech/bundle: "true"
+data:
+  airflow.rego: |
+    package airflow
+
+    import rego.v1
+
+    # Keycloak group paths of the requesting user, e.g. ["/admin", "/pii"]. Users unknown to
+    # Keycloak (the local `admin`) get none.
+    default groups := []
+
+    groups := g if {
+      response := http.send({
+        "method": "POST",
+        "url": "http://127.0.0.1:9476/user",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"username": input.user.name},
+      })
+      response.status_code == 200
+      g := response.body.groups
+    }
+
+    is_admin if "/admin" in groups
+
+    # Local break-glass user from the airflow-credentials Secret
+    is_admin if input.user.name == "admin"
+
+    reading if input.method in {"GET", "MENU"}
+
+    # --- DAGs: everyone reads, only admins change -------------------------------------------
+    # access_entity: null (the DAG itself) or RUN, TASK, TASK_INSTANCE, TASK_LOGS, XCOM, ...
+    default is_authorized_dag := false
+
+    is_authorized_dag if is_admin
+
+    is_authorized_dag if {
+      reading
+      not input.access_entity == "XCOM"
+    }
+
+    default is_authorized_asset := false
+
+    is_authorized_asset if is_admin
+
+    is_authorized_asset if reading
+
+    default is_authorized_asset_alias := false
+
+    is_authorized_asset_alias if is_admin
+
+    is_authorized_asset_alias if reading
+
+    default is_authorized_pool := false
+
+    is_authorized_pool if is_admin
+
+    is_authorized_pool if reading
+
+    # --- Views (Airflow UI) -----------------------------------------------------------------
+    # access_view: WEBSITE, DOCS, CLUSTER_ACTIVITY, IMPORT_ERRORS, JOBS, PLUGINS, PROVIDERS, TRIGGERS
+    default is_authorized_view := false
+
+    is_authorized_view if is_admin
+
+    is_authorized_view if input.access_view in {"WEBSITE", "DOCS", "CLUSTER_ACTIVITY", "IMPORT_ERRORS"}
+
+    # --- Admin only ------------------------------------------------------------------------
+    # Connections and variables hold credentials; backfills, configuration and the FAB
+    # user/role administration (custom views) are administration.
+    default is_authorized_connection := false
+
+    is_authorized_connection if is_admin
+
+    default is_authorized_variable := false
+
+    is_authorized_variable if is_admin
+
+    default is_authorized_configuration := false
+
+    is_authorized_configuration if is_admin
+
+    default is_authorized_backfill := false
+
+    is_authorized_backfill if is_admin
+
+    default is_authorized_custom_view := false
+
+    is_authorized_custom_view if is_admin
