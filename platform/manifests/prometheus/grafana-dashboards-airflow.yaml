@@ -357,7 +357,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "system.keyword:airflow AND user.keyword:${user:lucene}",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene} AND _exists_:allowed",
               "timeField": "timestamp",
               "metrics": [
                 {
