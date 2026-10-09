@@ -100,6 +100,23 @@ spec:
                 secretKeyRef:
                   name: grafana-admin-credentials
                   key: oauth-client-secret
+              # OpenSearch user `grafana` (role grafana_reader: read logs-*) for the data sources below
+              OPENSEARCH_GRAFANA_PASSWORD:
+                secretKeyRef:
+                  name: opensearch-grafana-credentials
+                  key: password
+            plugins:
+              - grafana-opensearch-datasource@2.34.4
+            # CA of the secret-operator SecretClass `tls` (OpenSearch's certificate), from the Secret
+            # kept up to date by create-prometheus-tls-certificate (platform/manifests/prometheus/)
+            extraSecretMounts:
+              - name: stackable-ca
+                secretName: prometheus-tls-certificate
+                mountPath: /etc/stackable-ca
+                readOnly: true
+                items:
+                  - key: ca.crt
+                    path: ca.crt
             grafana.ini:
               server:
                 root_url: "http://$__env{NODE_IP}:30301"
@@ -124,7 +141,49 @@ spec:
                 name_attribute_path: name
                 # Keycloak realm roles arrive in the `groups` claim (client mapper grafana-realm-roles)
                 role_attribute_path: "contains(groups[*], 'admin') && 'Admin' || 'Viewer'"
+            additionalDataSources:
+              - &opensearch
+                name: OpenSearch OPA decisions
+                uid: opensearch-opa-decisions
+                type: grafana-opensearch-datasource
+                access: proxy
+                url: https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200
+                basicAuth: true
+                basicAuthUser: grafana
+                jsonData:
+                  database: "logs-opa-decisions-*"
+                  timeField: timestamp
+                  flavor: opensearch
+                  version: "3.4.0"
+                  tlsAuthWithCACert: true
+                  pplEnabled: true
+                  maxConcurrentShardRequests: 5
+                  # Line shown in log panels (decisions: one-line summary; product logs: the log message)
+                  logMessageField: message
+                  logLevelField: level
+                secureJsonData:
+                  basicAuthPassword: "$OPENSEARCH_GRAFANA_PASSWORD"
+                  tlsCACert: "$__file{/etc/stackable-ca/ca.crt}"
+              - <<: *opensearch
+                name: OpenSearch product logs
+                uid: opensearch-logs
+                jsonData:
+                  # Daily product log indices (logs-YYYY.MM.DD), without logs-opa-decisions-*
+                  database: "logs-2*"
+                  timeField: timestamp
+                  flavor: opensearch
+                  version: "3.4.0"
+                  tlsAuthWithCACert: true
+                  pplEnabled: true
+                  maxConcurrentShardRequests: 5
+                  # Line shown in log panels (decisions: one-line summary; product logs: the log message)
+                  logMessageField: message
+                  logLevelField: level
             sidecar:
+              datasources:
+                # Alertmanager is disabled above
+                alertmanager:
+                  enabled: false
               dashboards:
                 # Dashboards come from ConfigMaps labelled grafana_dashboard=1 (see
                 # platform/manifests/prometheus/), sorted into folders by annotation
