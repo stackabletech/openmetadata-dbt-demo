@@ -77,6 +77,8 @@ body = f"""
     <tr><th>For</th><th>User</th><th>Password</th><th></th></tr>
     {login_row("Cockpit, OpenMetadata", "demo-user", os.environ["DEMO_USER_PASSWORD"], "no groups: masked, no access without owner", "du")}
     {login_row("Cockpit, OpenMetadata", "demo-admin", os.environ["DEMO_ADMIN_PASSWORD"], "<code>/admin</code> + <code>/pii</code>, private window", "da")}
+    {login_row("Airflow", "demo-marketing", os.environ["DEMO_USER_PASSWORD"], "<code>/marketing</code>: only <code>marketing_*</code> DAGs (+ dbt read-only)", "dm")}
+    {login_row("Airflow", "demo-finance", os.environ["DEMO_USER_PASSWORD"], "<code>/finance</code>: only <code>finance_*</code> DAGs (+ dbt read-only)", "df")}
     {login_row(link(keycloak + "/admin/master/console/#/stackable-demo/users", "Keycloak admin"), os.environ["KEYCLOAK_ADMIN_USER"], os.environ["KEYCLOAK_ADMIN_PASSWORD"], "for the <code>/pii</code> group step", "ka")}
   </table>
 </section>
