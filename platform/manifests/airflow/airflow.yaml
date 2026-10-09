@@ -66,6 +66,8 @@ spec:
       # 20 seconds to reload the DAGS folder (default: 300)
       AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "20"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+      # OPA auth manager with DAG tags and OPA-filtered DAG lists (opa-tags-auth-manager.yaml)
+      AIRFLOW__CORE__AUTH_MANAGER: opa_tags_auth_manager.OpaTagsAuthManager
     podOverrides: &podOverrides
       spec:
         containers:
@@ -92,6 +94,11 @@ spec:
                   secretKeyRef:
                     name: keycloak-demo-passwords
                     key: demo_admin_password
+            volumeMounts:
+              - name: opa-tags-auth-manager
+                mountPath: /stackable/app/lib/python3.12/site-packages/opa_tags_auth_manager.py
+                subPath: opa_tags_auth_manager.py
+                readOnly: true
           - name: vector
             resources:
               requests:
@@ -105,6 +112,10 @@ spec:
             resources:
               requests:
                 cpu: 10m
+        volumes:
+          - name: opa-tags-auth-manager
+            configMap:
+              name: airflow-opa-tags-auth-manager
     config:
       logging:
         enableVectorAgent: true
@@ -158,11 +169,20 @@ spec:
                   secretKeyRef:
                     name: keycloak-demo-passwords
                     key: demo_admin_password
+            volumeMounts:
+              - name: opa-tags-auth-manager
+                mountPath: /stackable/app/lib/python3.12/site-packages/opa_tags_auth_manager.py
+                subPath: opa_tags_auth_manager.py
+                readOnly: true
           - name: vector
             resources:
               requests:
                 cpu: 10m
                 memory: 64Mi
+        volumes:
+          - name: opa-tags-auth-manager
+            configMap:
+              name: airflow-opa-tags-auth-manager
   schedulers:
     envOverrides: *envOverrides
     podOverrides: *podOverrides
