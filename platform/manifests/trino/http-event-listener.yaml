@@ -1,0 +1,17 @@
+---
+# Trino's HTTP event listener: the coordinator POSTs one JSON event per completed query to the
+# vector-aggregator, which writes it to the OpenSearch index logs-trino-queries-YYYY.MM.DD (see
+# platform/applications/vector-aggregator.yaml). Mounted into the coordinator by podOverrides in
+# trino.yaml and enabled there via event-listener.config-files.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-http-event-listener
+  namespace: platform
+data:
+  http-event-listener.properties: |
+    event-listener.name=http
+    http-event-listener.log-completed=true
+    http-event-listener.connect-ingest-uri=http://vector-aggregator.platform.svc.cluster.local:8080/trino/query-events
+    http-event-listener.connect-retry-count=3
+    http-event-listener.connect-retry-delay=1s
