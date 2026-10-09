@@ -27,6 +27,13 @@ spec:
           envFrom:
             - secretRef:
                 name: opensearch-logs-credentials
+          env:
+            # For links to the Trino web UI in the query documents (trino_queries below)
+            - name: NODE_IP
+              valueFrom:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: node-ip
           customConfig:
             data_dir: /vector-data-dir
             api:
@@ -265,10 +272,113 @@ spec:
 
                   # Drop unset top-level fields, but keep empty lists (groups: [] is meaningful)
                   . = compact(d, recursive: false, string: false, object: false, array: false)
+              # Trino query events -> compact documents in logs-trino-queries-*
+              trino_queries:
+                type: remap
+                inputs: [trino_query_events]
+                drop_on_error: true
+                reroute_dropped: true
+                source: |
+                  # Turns a Trino QueryCompletedEvent (HTTP event listener) into a compact document. The raw event
+                  # carries the query plan and detailed operator statistics (often several 100 KB); only the
+                  # fields useful for auditing and the Grafana dashboard "Trino queries" are kept.
+
+                  e = .
+                  md = object(e.metadata) ?? {}
+                  ctx = object(e.context) ?? {}
+                  st = object(e.statistics) ?? {}
+                  fi = object(e.failureInfo) ?? {}
+
+                  d = {}
+                  d.query_id = md.queryId
+                  d.state = md.queryState
+                  d.sql = md.query
+                  d.query_type = ctx.queryType
+                  d.user = ctx.user
+                  # Who authenticated (e.g. the Cockpit service account impersonating the user)
+                  d.principal = ctx.principal
+                  d.source = ctx.source
+                  d.user_agent = ctx.userAgent
+                  d.client_address = ctx.remoteClientAddress
+                  d.catalog = ctx.catalog
+                  d.schema = ctx.schema
+                  d.groups = ctx.groups
+                  d.create_time = e.createTime
+                  d.execution_start_time = e.executionStartTime
+                  d.end_time = e.endTime
+                  d.timestamp = e.endTime
+
+                  # Tables read, with the column masks and row filters Trino applied (decided by OPA)
+                  tables = []
+                  masks = []
+                  masked_columns = []
+                  row_filters = []
+                  for_each(array(md.tables) ?? []) -> |_i, t| {
+                    name = join!(compact([t.catalog, t.schema, t.table]), ".")
+                    tables = push(tables, name)
+                    for_each(array(t.columns) ?? []) -> |_j, c| {
+                      if c.mask != null {
+                        col = name + "." + (string(c.column) ?? "")
+                        masked_columns = push(masked_columns, col)
+                        masks = push(masks, {"column": col, "expression": c.mask})
+                      }
+                    }
+                    for_each(array(t.filters) ?? []) -> |_j, f| {
+                      expr = f.expression
+                      if expr == null { expr = f }
+                      row_filters = push(row_filters, name + ": " + (to_string(expr) ?? encode_json(expr)))
+                    }
+                  }
+                  d.tables = tables
+                  d.masked_columns = masked_columns
+                  d.masks = masks
+                  d.row_filters = row_filters
+
+                  # Statistics (times in seconds, as Trino sends them)
+                  d.wall_s = st.wallTime
+                  d.cpu_s = st.cpuTime
+                  d.queued_s = st.queuedTime
+                  d.planning_s = st.planningTime
+                  d.execution_s = st.executionTime
+                  d.input_rows = st.processedInputRows
+                  d.input_bytes = st.processedInputBytes
+                  d.output_rows = st.outputRows
+                  d.output_bytes = st.outputBytes
+                  d.written_rows = st.writtenRows
+                  d.peak_memory_bytes = st.peakUserMemoryBytes
+
+                  if length(fi) > 0 {
+                    d.error_code = fi.errorCode.name
+                    d.error_type = fi.errorCode.type
+                    d.error_message = fi.failureMessage
+                  }
+
+                  # Time window for the drill-down in Grafana (query start - 2 s .. end + 2 s, epoch ms)
+                  created = parse_timestamp(string(e.createTime) ?? "", "%+") ?? now()
+                  ended = parse_timestamp(string(e.endTime) ?? "", "%+") ?? now()
+                  d.window_from_ms = to_unix_timestamp(created, unit: "milliseconds") - 2000
+                  d.window_to_ms = to_unix_timestamp(ended, unit: "milliseconds") + 2000
+
+                  # Link to the query in the Trino web UI (fixed NodePort, platform/manifests/trino/trino-ui-nodeport.yaml)
+                  node_ip = get_env_var("NODE_IP") ?? ""
+                  if node_ip != "" && d.query_id != null {
+                    d.trino_ui_url = "https://" + node_ip + ":30443/ui/query.html?" + string!(d.query_id)
+                  }
+
+                  # One-line summary
+                  sql_short = replace(string(d.sql) ?? "", r'\s+', " ")
+                  if length(sql_short) > 160 { sql_short = slice!(sql_short, 0, 160) + " …" }
+                  outcome = if d.error_code != null { string!(d.error_code) } else { (to_string(d.output_rows) ?? "?") + " rows" }
+                  wall = to_string(round(float(d.wall_s) ?? 0.0, precision: 3))
+                  d.message = join!(compact([d.user, string(d.state) ?? null, outcome, wall + "s", sql_short]), " | ")
+
+                  # Drop unset fields, keep empty lists (e.g. masked_columns: [] = nothing masked)
+                  . = compact(d, recursive: false, string: false, object: false, array: false)
             sinks:
               console:
                 type: console
-                inputs: [vector, trino_query_events]
+                # Parsed query documents only; the raw events carry query plans (up to several 100 KB)
+                inputs: [vector, trino_queries, trino_queries.dropped]
                 encoding:
                   codec: json
               opensearch:
@@ -302,6 +412,19 @@ spec:
                   verify_certificate: false
                 bulk:
                   index: "logs-opa-decisions-%Y.%m.%d"
+              opensearch_trino_queries:
+                type: elasticsearch
+                inputs: [trino_queries]
+                endpoints: ["https://simple-opensearch-nodes-default.platform.svc.cluster.local:9200"]
+                api_version: v8
+                auth:
+                  strategy: basic
+                  user: "${OPENSEARCH_USER}"
+                  password: "${OPENSEARCH_PASSWORD}"
+                tls:
+                  verify_certificate: false
+                bulk:
+                  index: "logs-trino-queries-%Y.%m.%d"
     - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "feat/entropy"
       path: platform/manifests/vector-aggregator/
