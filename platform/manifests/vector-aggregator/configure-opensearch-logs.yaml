@@ -12,6 +12,8 @@ kind: ConfigMap
 metadata:
   name: configure-opensearch-logs-script
   namespace: platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 data:
   configure.py: |
     import base64
@@ -51,6 +53,19 @@ data:
     TEMPLATE = "logs-trino-meta"
     PRIORITY = 100
 
+    # Trino query events (vector-aggregator, transform trino_queries). Only one composable template
+    # applies per index, so this one repeats the array markers and also fixes the numeric types:
+    # dynamic mapping would type e.g. cpu_s as long if the day's first query had cpu_s 0.
+    QUERIES_TEMPLATE = "logs-trino-queries"
+    QUERIES_PRIORITY = 110
+    QUERIES_META = {**TRINO_META, "tables": ARRAY, "masked_columns": ARRAY}
+    QUERIES_PROPERTIES = {
+        **{f: {"type": "double"} for f in ("wall_s", "cpu_s", "queued_s", "planning_s", "execution_s")},
+        **{f: {"type": "long"} for f in ("input_rows", "input_bytes", "output_rows", "output_bytes",
+                                          "written_rows", "peak_memory_bytes", "window_from_ms", "window_to_ms")},
+        **{f: {"type": "date"} for f in ("timestamp", "create_time", "execution_start_time", "end_time")},
+    }
+
 
     def call(method, path, body=None):
         req = urllib.request.Request(
@@ -78,7 +93,7 @@ data:
     templates = retry("Listing index templates", lambda: call("GET", "/_index_template"))
     for t in templates.get("index_templates", []):
         it = t["index_template"]
-        if t["name"] != TEMPLATE and it.get("priority", 0) >= PRIORITY and any(
+        if t["name"] not in (TEMPLATE, QUERIES_TEMPLATE) and it.get("priority", 0) >= PRIORITY and any(
             p in ("*", "logs-*") or p.startswith("logs") for p in it["index_patterns"]
         ):
             print(f"WARNING: index template {t['name']} ({it['index_patterns']}, priority "
@@ -92,6 +107,14 @@ data:
     }))
     print(f"Index template {TEMPLATE} written")
 
+    retry("Writing the query index template", lambda: call("PUT", f"/_index_template/{QUERIES_TEMPLATE}", {
+        "index_patterns": ["logs-trino-queries-*"],
+        "priority": QUERIES_PRIORITY,
+        "template": {"mappings": {"_meta": {"trino": QUERIES_META}, "properties": QUERIES_PROPERTIES}},
+        "_meta": {"description": "Trino query events: array markers for Trino, numeric types"},
+    }))
+    print(f"Index template {QUERIES_TEMPLATE} written")
+
     # Existing indices; allow_no_indices so that a fresh cluster without logs yet is fine
     result = retry("Updating existing indices", lambda: call(
         "PUT", "/logs-*/_mapping?allow_no_indices=true", {"_meta": {"trino": TRINO_META}}))
@@ -100,8 +123,12 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-opensearch-logs-v1
+  name: configure-opensearch-logs-v2
   namespace: platform
+  annotations:
+    # Before the vector-aggregator (wave 0) changes: the index templates must exist before the
+    # first document of a new index type arrives, or the index is typed by dynamic mapping
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   backoffLimit: 10
   template:
