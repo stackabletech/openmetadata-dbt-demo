@@ -77,7 +77,8 @@ spec:
               value: openid,profile,email
           resources:
             requests:
-              cpu: 500m
+              # Measured ~3m steady; the JVM's memory stays as is
+              cpu: 100m
               memory: 2Gi
             limits:
               cpu: "2"

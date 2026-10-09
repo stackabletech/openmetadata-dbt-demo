@@ -1,4 +1,3 @@
----
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperCluster
 metadata:
@@ -13,6 +12,17 @@ spec:
     config:
       logging:
         enableVectorAgent: true
+      resources:
+        cpu:
+          min: 50m
     roleGroups:
       default:
         replicas: 1
+    podOverrides:
+      spec:
+        containers:
+          - name: vector
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi

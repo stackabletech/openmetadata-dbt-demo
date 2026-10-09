@@ -1,4 +1,3 @@
----
 apiVersion: superset.stackable.tech/v1alpha1
 kind: SupersetCluster
 metadata:
@@ -26,6 +25,11 @@ spec:
     config:
       logging:
         enableVectorAgent: true
+      resources:
+        cpu:
+          min: 100m
+        memory:
+          limit: 1Gi
     roleGroups:
       default:
         config:
@@ -35,3 +39,15 @@ spec:
           superset_config.py:
             AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Gamma"]}'
             AUTH_ROLES_SYNC_AT_LOGIN: "true"
+    podOverrides:
+      spec:
+        containers:
+          - name: vector
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+          - name: metrics
+            resources:
+              requests:
+                cpu: 10m
