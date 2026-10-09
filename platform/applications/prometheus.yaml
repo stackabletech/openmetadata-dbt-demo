@@ -1,0 +1,147 @@
+---
+# Prometheus + Grafana (kube-prometheus-stack). Prometheus scrapes all Stackable products via the
+# ServiceMonitors in platform/manifests/prometheus/ (based on Stackable's monitoring stack in
+# github.com/stackabletech/demos, stacks/monitoring). Grafana logs in via Keycloak and also
+# queries OpenSearch (product logs, OPA decisions).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: deployment
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: dbt-openmetadata-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  sources:
+    - repoURL: "https://prometheus-community.github.io/helm-charts"
+      chart: kube-prometheus-stack
+      targetRevision: "92.2.0" # renovate: registryUrl=https://prometheus-community.github.io/helm-charts datasource=helm depName=kube-prometheus-stack
+      helm:
+        releaseName: prometheus
+        valuesObject:
+          # No alert routing in the demo
+          alertmanager:
+            enabled: false
+          # AKS manages the control plane; these components cannot be scraped and would only
+          # show up as down targets
+          kubeEtcd:
+            enabled: false
+          kubeControllerManager:
+            enabled: false
+          kubeScheduler:
+            enabled: false
+          kubeProxy:
+            enabled: false
+          defaultRules:
+            rules:
+              etcd: false
+              kubeControllerManager: false
+              kubeSchedulerAlerting: false
+              kubeSchedulerRecording: false
+              kubeProxy: false
+          prometheus:
+            prometheusSpec:
+              # Pick up all ServiceMonitors / PodMonitors / rules, not only those labelled
+              # with this Helm release
+              serviceMonitorSelectorNilUsesHelmValues: false
+              podMonitorSelectorNilUsesHelmValues: false
+              ruleSelectorNilUsesHelmValues: false
+              retention: 7d
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 1Gi
+                limits:
+                  memory: 2Gi
+              storageSpec:
+                volumeClaimTemplate:
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 10Gi
+          kube-state-metrics:
+            # As in Stackable's monitoring stack: make the Stackable labels usable in queries
+            metricLabelsAllowlist:
+              - pods=[*]
+              - statefulsets=[*]
+              - services=[*]
+              - nodes=[*]
+              - namespaces=[*]
+              - configmaps=[*]
+              - persistentvolumes=[*]
+              - persistentvolumeclaims=[*]
+          grafana:
+            admin:
+              existingSecret: grafana-admin-credentials
+              userKey: admin-user
+              passwordKey: admin-password
+            service:
+              type: NodePort
+              nodePort: 30301
+            # Browser-facing URLs depend on the node IP (oidc-endpoints, see discover-node-ip);
+            # grafana.ini reads them via $__env{...}
+            envValueFrom:
+              ISSUER_URL:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: issuer-url
+              NODE_IP:
+                configMapKeyRef:
+                  name: oidc-endpoints
+                  key: node-ip
+              OAUTH_CLIENT_SECRET:
+                secretKeyRef:
+                  name: grafana-admin-credentials
+                  key: oauth-client-secret
+            grafana.ini:
+              server:
+                root_url: "http://$__env{NODE_IP}:30301"
+              analytics:
+                check_for_updates: false
+                reporting_enabled: false
+              users:
+                auto_assign_org_role: Viewer
+              auth.generic_oauth:
+                enabled: true
+                name: Keycloak
+                allow_sign_up: true
+                client_id: grafana
+                client_secret: "$__env{OAUTH_CLIENT_SECRET}"
+                scopes: openid profile email
+                use_pkce: true
+                auth_url: "$__env{ISSUER_URL}/protocol/openid-connect/auth"
+                token_url: "$__env{ISSUER_URL}/protocol/openid-connect/token"
+                api_url: "$__env{ISSUER_URL}/protocol/openid-connect/userinfo"
+                login_attribute_path: preferred_username
+                email_attribute_path: email
+                name_attribute_path: name
+                # Keycloak realm roles arrive in the `groups` claim (client mapper grafana-realm-roles)
+                role_attribute_path: "contains(groups[*], 'admin') && 'Admin' || 'Viewer'"
+            sidecar:
+              dashboards:
+                # Dashboards come from ConfigMaps labelled grafana_dashboard=1 (see
+                # platform/manifests/prometheus/), sorted into folders by annotation
+                folderAnnotation: grafana_folder
+                provider:
+                  foldersFromFilesStructure: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                memory: 512Mi
+    - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
+      targetRevision: "feat/entropy"
+      path: platform/manifests/prometheus/
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      # The Prometheus Operator CRDs exceed the size limit of client-side apply annotations
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true

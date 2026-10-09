@@ -522,6 +522,42 @@ data:
       add_to_access_token      = true
     }
 
+    resource "keycloak_openid_client" "grafana" {
+      realm_id              = keycloak_realm.stackable_demo.id
+      client_id             = "grafana"
+      name                  = "Grafana"
+      enabled               = true
+      access_type           = "CONFIDENTIAL"
+      client_secret         = "grafana-secret"
+      standard_flow_enabled = true
+      valid_redirect_uris   = ["*"]
+      web_origins           = ["+"]
+    }
+
+    resource "keycloak_openid_client_default_scopes" "grafana_scopes" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      client_id = keycloak_openid_client.grafana.id
+      default_scopes = [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+      ]
+    }
+
+    # Realm roles (admin / viewer) as a flat `groups` claim; Grafana's role_attribute_path maps
+    # admin -> Admin, everyone else -> Viewer. Mirrors airflow-realm-roles.
+    resource "keycloak_openid_user_realm_role_protocol_mapper" "grafana_realm_roles" {
+      realm_id            = keycloak_realm.stackable_demo.id
+      client_id           = keycloak_openid_client.grafana.id
+      name                = "grafana-realm-roles"
+      claim_name          = "groups"
+      multivalued         = true
+      add_to_id_token     = true
+      add_to_access_token = true
+      add_to_userinfo     = true
+    }
+
     resource "keycloak_openid_client" "opensearch_dashboards" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "opensearch-dashboards"
