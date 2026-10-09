@@ -513,6 +513,164 @@ data:
             "sortOrder": "Descending",
             "enableLogDetails": true
           }
+        },
+        {
+          "id": 5,
+          "type": "table",
+          "title": "Team DAGs: access per user and team",
+          "description": "Checks on team DAGs (marketing_*, finance_*) per user and the DAG's team: team members get their own team's DAGs, the other team's are denied (and hidden from their DAG list).",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 30,
+            "w": 24,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene} AND _exists_:team",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                },
+                {
+                  "id": "9",
+                  "type": "max",
+                  "field": "timestamp"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "team.keyword",
+                  "settings": {
+                    "size": "5",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "groups.keyword",
+                  "settings": {
+                    "size": "5",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "(no groups)"
+                  }
+                },
+                {
+                  "id": "5",
+                  "type": "terms",
+                  "field": "allowed",
+                  "settings": {
+                    "size": "2",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                }
+              ]
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "team.keyword": "DAG of team",
+                  "groups.keyword": "User's groups",
+                  "allowed": "Allowed",
+                  "Count": "Checks",
+                  "Max": "Last seen"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Allowed"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "allowed",
+                            "color": "green"
+                          },
+                          "false": {
+                            "text": "DENIED",
+                            "color": "red"
+                          },
+                          "1": {
+                            "text": "allowed",
+                            "color": "green"
+                          },
+                          "0": {
+                            "text": "DENIED",
+                            "color": "red"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     }

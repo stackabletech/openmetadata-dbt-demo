@@ -276,6 +276,11 @@ spec:
                       md = parse_regex(k, r'^input\.details\.(?P<f>\w+)$') ?? null
                       if md != null && v != "" && v != "null" { d.resource = v }
                     }
+                    # Team of the DAG by ID prefix, as in the policy (marketing_*, finance_*)
+                    if d.rule == "dag" && d.resource != null {
+                      mt = parse_regex(string!(d.resource), r'^(?P<team>marketing|finance)_') ?? null
+                      if mt != null { d.team = mt.team }
+                    }
                     plain_af = get(kv, ["result"]) ?? null
                     if plain_af != null { d.allowed = plain_af == "true" } else { d.allowed = false }
                     d.result = plain_af

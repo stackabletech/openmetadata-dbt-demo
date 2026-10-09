@@ -6,8 +6,12 @@
 #
 # Same model as for Trino: Keycloak groups, resolved per request by the User Info Fetcher.
 #   - `/admin` (and the local break-glass user `admin`): everything
-#   - everyone else: read-only on DAGs, runs, tasks and task logs; no triggering, clearing or
-#     pausing; no XCom, connections, variables, configuration or user/role administration
+#   - team members (`/marketing`, `/finance`): everything on their team's DAGs (DAG ID prefix
+#     `marketing_` / `finance_`), read-only on DAGs without a team (e.g. dbt_tpch_demo), and they
+#     do not see the other team's DAGs at all (Airflow filters its DAG list through OPA)
+#   - everyone else (e.g. demo-user): read-only on all DAGs, runs, tasks and task logs
+#   - nobody but admins: XCom of foreign DAGs, connections, variables, configuration, backfills,
+#     user/role administration
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -43,16 +47,48 @@ data:
 
     reading if input.method in {"GET", "MENU"}
 
-    # --- DAGs: everyone reads, only admins change -------------------------------------------
+    # --- Teams ----------------------------------------------------------------------------
+    # A DAG belongs to a team by its ID prefix; a user is in a team by Keycloak group.
+    team_prefixes := {"marketing_": "/marketing", "finance_": "/finance"}
+
+    dag_team(dag_id) := group if {
+      some prefix, group in team_prefixes
+      startswith(dag_id, prefix)
+    }
+
+    team_member if {
+      some group in groups
+      group in {g | some _, g in team_prefixes}
+    }
+
+    # --- DAGs ------------------------------------------------------------------------------
     # access_entity: null (the DAG itself) or RUN, TASK, TASK_INSTANCE, TASK_LOGS, XCOM, ...
+    # details.id: the DAG, or null for "DAGs in general" (menu, list)
     default is_authorized_dag := false
 
     is_authorized_dag if is_admin
 
+    # Users without a team: read-only on all DAGs
     is_authorized_dag if {
+      not team_member
       reading
       not input.access_entity == "XCOM"
     }
+
+    # Team members: everything on their own team's DAGs ...
+    is_authorized_dag if {
+      dag_team(input.details.id) in groups
+    }
+
+    # ... read-only on DAGs without a team (and on "DAGs in general") ...
+    is_authorized_dag if {
+      team_member
+      reading
+      not input.access_entity == "XCOM"
+      not dag_team(input.details.id)
+    }
+
+    # ... and nothing on the other team's DAGs (no rule matches)
 
     default is_authorized_asset := false
 

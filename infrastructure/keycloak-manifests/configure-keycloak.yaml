@@ -173,6 +173,72 @@ data:
       group_ids = [keycloak_group.admins.id, keycloak_group.pii.id]
     }
 
+    # --- Airflow multi-tenancy demo: one team group per business unit. The Airflow OPA
+    #     policy (platform/manifests/opa/rego-airflow-policies.yaml) gives each team its own
+    #     DAGs by DAG ID prefix (marketing_*, finance_*). The team users share demo-user's
+    #     password. ---
+    resource "keycloak_group" "marketing" {
+      realm_id = keycloak_realm.stackable_demo.id
+      name     = "marketing"
+    }
+
+    resource "keycloak_group" "finance" {
+      realm_id = keycloak_realm.stackable_demo.id
+      name     = "finance"
+    }
+
+    resource "keycloak_user" "demo_marketing" {
+      realm_id       = keycloak_realm.stackable_demo.id
+      username       = "demo-marketing"
+      email          = "demo-marketing@stackable.demo"
+      enabled        = true
+      email_verified = true
+      first_name     = "Demo"
+      last_name      = "Marketing"
+      initial_password {
+        value     = var.demo_user_password
+        temporary = false
+      }
+    }
+
+    resource "keycloak_user" "demo_finance" {
+      realm_id       = keycloak_realm.stackable_demo.id
+      username       = "demo-finance"
+      email          = "demo-finance@stackable.demo"
+      enabled        = true
+      email_verified = true
+      first_name     = "Demo"
+      last_name      = "Finance"
+      initial_password {
+        value     = var.demo_user_password
+        temporary = false
+      }
+    }
+
+    resource "keycloak_user_roles" "demo_marketing_roles" {
+      realm_id = keycloak_realm.stackable_demo.id
+      user_id  = keycloak_user.demo_marketing.id
+      role_ids = [keycloak_role.viewer.id]
+    }
+
+    resource "keycloak_user_roles" "demo_finance_roles" {
+      realm_id = keycloak_realm.stackable_demo.id
+      user_id  = keycloak_user.demo_finance.id
+      role_ids = [keycloak_role.viewer.id]
+    }
+
+    resource "keycloak_user_groups" "demo_marketing_groups" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      user_id   = keycloak_user.demo_marketing.id
+      group_ids = [keycloak_group.marketing.id]
+    }
+
+    resource "keycloak_user_groups" "demo_finance_groups" {
+      realm_id  = keycloak_realm.stackable_demo.id
+      user_id   = keycloak_user.demo_finance.id
+      group_ids = [keycloak_group.finance.id]
+    }
+
     # --- OPA User Info Fetcher service account ---
     # Confidential client with a service account; the user-info-fetcher sidecar
     # authenticates with its clientId/clientSecret and reads user + group data.
