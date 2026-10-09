@@ -518,7 +518,7 @@ data:
           "id": 5,
           "type": "table",
           "title": "Team DAGs: access per user and team",
-          "description": "Checks on team DAGs (marketing_*, finance_*) per user and the DAG's team: team members get their own team's DAGs, the other team's are denied (and hidden from their DAG list).",
+          "description": "Checks on team DAGs (tag team:marketing / team:finance) per user and the DAG's team: team members get their own team's DAGs, the other team's are denied (and hidden from their DAG list).",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-opa-decisions"
@@ -657,6 +657,99 @@ data:
                   }
                 ]
               },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 6,
+          "type": "table",
+          "title": "DAG list: hidden DAGs per user",
+          "description": "Which DAGs OPA kept out of each user's DAG list (rule authorized_dag_ids, one request per list).",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 39,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene} AND rule.keyword:dag_list AND _exists_:denied_resources",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                },
+                {
+                  "id": "9",
+                  "type": "max",
+                  "field": "timestamp"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "denied_resources.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                }
+              ]
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "denied_resources.keyword": "Hidden DAG",
+                  "Count": "DAG lists",
+                  "Max": "Last seen"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
               {
                 "matcher": {
                   "id": "byName",

@@ -1,14 +1,15 @@
 ---
-# Airflow authorization policy (package `airflow`), queried by Stackable's OPA auth manager in
-# Airflow (spec.clusterConfig.authorization.opa in platform/manifests/airflow/airflow.yaml). Every
-# rule gets {method, user: {id, name}, details | access_entity | access_view | resource_name};
-# undefined or failed lookups deny (the auth manager also denies if OPA is unreachable).
+# Airflow authorization policy (package `airflow`), queried by the auth manager in Airflow
+# (spec.clusterConfig.authorization.opa plus the OpaTagsAuthManager in platform/manifests/airflow/).
+# Every rule gets {method, user: {id, name}, details | access_entity | access_view | resource_name};
+# DAG requests also carry details.tags, and `authorized_dag_ids` gets {method, user, dags: [{id, tags}]}
+# for the DAG list. Undefined or failed lookups deny (the auth manager also denies if OPA is unreachable).
 #
 # Same model as for Trino: Keycloak groups, resolved per request by the User Info Fetcher.
 #   - `/admin` (and the local break-glass user `admin`): everything
-#   - team members (`/marketing`, `/finance`): everything on their team's DAGs (DAG ID prefix
-#     `marketing_` / `finance_`), read-only on DAGs without a team (e.g. dbt_tpch_demo), and they
-#     do not see the other team's DAGs at all (Airflow filters its DAG list through OPA)
+#   - team members (`/marketing`, `/finance`): everything on their team's DAGs (DAG tag
+#     `team:marketing` / `team:finance`), read-only on DAGs without a team (e.g. dbt_tpch_demo), and
+#     they do not see the other team's DAGs at all (the DAG list is filtered by OPA)
 #   - everyone else (e.g. demo-user): read-only on all DAGs, runs, tasks and task logs
 #   - nobody but admins: XCom of foreign DAGs, connections, variables, configuration, backfills,
 #     user/role administration
@@ -48,17 +49,20 @@ data:
     reading if input.method in {"GET", "MENU"}
 
     # --- Teams ----------------------------------------------------------------------------
-    # A DAG belongs to a team by its ID prefix; a user is in a team by Keycloak group.
-    team_prefixes := {"marketing_": "/marketing", "finance_": "/finance"}
+    # A DAG belongs to a team by its tag `team:<name>`; a user is in a team by Keycloak group /<name>.
+    teams := {"marketing", "finance"}
 
-    dag_team(dag_id) := group if {
-      some prefix, group in team_prefixes
-      startswith(dag_id, prefix)
+    dag_team := group if {
+      some tag in input.details.tags
+      startswith(tag, "team:")
+      name := substring(tag, 5, -1)
+      name in teams
+      group := concat("", ["/", name])
     }
 
     team_member if {
-      some group in groups
-      group in {g | some _, g in team_prefixes}
+      some name in teams
+      concat("", ["/", name]) in groups
     }
 
     # --- DAGs ------------------------------------------------------------------------------
@@ -77,7 +81,7 @@ data:
 
     # Team members: everything on their own team's DAGs ...
     is_authorized_dag if {
-      dag_team(input.details.id) in groups
+      dag_team in groups
     }
 
     # ... read-only on DAGs without a team (and on "DAGs in general") ...
@@ -85,10 +89,21 @@ data:
       team_member
       reading
       not input.access_entity == "XCOM"
-      not dag_team(input.details.id)
+      not dag_team
     }
 
     # ... and nothing on the other team's DAGs (no rule matches)
+
+    # DAG list: the IDs of the DAGs the user may see, decided per DAG by is_authorized_dag
+    authorized_dag_ids contains dag.id if {
+      some dag in input.dags
+      is_authorized_dag with input as {
+        "method": input.method,
+        "access_entity": null,
+        "details": {"id": dag.id, "tags": dag.tags},
+        "user": input.user,
+      }
+    }
 
     default is_authorized_asset := false
 

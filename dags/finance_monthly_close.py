@@ -1,8 +1,7 @@
 """Example DAG of the finance team (Airflow multi-tenancy demo).
 
-Only members of the Keycloak group /finance (and admins) see and run DAGs whose ID starts with
-`finance_`: the OPA policy in platform/manifests/opa/rego-airflow-policies.yaml assigns DAGs to
-teams by that prefix. The tasks only log a few lines; no data is read or written.
+Only members of the Keycloak group /finance (and admins) see and run it: the OPA policy in
+platform/manifests/opa/rego-airflow-policies.yaml assigns DAGs to teams by the tag `team:<name>`. The tasks only log a few lines; no data is read or written.
 """
 
 import time
@@ -17,7 +16,8 @@ from airflow.sdk import dag, task
     schedule=None,
     start_date=datetime(2026, 1, 1),
     catchup=False,
-    tags=["finance", "team-demo"],
+    # `team:finance`: the OPA policy gives this DAG to the Keycloak group /finance
+    tags=["team:finance", "team-demo"],
     default_args={"owner": "finance"},
 )
 def finance_monthly_close():

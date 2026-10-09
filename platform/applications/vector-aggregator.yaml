@@ -262,6 +262,7 @@ spec:
                     d.system = "airflow"
                     d.user = get(kv, ["input.user.name"]) ?? null
                     d.rule = replace(string!(d.path), r'^airflow/is_authorized_', "")
+                    if d.path == "airflow/authorized_dag_ids" { d.rule = "dag_list" }
                     d.operation = d.rule
                     d.method = get(kv, ["input.method"]) ?? null
                     d.access_entity = get(kv, ["input.access_entity"]) ?? null
@@ -276,15 +277,39 @@ spec:
                       md = parse_regex(k, r'^input\.details\.(?P<f>\w+)$') ?? null
                       if md != null && v != "" && v != "null" { d.resource = v }
                     }
-                    # Team of the DAG by ID prefix, as in the policy (marketing_*, finance_*)
-                    if d.rule == "dag" && d.resource != null {
-                      mt = parse_regex(string!(d.resource), r'^(?P<team>marketing|finance)_') ?? null
+                    # DAG tags (OpaTagsAuthManager) and the DAG's team from its `team:<name>` tag, as in the policy
+                    dag_tags = []
+                    for_each(kv) -> |k, v| {
+                      if match(k, r'^input\.details\.tags\.\d+$') { dag_tags = push(dag_tags, v) }
+                    }
+                    if length(dag_tags) > 0 { d.dag_tags = dag_tags }
+                    for_each(dag_tags) -> |_i, t| {
+                      mt = parse_regex(t, r'^team:(?P<team>.+)$') ?? null
                       if mt != null { d.team = mt.team }
                     }
-                    plain_af = get(kv, ["result"]) ?? null
-                    if plain_af != null { d.allowed = plain_af == "true" } else { d.allowed = false }
-                    d.result = plain_af
-                    if d.result == null { d.result = "undefined" }
+                    if d.rule == "dag_list" {
+                      # input.dags.N.id = all DAGs, result.N = the IDs the user may see
+                      listed = []
+                      for_each(kv) -> |k, v| {
+                        if match(k, r'^input\.dags\.\d+\.id$') { listed = push(listed, v) }
+                      }
+                      visible = []
+                      for_each(kv) -> |k, v| {
+                        if match(k, r'^result\.\d+$') { visible = push(visible, v) }
+                      }
+                      hidden = []
+                      for_each(listed) -> |_i, x| {
+                        if !includes(visible, x) { hidden = push(hidden, x) }
+                      }
+                      d.allowed_resources = visible
+                      d.denied_resources = hidden
+                      d.result = to_string(length(visible)) + " of " + to_string(length(listed))
+                    } else {
+                      plain_af = get(kv, ["result"]) ?? null
+                      if plain_af != null { d.allowed = plain_af == "true" } else { d.allowed = false }
+                      d.result = plain_af
+                      if d.result == null { d.result = "undefined" }
+                    }
                   }
 
                   # --- 3. summary + full text without the bulky parts -----------------------------------
@@ -292,7 +317,11 @@ spec:
                   outcome = if d.allowed == true { "allowed" } else if d.allowed == false { "DENIED" } else if length(masks) > 0 { to_string(length(masks)) + " column mask(s)" } else if d.path == "trino/batch" { to_string(length(allowed)) + " of " + to_string(length(names)) + " allowed" } else if length(filters) > 0 { to_string(length(filters)) + " row filter(s)" } else if d.path == "trino/rowFilters" { "no row filter" } else if d.path == "trino/batchColumnMasks" { "no column mask" } else { d.path }
                   as_user = null
                   if d.impersonated_user != null { as_user = "-> " + string!(d.impersonated_user) }
-                  if d.system == "airflow" {
+                  if d.system == "airflow" && d.rule == "dag_list" {
+                    hidden_txt = null
+                    if length(array(d.denied_resources) ?? []) > 0 { hidden_txt = "hidden: " + join!(array!(d.denied_resources), ", ") }
+                    d.message = join!(compact([d.user, d.method, "dag list:", string(d.result) ?? null, "DAGs visible", hidden_txt]), " ")
+                  } else if d.system == "airflow" {
                     verdict = if d.allowed == true { "allowed" } else { "DENIED" }
                     d.message = join!(compact([d.user, d.method, d.rule, d.resource, d.access_entity, d.access_view, d.resource_name, verdict]), " ")
                   } else {
