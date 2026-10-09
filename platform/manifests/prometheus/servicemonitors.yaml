@@ -26,7 +26,8 @@ spec:
     - port: metrics
       scheme: http
       relabelings:
-        - sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        - action: replace
+          sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
           targetLabel: __metrics_path__
           regex: (.+)
   podTargetLabels:
@@ -59,11 +60,13 @@ spec:
     - port: https
       scheme: https
       relabelings:
-        - sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        - action: replace
+          sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
           targetLabel: __metrics_path__
           regex: (.+)
         # <pod>.<rolegroup>-headless.<namespace>.svc.cluster.local:<port>
-        - sourceLabels:
+        - action: replace
+          sourceLabels:
             - __meta_kubernetes_pod_name
             - __meta_kubernetes_service_name
             - __meta_kubernetes_namespace
@@ -113,11 +116,13 @@ spec:
     - port: http
       scheme: https
       relabelings:
-        - sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        - action: replace
+          sourceLabels: [__meta_kubernetes_service_annotation_prometheus_io_path]
           targetLabel: __metrics_path__
           regex: (.+)
         # <pod>.<headless service>.<namespace>.svc.cluster.local:<port>
-        - sourceLabels:
+        - action: replace
+          sourceLabels:
             - __meta_kubernetes_pod_name
             - __meta_kubernetes_service_name
             - __meta_kubernetes_namespace
