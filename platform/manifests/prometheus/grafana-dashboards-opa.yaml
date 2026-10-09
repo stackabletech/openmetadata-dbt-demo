@@ -88,7 +88,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit)",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -220,7 +220,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND path:\"trino/batchColumnMasks\" AND _exists_:masks.column",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow AND path:\"trino/batchColumnMasks\" AND _exists_:masks.column",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -309,7 +309,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND allowed:false",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow AND allowed:false",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -429,7 +429,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND _exists_:query_id",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow AND _exists_:query_id",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -551,7 +551,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit)",
+              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow",
               "timeField": "timestamp",
               "metrics": [
                 {

@@ -256,12 +256,43 @@ spec:
                   }
                   if length(resource_info) > 0 { d.resource_info = resource_info }
 
+                  # --- Airflow (Stackable's OPA auth manager): user, rule, method, resource --------------
+                  d.system = "trino"
+                  if starts_with(string(d.path) ?? "", "airflow/") {
+                    d.system = "airflow"
+                    d.user = get(kv, ["input.user.name"]) ?? null
+                    d.rule = replace(string!(d.path), r'^airflow/is_authorized_', "")
+                    d.operation = d.rule
+                    d.method = get(kv, ["input.method"]) ?? null
+                    d.access_entity = get(kv, ["input.access_entity"]) ?? null
+                    d.access_view = get(kv, ["input.access_view"]) ?? null
+                    d.resource_name = get(kv, ["input.resource_name"]) ?? null
+                    # OPA writes JSON null as the string "null" in the flattened log
+                    if d.access_entity == "null" { d.access_entity = null }
+                    if d.access_view == "null" { d.access_view = null }
+                    if d.resource_name == "null" { d.resource_name = null }
+                    # details.{id, conn_id, key, name, section}: the DAG / connection / variable / pool / section
+                    for_each(kv) -> |k, v| {
+                      md = parse_regex(k, r'^input\.details\.(?P<f>\w+)$') ?? null
+                      if md != null && v != "" && v != "null" { d.resource = v }
+                    }
+                    plain_af = get(kv, ["result"]) ?? null
+                    if plain_af != null { d.allowed = plain_af == "true" } else { d.allowed = false }
+                    d.result = plain_af
+                    if d.result == null { d.result = "undefined" }
+                  }
+
                   # --- 3. summary + full text without the bulky parts -----------------------------------
                   target = join(compact([d.catalog, d.schema, d.table]), ".") ?? ""
                   outcome = if d.allowed == true { "allowed" } else if d.allowed == false { "DENIED" } else if length(masks) > 0 { to_string(length(masks)) + " column mask(s)" } else if d.path == "trino/batch" { to_string(length(allowed)) + " of " + to_string(length(names)) + " allowed" } else if length(filters) > 0 { to_string(length(filters)) + " row filter(s)" } else if d.path == "trino/rowFilters" { "no row filter" } else if d.path == "trino/batchColumnMasks" { "no column mask" } else { d.path }
                   as_user = null
                   if d.impersonated_user != null { as_user = "-> " + string!(d.impersonated_user) }
-                  d.message = join!(compact([d.user, as_user, d.operation, target, outcome]), " ")
+                  if d.system == "airflow" {
+                    verdict = if d.allowed == true { "allowed" } else { "DENIED" }
+                    d.message = join!(compact([d.user, d.method, d.rule, d.resource, d.access_entity, d.access_view, d.resource_name, verdict]), " ")
+                  } else {
+                    d.message = join!(compact([d.user, as_user, d.operation, target, outcome]), " ")
+                  }
                   kept = []
                   for_each(split(raw, "\n")) -> |_i, line| {
                     if !starts_with(line, "\"nd_builtin_cache") && !starts_with(line, "metrics.") && !starts_with(line, "input.action.filterResources.") {

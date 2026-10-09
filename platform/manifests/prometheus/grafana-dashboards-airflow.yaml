@@ -1,0 +1,510 @@
+---
+# Grafana dashboard "Airflow authorization": OPA's decisions for Airflow (logs-opa-decisions-*,
+# system=airflow) with the Keycloak groups they were based on.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-airflow
+  namespace: platform
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: Governance
+data:
+  airflow-authorization.json: |
+    {
+      "uid": "airflow-authorization",
+      "title": "Airflow authorization",
+      "tags": [
+        "airflow",
+        "opa",
+        "governance"
+      ],
+      "description": "OPA's authorization decisions for Airflow (Stackable OPA auth manager, Rego package airflow) with the Keycloak groups they were based on. Index logs-opa-decisions-*, system=airflow.",
+      "editable": true,
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "name": "user",
+            "label": "User",
+            "type": "query",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-opa-decisions"
+            },
+            "query": "{\"find\": \"terms\", \"field\": \"user.keyword\", \"query\": \"system.keyword:airflow\"}",
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "allValue": "*",
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "Filters",
+            "type": "adhoc",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-opa-decisions"
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Authorization checks over time",
+          "description": "Every authorization check the Airflow UI/API asked OPA (after Airflow's 10 s cache), allowed vs. denied.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene}",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "filters",
+                  "settings": {
+                    "filters": [
+                      {
+                        "query": "allowed:true",
+                        "label": "allowed"
+                      },
+                      {
+                        "query": "allowed:false",
+                        "label": "denied"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "allowed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "denied"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 2,
+          "type": "table",
+          "title": "Denied requests",
+          "description": "What was denied, to whom, and the Keycloak groups the decision was based on (User Info Fetcher). rule: dag, connection, variable, configuration, view, custom_view, ...; access: RUN, TASK_LOGS, XCOM, ... for DAGs, the view name for views.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 24,
+            "h": 10
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene} AND allowed:false",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                },
+                {
+                  "id": "9",
+                  "type": "max",
+                  "field": "timestamp"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "rule.keyword",
+                  "settings": {
+                    "size": "15",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "method.keyword",
+                  "settings": {
+                    "size": "6",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "5",
+                  "type": "terms",
+                  "field": "resource.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "(all)"
+                  }
+                },
+                {
+                  "id": "6",
+                  "type": "terms",
+                  "field": "access_entity.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "-"
+                  }
+                },
+                {
+                  "id": "7",
+                  "type": "terms",
+                  "field": "access_view.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "-"
+                  }
+                },
+                {
+                  "id": "8",
+                  "type": "terms",
+                  "field": "groups.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "(no groups)"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "rule.keyword": "Rule",
+                  "method.keyword": "Method",
+                  "resource.keyword": "Resource",
+                  "access_entity.keyword": "Access",
+                  "access_view.keyword": "View",
+                  "groups.keyword": "Groups",
+                  "Count": "Checks",
+                  "Max": "Last seen"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "table",
+          "title": "Permissions per user and rule",
+          "description": "Allowed and denied checks per user and rule in the selected time range: who could do what.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 18,
+            "w": 12,
+            "h": 12
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene}",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "rule.keyword",
+                  "settings": {
+                    "size": "15",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "method.keyword",
+                  "settings": {
+                    "size": "6",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "5",
+                  "type": "terms",
+                  "field": "allowed",
+                  "settings": {
+                    "size": "2",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                }
+              ]
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "rule.keyword": "Rule",
+                  "method.keyword": "Method",
+                  "allowed": "Allowed",
+                  "Count": "Checks"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Allowed"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "allowed",
+                            "color": "green"
+                          },
+                          "false": {
+                            "text": "DENIED",
+                            "color": "red"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 4,
+          "type": "logs",
+          "title": "Decisions",
+          "description": "One line per decision; expand for the Keycloak groups and the full decision.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 18,
+            "w": 12,
+            "h": 12
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene}",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "logs"
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true
+          }
+        }
+      ]
+    }
