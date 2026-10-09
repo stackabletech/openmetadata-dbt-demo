@@ -449,6 +449,14 @@ data:
                           "false": {
                             "text": "DENIED",
                             "color": "red"
+                          },
+                          "1": {
+                            "text": "allowed",
+                            "color": "green"
+                          },
+                          "0": {
+                            "text": "DENIED",
+                            "color": "red"
                           }
                         }
                       }
