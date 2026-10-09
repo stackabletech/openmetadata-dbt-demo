@@ -1,4 +1,3 @@
----
 apiVersion: airflow.stackable.tech/v1alpha1
 kind: AirflowCluster
 metadata:
@@ -82,16 +81,29 @@ spec:
                   secretKeyRef:
                     name: keycloak-demo-passwords
                     key: demo_admin_password
+          - name: vector
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+          - name: git-sync-0
+            resources:
+              requests:
+                cpu: 10m
+          - name: metrics
+            resources:
+              requests:
+                cpu: 10m
     config:
       logging:
         enableVectorAgent: true
       gracefulShutdownTimeout: 30s
       resources:
         cpu:
-          min: 400m
+          min: 100m
           max: "1"
         memory:
-          limit: 2Gi
+          limit: 1536Mi
     roleGroups:
       default:
         replicas: 1
@@ -99,6 +111,12 @@ spec:
     config:
       logging:
         enableVectorAgent: true
+      resources:
+        cpu:
+          min: 250m
+          max: '2'
+        memory:
+          limit: 1Gi
     envOverrides: *envOverrides
     podOverrides:
       spec:
@@ -129,6 +147,11 @@ spec:
                   secretKeyRef:
                     name: keycloak-demo-passwords
                     key: demo_admin_password
+          - name: vector
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
   schedulers:
     envOverrides: *envOverrides
     podOverrides: *podOverrides
@@ -138,10 +161,10 @@ spec:
       gracefulShutdownTimeout: 30s
       resources:
         cpu:
-          min: 400m
+          min: 100m
           max: "1"
         memory:
-          limit: 1Gi
+          limit: 1536Mi
     roleGroups:
       default:
         replicas: 1
@@ -154,7 +177,7 @@ spec:
       gracefulShutdownTimeout: 30s
       resources:
         cpu:
-          min: 400m
+          min: 100m
           max: "1"
         memory:
           limit: 1Gi

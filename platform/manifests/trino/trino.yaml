@@ -1,4 +1,3 @@
----
 apiVersion: trino.stackable.tech/v1alpha1
 kind: TrinoCluster
 metadata:
@@ -36,6 +35,9 @@ spec:
       logging:
         enableVectorAgent: true
     # Query events to the vector-aggregator (http-event-listener.yaml)
+      resources:
+        cpu:
+          min: 250m
     configOverrides:
       config.properties:
         event-listener.config-files: /stackable/http-event-listener/http-event-listener.properties
@@ -45,7 +47,8 @@ spec:
           - name: vector
             resources:
               requests:
-                memory: 128Mi
+                memory: 64Mi
+                cpu: 10m
               limits:
                 memory: 512Mi
           - name: trino
@@ -69,13 +72,17 @@ spec:
       gracefulShutdownTimeout: 1m
       logging:
         enableVectorAgent: true
+      resources:
+        cpu:
+          min: 250m
     podOverrides:
       spec:
         containers:
           - name: vector
             resources:
               requests:
-                memory: 128Mi
+                memory: 64Mi
+                cpu: 10m
               limits:
                 memory: 512Mi
     roleGroups:

@@ -18,6 +18,14 @@ spec:
       helm:
         releaseName: openmetadata
         valuesObject:
+          # No requests by default, which hid its ~1.4Gi working set from the scheduler (measured
+          # 2026-10-09, incl. a dbt + ingestion run)
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1536Mi
+            limits:
+              memory: 2560Mi
           openmetadata:
             config:
               elasticsearch:
