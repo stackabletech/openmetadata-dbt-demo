@@ -15,6 +15,8 @@ node_ip=$(kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}
 [ -n "$node_ip" ] || { echo "No node IP in ConfigMap platform/oidc-endpoints" >&2; exit 1; }
 context=$(kubectl config current-context)
 bookmarks=$("$here/cockpit-bookmarks.sh")
+airflow_port=$(kubectl -n platform get svc airflow-webserver -o jsonpath='{.spec.ports[0].nodePort}')
+branch=$(kubectl -n deployment get application cluster-apps -o jsonpath='{.spec.source.targetRevision}')
 
 # Logins for the box at the top of the page. Read from the cluster, so they always
 # match the deploy. demo.html is gitignored; don't commit or share it.
@@ -25,7 +27,7 @@ KEYCLOAK_ADMIN_USER=$(secret keycloak-bootstrap-admin username)
 KEYCLOAK_ADMIN_PASSWORD=$(secret keycloak-bootstrap-admin password)
 export DEMO_USER_PASSWORD DEMO_ADMIN_PASSWORD KEYCLOAK_ADMIN_USER KEYCLOAK_ADMIN_PASSWORD
 
-NODE_IP="$node_ip" CONTEXT="$context" BOOKMARKS="$bookmarks" OUT="$out" python3 - <<'PY'
+NODE_IP="$node_ip" CONTEXT="$context" BOOKMARKS="$bookmarks" AIRFLOW_PORT="$airflow_port" BRANCH="$branch" OUT="$out" python3 - <<'PY'
 import html, os
 from datetime import datetime, timezone
 
@@ -35,6 +37,9 @@ entropy = f"http://{ip}:30808/myorga"
 grafana = f"http://{ip}:30301/d/opa-decisions"
 grafana_queries = f"http://{ip}:30301/d/trino-queries"
 grafana_airflow = f"http://{ip}:30301/d/airflow-authorization"
+airflow = f"http://{ip}:{os.environ['AIRFLOW_PORT']}"
+trino_ui = f"https://{ip}:30443/ui/"
+repo = f"http://{ip}:30000/stackable/openmetadata-dbt-demo/src/branch/{os.environ['BRANCH']}"
 generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 snippets = {}
@@ -68,15 +73,16 @@ body = f"""
 <header>
   <h1>data2day demo</h1>
   <p class="meta">Cluster <code>{html.escape(ctx)}</code> · node IP <code>{ip}</code> · generated {generated}</p>
-  <nav>{link(cockpit, "Cockpit")} {link(om, "OpenMetadata")} {link(entropy, "Entropy Data")} {link(grafana, "Grafana: OPA decisions")} {link(grafana_queries, "Grafana: Trino queries")} {link(grafana_airflow, "Grafana: Airflow authorization")} {link(keycloak + "/admin/master/console/#/stackable-demo", "Keycloak admin")}</nav>
+  <nav>{link(cockpit, "Cockpit")} {link(airflow, "Airflow")} {link(om, "OpenMetadata")} {link(trino_ui, "Trino UI")} {link(entropy, "Entropy Data")} {link(keycloak + "/admin/master/console/#/stackable-demo", "Keycloak admin")}</nav>
+  <nav>Grafana: {link(grafana_airflow, "Airflow authorization")} {link(grafana_queries, "Trino queries")} {link(grafana, "OPA decisions (Trino)")}</nav>
 </header>
 
 <section class="logins">
   <h2>Logins</h2>
   <table>
     <tr><th>For</th><th>User</th><th>Password</th><th></th></tr>
-    {login_row("Cockpit, OpenMetadata", "demo-user", os.environ["DEMO_USER_PASSWORD"], "no groups: masked, no access without owner", "du")}
-    {login_row("Cockpit, OpenMetadata", "demo-admin", os.environ["DEMO_ADMIN_PASSWORD"], "<code>/admin</code> + <code>/pii</code>, private window", "da")}
+    {login_row("Cockpit, Airflow, Grafana, OpenMetadata", "demo-user", os.environ["DEMO_USER_PASSWORD"], "no groups: Trino masked / no access without owner; Airflow read-only on all DAGs", "du")}
+    {login_row("Cockpit, Airflow, Grafana, OpenMetadata", "demo-admin", os.environ["DEMO_ADMIN_PASSWORD"], "<code>/admin</code> + <code>/pii</code>: everything; use a private window", "da")}
     {login_row("Airflow", "demo-marketing", os.environ["DEMO_USER_PASSWORD"], "<code>/marketing</code>: only DAGs tagged <code>team:marketing</code> (+ dbt read-only)", "dm")}
     {login_row("Airflow", "demo-finance", os.environ["DEMO_USER_PASSWORD"], "<code>/finance</code>: only DAGs tagged <code>team:finance</code> (+ dbt read-only)", "df")}
     {login_row(link(keycloak + "/admin/master/console/#/stackable-demo/users", "Keycloak admin"), os.environ["KEYCLOAK_ADMIN_USER"], os.environ["KEYCLOAK_ADMIN_PASSWORD"], "for the <code>/pii</code> group step", "ka")}
@@ -85,13 +91,16 @@ body = f"""
 
 <section>
   <h2>What it shows</h2>
-  <p>Every Trino query is authorized by OPA. Two flavours, side by side in <code>data2day.demo</code>:</p>
+  <p>Trino and Airflow ask the same OPA for every action; both policies decide on the user's
+    Keycloak groups (fetched live by OPA's User Info Fetcher). Every decision lands in OpenSearch and
+    in Grafana. For Trino, two flavours side by side in <code>data2day.demo</code>:</p>
   <ul>
     <li><b>Part A, hardcoded per group</b> (<code>customer_lifetime_value</code>): the policy names the
       columns to mask; <code>/pii</code> members see clear text.</li>
     <li><b>Part B, driven by OpenMetadata</b> (<code>order_summary</code>): no owner → no access, for
       everybody. Tagged <code>PII.Sensitive</code> → masked unless in <code>/pii</code>. No policy change, no deploy.</li>
   </ul>
+  <p>For Airflow: Part C (read-only vs. admin) and Part D (two teams, each seeing only its own DAGs).</p>
 </section>
 
 <section>
@@ -118,7 +127,7 @@ body = f"""
       In OpenMetadata these columns have <b>no</b> tags: the masks come from the policy.</li>
     <li>{link(keycloak + "/admin/master/console/#/stackable-demo/users", "Keycloak → Users")} →
       <code>demo-user</code> → Groups → Join group → <code>pii</code>.</li>
-    <li>Wait <b>~1 minute</b> (group lookup is cached), rerun the query: clear text.</li>
+    <li>Wait <b>~10 seconds</b> (the group lookup is cached), rerun the query: clear text.</li>
   </ol>
 </section>
 
@@ -139,9 +148,75 @@ body = f"""
 </section>
 
 <section>
+  <h2>Part C: Airflow authorization with OPA</h2>
+  <p>Airflow's own roles no longer decide; every UI and API action is an OPA request
+    (Rego package <code>airflow</code>).</p>
+  <ol>
+    <li>{link(airflow, "Airflow")} as <code>demo-user</code> (no groups): DAGs, runs and task logs are
+      visible. Trigger, clear or pause <code>dbt_tpch_demo</code>: refused. <i>Admin</i> (connections,
+      variables, config) is not available, XCom is hidden.</li>
+    <li>Private window as <code>demo-admin</code> (<code>/admin</code>): everything works.</li>
+    <li>{link(grafana_airflow, "Grafana → Airflow authorization")} → <i>Denied requests</i>: user, rule
+      (<code>dag</code>, <code>connection</code>, ...), method, resource and the user's Keycloak groups.
+      Airflow caches decisions for 10 s.</li>
+    <li>Live change: {link(keycloak + "/admin/master/console/#/stackable-demo/users", "Keycloak → Users")} →
+      <code>demo-user</code> → Groups → Join group → <code>admin</code>; after ~10 s reload Airflow:
+      <code>demo-user</code> can trigger.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Part D: multi-tenancy, one Airflow for two teams</h2>
+  <p>A DAG belongs to a team by its tag (<code>team:marketing</code>, <code>team:finance</code>, set in the
+    DAG code), a user by Keycloak group (<code>/marketing</code>, <code>/finance</code>). Example DAGs
+    <code>marketing_campaign_report</code> and <code>finance_monthly_close</code>: three short tasks,
+    ~1.5 min per run, manual trigger only.</p>
+  <ol>
+    <li>{link(airflow, "Airflow")} as <code>demo-marketing</code>: the DAG list shows
+      <code>marketing_campaign_report</code> and <code>dbt_tpch_demo</code>, the finance DAG is not there
+      at all. Trigger the marketing DAG: works. <code>dbt_tpch_demo</code>: read-only.</li>
+    <li>Private window as <code>demo-finance</code>: sees and runs <code>finance_monthly_close</code> instead.</li>
+    <li><code>demo-user</code>: all DAGs, read-only. <code>demo-admin</code>: everything.</li>
+    <li>{link(grafana_airflow, "Grafana → Airflow authorization")} → <i>DAG list: hidden DAGs per user</i>
+      (OPA kept <code>finance_monthly_close</code> out of <code>demo-marketing</code>'s list) and
+      <i>Team DAGs: access per user and team</i>.</li>
+    <li>Moving a user to another team is a Keycloak group change, effective after ~10 s.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Show the rules</h2>
+  <ul>
+    <li>{link(repo + "/platform/manifests/opa/rego-airflow-policies.yaml", "Airflow policy")} (Rego package
+      <code>airflow</code>): section <i>Teams</i> (tag → group) and <i>DAGs</i>;
+      <code>authorized_dag_ids</code> decides the DAG list with the same rule.</li>
+    <li>{link(repo + "/dags/marketing_campaign_report.py", "Marketing DAG")}: the tag
+      {snippet("tag_team", 'tags=["team:marketing", "team-demo"]')}
+      is all a DAG needs to belong to a team.</li>
+    <li>{link(repo + "/platform/manifests/airflow/opa-tags-auth-manager.yaml", "Auth manager extension")}:
+      sends the DAG's tags to OPA and asks OPA for the DAG list (Stackable's auth manager sends only the DAG ID
+      and lists every DAG to every viewer).</li>
+    <li>{link(repo + "/platform/manifests/opa/rego-trino-policies.yaml", "Trino policy")}: Parts A and B.</li>
+    <li>What a decision was based on: Grafana → <i>Decisions</i> panel → expand a line (input incl. DAG tags,
+      the user's groups, OpenMetadata metadata for Trino).</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Grafana: what to look at</h2>
+  <ul>
+    <li>{link(grafana_airflow, "Airflow authorization")}: checks over time, denied requests, permissions per
+      user and rule, team DAG access, hidden DAGs, decision log.</li>
+    <li>{link(grafana_queries, "Trino queries")}: every Trino query with masked columns and errors; click a
+      query ID for its OPA decisions and the OPA log; <i>open ↗</i> jumps to the {link(trino_ui, "Trino UI")}.</li>
+    <li>{link(grafana, "OPA decisions")}: masked columns per user, denials with groups and OpenMetadata owner.</li>
+  </ul>
+</section>
+
+<section>
   <h2>Reset after a rehearsal</h2>
   <ul>
-    <li>Keycloak: remove <code>demo-user</code> from <code>/pii</code>.</li>
+    <li>Keycloak: remove <code>demo-user</code> from <code>/pii</code> and <code>/admin</code>.</li>
     <li>OpenMetadata, <code>order_summary</code>: remove the owner and the <code>PII.Sensitive</code> tags.</li>
   </ul>
 </section>
