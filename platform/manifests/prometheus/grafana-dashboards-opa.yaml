@@ -492,6 +492,23 @@ data:
                     "value": "dateTimeAsIso"
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Query ID"
+                },
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Query details, decisions and OPA log (dashboard Trino queries)",
+                        "url": "/d/trino-queries/trino-queries?var-query_id=${__value.raw}&${__url_time_range}"
+                      }
+                    ]
+                  }
+                ]
               }
             ]
           },

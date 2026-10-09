@@ -184,6 +184,20 @@ spec:
                   # Line shown in log panels (decisions: one-line summary; product logs: the log message)
                   logMessageField: message
                   logLevelField: level
+              - <<: *opensearch
+                name: OpenSearch Trino queries
+                uid: opensearch-trino-queries
+                jsonData:
+                  # One document per completed Trino query (vector-aggregator, transform trino_queries)
+                  database: "[logs-trino-queries-]YYYY.MM.DD"
+                  interval: Daily
+                  timeField: timestamp
+                  flavor: opensearch
+                  version: "3.4.0"
+                  tlsAuthWithCACert: true
+                  pplEnabled: true
+                  maxConcurrentShardRequests: 5
+                  logMessageField: message
             sidecar:
               datasources:
                 # Alertmanager is disabled above

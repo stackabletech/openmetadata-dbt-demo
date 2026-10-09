@@ -33,6 +33,7 @@ ip, ctx, out = os.environ["NODE_IP"], os.environ["CONTEXT"], os.environ["OUT"]
 cockpit, om, keycloak = f"http://{ip}:30300", f"http://{ip}:30585", f"http://{ip}:30900"
 entropy = f"http://{ip}:30808/myorga"
 grafana = f"http://{ip}:30301/d/opa-decisions"
+grafana_queries = f"http://{ip}:30301/d/trino-queries"
 generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 snippets = {}
@@ -66,7 +67,7 @@ body = f"""
 <header>
   <h1>data2day demo</h1>
   <p class="meta">Cluster <code>{html.escape(ctx)}</code> · node IP <code>{ip}</code> · generated {generated}</p>
-  <nav>{link(cockpit, "Cockpit")} {link(om, "OpenMetadata")} {link(entropy, "Entropy Data")} {link(grafana, "Grafana: OPA decisions")} {link(keycloak + "/admin/master/console/#/stackable-demo", "Keycloak admin")}</nav>
+  <nav>{link(cockpit, "Cockpit")} {link(om, "OpenMetadata")} {link(entropy, "Entropy Data")} {link(grafana, "Grafana: OPA decisions")} {link(grafana_queries, "Grafana: Trino queries")} {link(keycloak + "/admin/master/console/#/stackable-demo", "Keycloak admin")}</nav>
 </header>
 
 <section class="logins">

@@ -123,6 +123,15 @@ Every OPA decision for Trino lands in the index `logs-opa-decisions-*`. In OpenS
   `has_owner`, `tags`, `column_tags`. Part B's denial on `order_summary` shows `has_owner: false`.
 - `masks` lists column → mask expression; `allowed: false` marks denials.
 
+### Reviewing queries in Grafana
+
+Grafana (`http://<node-ip>:30301`, Keycloak login) → folder *Governance* → **Trino queries**: every
+completed Trino query (Trino's HTTP event listener → index `logs-trino-queries-*`) with user, state,
+tables, the column masks Trino applied, and errors. Click a query ID for the drill-down: the query's
+details, its OPA decisions (with Keycloak groups and OpenMetadata owners/tags), the OPA log during the
+query and Trino log lines mentioning it. "open ↗" leads to the query in the Trino web UI
+(`https://<node-ip>:30443`). The dashboard **OPA decisions** links to the same drill-down.
+
 ### Reset after a rehearsal
 
 - Keycloak: remove `demo-user` from `/pii`.
