@@ -35,7 +35,11 @@ spec:
     config:
       logging:
         enableVectorAgent: true
-    podOverrides: &vectorPodOverrides
+    # Query events to the vector-aggregator (http-event-listener.yaml)
+    configOverrides:
+      config.properties:
+        event-listener.config-files: /stackable/http-event-listener/http-event-listener.properties
+    podOverrides:
       spec:
         containers:
           - name: vector
@@ -44,6 +48,14 @@ spec:
                 memory: 128Mi
               limits:
                 memory: 512Mi
+          - name: trino
+            volumeMounts:
+              - name: http-event-listener
+                mountPath: /stackable/http-event-listener
+        volumes:
+          - name: http-event-listener
+            configMap:
+              name: trino-http-event-listener
     roleGroups:
       default:
         replicas: 1
@@ -57,7 +69,15 @@ spec:
       gracefulShutdownTimeout: 1m
       logging:
         enableVectorAgent: true
-    podOverrides: *vectorPodOverrides
+    podOverrides:
+      spec:
+        containers:
+          - name: vector
+            resources:
+              requests:
+                memory: 128Mi
+              limits:
+                memory: 512Mi
     roleGroups:
       default:
         replicas: 1

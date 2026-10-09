@@ -37,6 +37,15 @@ spec:
                 type: vector
                 address: 0.0.0.0:6000
                 version: "2"
+              # Trino's HTTP event listener: one JSON document per completed query
+              # (platform/manifests/trino/http-event-listener.yaml)
+              trino_query_events:
+                type: http_server
+                address: 0.0.0.0:8080
+                path: /trino/query-events
+                method: POST
+                decoding:
+                  codec: json
             transforms:
               # OPA decision logs (OpaCluster logger `decision`) get their own index with
               # structured fields; everything else goes to logs-* as before.
@@ -259,7 +268,7 @@ spec:
             sinks:
               console:
                 type: console
-                inputs: [vector]
+                inputs: [vector, trino_query_events]
                 encoding:
                   codec: json
               opensearch:
