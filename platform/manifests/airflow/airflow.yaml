@@ -69,6 +69,11 @@ spec:
       # OPA auth manager with DAG tags and OPA-filtered DAG lists (opa-tags-auth-manager.yaml)
       AIRFLOW__CORE__AUTH_MANAGER: opa_tags_auth_manager.OpaTagsAuthManager
     podOverrides: &podOverrides
+      # Bump the version when opa-tags-auth-manager.yaml changes: the module is mounted via subPath,
+      # so running pods only pick up a new version on restart
+      metadata:
+        annotations:
+          demo.stackable.tech/opa-tags-auth-manager-version: '2'
       spec:
         containers:
           - name: airflow
