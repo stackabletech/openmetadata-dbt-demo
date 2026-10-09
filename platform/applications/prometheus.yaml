@@ -209,12 +209,14 @@ spec:
                 folderAnnotation: grafana_folder
                 provider:
                   foldersFromFilesStructure: true
+            # The OpenSearch datasource holds whole log query responses in memory: 512Mi got
+            # OOMKilled on the OPA decisions / Trino queries dashboards.
             resources:
               requests:
                 cpu: 100m
-                memory: 256Mi
-              limits:
                 memory: 512Mi
+              limits:
+                memory: 1536Mi
     - repoURL: "http://forgejo-http.deployment.svc.cluster.local:3000/stackable/openmetadata-dbt-demo.git"
       targetRevision: "feat/entropy"
       path: platform/manifests/prometheus/
