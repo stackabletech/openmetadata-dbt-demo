@@ -151,7 +151,11 @@ spec:
                 basicAuth: true
                 basicAuthUser: grafana
                 jsonData:
-                  database: "logs-opa-decisions-*"
+                  # Daily indices written by the vector-aggregator (UTC dates). A time pattern instead of
+                  # a wildcard: the plugin's health check only finds concrete index names, and queries
+                  # only touch the days in the selected time range.
+                  database: "[logs-opa-decisions-]YYYY.MM.DD"
+                  interval: Daily
                   timeField: timestamp
                   flavor: opensearch
                   version: "3.4.0"
@@ -169,7 +173,8 @@ spec:
                 uid: opensearch-logs
                 jsonData:
                   # Daily product log indices (logs-YYYY.MM.DD), without logs-opa-decisions-*
-                  database: "logs-2*"
+                  database: "[logs-]YYYY.MM.DD"
+                  interval: Daily
                   timeField: timestamp
                   flavor: opensearch
                   version: "3.4.0"
