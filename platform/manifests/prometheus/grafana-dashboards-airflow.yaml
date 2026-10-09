@@ -1,31 +1,30 @@
 ---
-# Grafana dashboard "OPA decisions" on the OpenSearch data source `opensearch-opa-decisions`
-# (index logs-opa-decisions-*, written by the vector-aggregator). Same content as the dashboard of
-# the same name in OpenSearch Dashboards (platform/manifests/opensearch-dashboards/).
+# Grafana dashboard "Airflow authorization": OPA's decisions for Airflow (logs-opa-decisions-*,
+# system=airflow) with the Keycloak groups they were based on.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: grafana-dashboards-opa
+  name: grafana-dashboards-airflow
   namespace: platform
   labels:
     grafana_dashboard: '1'
   annotations:
     grafana_folder: Governance
 data:
-  opa-decisions.json: |
+  airflow-authorization.json: |
     {
-      "uid": "opa-decisions",
-      "title": "OPA decisions",
+      "uid": "airflow-authorization",
+      "title": "Airflow authorization",
       "tags": [
+        "airflow",
         "opa",
-        "trino",
         "governance"
       ],
-      "description": "Who saw what, and why: OPA's authorization decisions for Trino with the Keycloak groups and OpenMetadata metadata they were based on (index logs-opa-decisions-*). Technical users (admin, cockpit) are left out.",
+      "description": "OPA's authorization decisions for Airflow (Stackable OPA auth manager, Rego package airflow) with the Keycloak groups they were based on. Index logs-opa-decisions-*, system=airflow.",
       "editable": true,
       "schemaVersion": 39,
       "time": {
-        "from": "now-24h",
+        "from": "now-1h",
         "to": "now"
       },
       "refresh": "30s",
@@ -39,7 +38,7 @@ data:
               "type": "grafana-opensearch-datasource",
               "uid": "opensearch-opa-decisions"
             },
-            "query": "{\"find\": \"terms\", \"field\": \"user.keyword\"}",
+            "query": "{\"find\": \"terms\", \"field\": \"user.keyword\", \"query\": \"system.keyword:airflow\"}",
             "refresh": 2,
             "multi": true,
             "includeAll": true,
@@ -68,8 +67,8 @@ data:
         {
           "id": 1,
           "type": "timeseries",
-          "title": "Decisions over time",
-          "description": "Authorization checks per time slot: allowed, denied, and column-mask decisions that masked something.",
+          "title": "Authorization checks over time",
+          "description": "Every authorization check the Airflow UI/API asked OPA (after Airflow's 10 s cache), allowed vs. denied.",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-opa-decisions"
@@ -88,7 +87,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene}",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -109,10 +108,6 @@ data:
                       {
                         "query": "allowed:false",
                         "label": "denied"
-                      },
-                      {
-                        "query": "_exists_:masks.column",
-                        "label": "masked columns"
                       }
                     ]
                   }
@@ -169,21 +164,6 @@ data:
                     }
                   }
                 ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "masked columns"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "yellow"
-                    }
-                  }
-                ]
               }
             ]
           },
@@ -200,8 +180,8 @@ data:
         {
           "id": 2,
           "type": "table",
-          "title": "Masked columns per user",
-          "description": "Columns OPA masked, per user; counts distinct queries. Iceberg's hidden columns ($partition, $path, ...) are left out: they are always masked, because OpenMetadata does not know them.",
+          "title": "Denied requests",
+          "description": "What was denied, to whom, and the Keycloak groups the decision was based on (User Info Fetcher). rule: dag, connection, variable, configuration, view, custom_view, ...; access: RUN, TASK_LOGS, XCOM, ... for DAGs, the view name for views.",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-opa-decisions"
@@ -209,8 +189,8 @@ data:
           "gridPos": {
             "x": 0,
             "y": 8,
-            "w": 12,
-            "h": 9
+            "w": 24,
+            "h": 10
           },
           "targets": [
             {
@@ -220,105 +200,15 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow AND path:\"trino/batchColumnMasks\" AND _exists_:masks.column",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene} AND allowed:false",
               "timeField": "timestamp",
               "metrics": [
                 {
                   "id": "1",
-                  "type": "cardinality",
-                  "field": "query_id.keyword"
-                }
-              ],
-              "bucketAggs": [
-                {
-                  "id": "2",
-                  "type": "terms",
-                  "field": "user.keyword",
-                  "settings": {
-                    "size": "10",
-                    "order": "desc",
-                    "orderBy": "1",
-                    "min_doc_count": "1"
-                  }
+                  "type": "count"
                 },
                 {
-                  "id": "3",
-                  "type": "terms",
-                  "field": "masks.column.keyword",
-                  "settings": {
-                    "size": "100",
-                    "order": "desc",
-                    "orderBy": "1",
-                    "min_doc_count": "1"
-                  }
-                }
-              ]
-            }
-          ],
-          "transformations": [
-            {
-              "id": "filterByValue",
-              "options": {
-                "type": "exclude",
-                "match": "any",
-                "filters": [
-                  {
-                    "fieldName": "masks.column.keyword",
-                    "config": {
-                      "id": "regex",
-                      "options": {
-                        "value": ".*\\$.*"
-                      }
-                    }
-                  }
-                ]
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "user.keyword": "User",
-                  "masks.column.keyword": "Masked column",
-                  "Unique Count": "Queries"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "id": 3,
-          "type": "table",
-          "title": "Denied access",
-          "description": "Denied checks with what the policy based them on: Keycloak groups (User Info Fetcher) and whether OpenMetadata knows an owner (Resource Info Fetcher).",
-          "datasource": {
-            "type": "grafana-opensearch-datasource",
-            "uid": "opensearch-opa-decisions"
-          },
-          "gridPos": {
-            "x": 12,
-            "y": 8,
-            "w": 12,
-            "h": 9
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "grafana-opensearch-datasource",
-                "uid": "opensearch-opa-decisions"
-              },
-              "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow AND allowed:false",
-              "timeField": "timestamp",
-              "metrics": [
-                {
-                  "id": "1",
-                  "type": "cardinality",
-                  "field": "query_id.keyword"
-                },
-                {
-                  "id": "5",
+                  "id": "9",
                   "type": "max",
                   "field": "timestamp"
                 }
@@ -338,9 +228,43 @@ data:
                 {
                   "id": "3",
                   "type": "terms",
-                  "field": "table.keyword",
+                  "field": "rule.keyword",
+                  "settings": {
+                    "size": "15",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "method.keyword",
+                  "settings": {
+                    "size": "6",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "5",
+                  "type": "terms",
+                  "field": "resource.keyword",
                   "settings": {
                     "size": "20",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1",
+                    "missing": "(all)"
+                  }
+                },
+                {
+                  "id": "6",
+                  "type": "terms",
+                  "field": "access_entity.keyword",
+                  "settings": {
+                    "size": "10",
                     "order": "desc",
                     "orderBy": "1",
                     "min_doc_count": "1",
@@ -348,18 +272,19 @@ data:
                   }
                 },
                 {
-                  "id": "4",
+                  "id": "7",
                   "type": "terms",
-                  "field": "resource_info.has_owner",
+                  "field": "access_view.keyword",
                   "settings": {
-                    "size": "2",
+                    "size": "10",
                     "order": "desc",
                     "orderBy": "1",
-                    "min_doc_count": "1"
+                    "min_doc_count": "1",
+                    "missing": "-"
                   }
                 },
                 {
-                  "id": "6",
+                  "id": "8",
                   "type": "terms",
                   "field": "groups.keyword",
                   "settings": {
@@ -396,10 +321,13 @@ data:
               "options": {
                 "renameByName": {
                   "user.keyword": "User",
-                  "table.keyword": "Table",
-                  "resource_info.has_owner": "Has owner in OpenMetadata",
+                  "rule.keyword": "Rule",
+                  "method.keyword": "Method",
+                  "resource.keyword": "Resource",
+                  "access_entity.keyword": "Access",
+                  "access_view.keyword": "View",
                   "groups.keyword": "Groups",
-                  "Unique Count": "Queries",
+                  "Count": "Checks",
                   "Max": "Last seen"
                 }
               }
@@ -407,17 +335,17 @@ data:
           ]
         },
         {
-          "id": 4,
+          "id": 3,
           "type": "table",
-          "title": "Checks per query",
-          "description": "Latest Trino queries and how many authorization checks they caused. Add an ad-hoc filter query_id.keyword = <id> to see one query's decisions below. ExecuteQuery checks carry no query ID.",
+          "title": "Permissions per user and rule",
+          "description": "Allowed and denied checks per user and rule in the selected time range: who could do what.",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-opa-decisions"
           },
           "gridPos": {
             "x": 0,
-            "y": 17,
+            "y": 18,
             "w": 12,
             "h": 12
           },
@@ -429,47 +357,54 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow AND _exists_:query_id",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene}",
               "timeField": "timestamp",
               "metrics": [
                 {
                   "id": "1",
                   "type": "count"
-                },
-                {
-                  "id": "2",
-                  "type": "max",
-                  "field": "timestamp"
-                },
-                {
-                  "id": "4",
-                  "type": "cardinality",
-                  "field": "table.keyword"
-                },
-                {
-                  "id": "5",
-                  "type": "cardinality",
-                  "field": "masks.column.keyword"
                 }
               ],
               "bucketAggs": [
                 {
-                  "id": "3",
+                  "id": "2",
                   "type": "terms",
-                  "field": "query_id.keyword",
+                  "field": "user.keyword",
                   "settings": {
-                    "size": "20",
+                    "size": "10",
                     "order": "desc",
-                    "orderBy": "2",
+                    "orderBy": "1",
                     "min_doc_count": "1"
                   }
                 },
                 {
-                  "id": "6",
+                  "id": "3",
                   "type": "terms",
-                  "field": "user.keyword",
+                  "field": "rule.keyword",
                   "settings": {
-                    "size": "1",
+                    "size": "15",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "method.keyword",
+                  "settings": {
+                    "size": "6",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "5",
+                  "type": "terms",
+                  "field": "allowed",
+                  "settings": {
+                    "size": "2",
                     "order": "desc",
                     "orderBy": "1",
                     "min_doc_count": "1"
@@ -478,68 +413,70 @@ data:
               ]
             }
           ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "rule.keyword": "Rule",
+                  "method.keyword": "Method",
+                  "allowed": "Allowed",
+                  "Count": "Checks"
+                }
+              }
+            }
+          ],
           "fieldConfig": {
             "defaults": {},
             "overrides": [
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Time"
+                  "options": "Allowed"
                 },
                 "properties": [
                   {
-                    "id": "unit",
-                    "value": "dateTimeAsIso"
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Query ID"
-                },
-                "properties": [
-                  {
-                    "id": "links",
+                    "id": "mappings",
                     "value": [
                       {
-                        "title": "Query details, decisions and OPA log (dashboard Trino queries)",
-                        "url": "/d/trino-queries/trino-queries?var-query_id=${__value.raw}&${__url_time_range}"
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "allowed",
+                            "color": "green"
+                          },
+                          "false": {
+                            "text": "DENIED",
+                            "color": "red"
+                          }
+                        }
                       }
                     ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
                   }
                 ]
               }
             ]
-          },
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "query_id.keyword": "Query ID",
-                  "user.keyword": "User",
-                  "Count": "Checks",
-                  "Max": "Time",
-                  "Unique Count table.keyword": "Tables",
-                  "Unique Count masks.column.keyword": "Masked columns"
-                }
-              }
-            }
-          ]
+          }
         },
         {
-          "id": 5,
+          "id": 4,
           "type": "logs",
           "title": "Decisions",
-          "description": "One line per decision (field `message`); expand a line for groups, OpenMetadata metadata, masks.",
+          "description": "One line per decision; expand for the Keycloak groups and the full decision.",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-opa-decisions"
           },
           "gridPos": {
             "x": 12,
-            "y": 17,
+            "y": 18,
             "w": 12,
             "h": 12
           },
@@ -551,7 +488,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND NOT user.keyword:(admin OR cockpit) AND NOT system.keyword:airflow",
+              "query": "system.keyword:airflow AND user.keyword:${user:lucene}",
               "timeField": "timestamp",
               "metrics": [
                 {
