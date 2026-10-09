@@ -460,11 +460,8 @@ data:
                   "message": true,
                   "allowed": true,
                   "groups": true,
-                  "masks.column": true,
-                  "masks.expression": true,
-                  "resource_info.has_owner": true,
-                  "resource_info.owners": true,
-                  "resource_info.column_tags.tags": true
+                  "masks": true,
+                  "resource_info": true
                 },
                 "indexByName": {
                   "timestamp": 0,
@@ -472,11 +469,8 @@ data:
                   "message": 2,
                   "allowed": 3,
                   "groups": 4,
-                  "masks.column": 5,
-                  "masks.expression": 6,
-                  "resource_info.has_owner": 7,
-                  "resource_info.owners": 8,
-                  "resource_info.column_tags.tags": 9
+                  "masks": 5,
+                  "resource_info": 6
                 },
                 "renameByName": {
                   "timestamp": "Time",
@@ -484,11 +478,8 @@ data:
                   "message": "Decision",
                   "allowed": "Allowed",
                   "groups": "Groups",
-                  "masks.column": "Masked columns",
-                  "masks.expression": "Mask expressions",
-                  "resource_info.has_owner": "Has owner (OpenMetadata)",
-                  "resource_info.owners": "Owners",
-                  "resource_info.column_tags.tags": "Column tags"
+                  "masks": "Masks (column -> expression)",
+                  "resource_info": "OpenMetadata (owners, tags, has_owner)"
                 }
               }
             }
