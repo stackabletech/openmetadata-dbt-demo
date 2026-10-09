@@ -129,7 +129,7 @@ just dbt-run             # Run dbt models locally (requires Trino access)
 | Component | Description |
 |-----------|-------------|
 | **[OpenMetadata](https://open-metadata.org/)** | Data catalog and metadata governance |
-| **[Prometheus](https://prometheus.io/) + [Grafana](https://grafana.com/)** | Metrics of all Stackable products (kube-prometheus-stack, ServiceMonitors in `platform/manifests/prometheus/`); Grafana (AGPL-3.0) with Keycloak login, Stackable product dashboards and the OPA decisions from OpenSearch |
+| **[Prometheus](https://prometheus.io/) + [Grafana](https://grafana.com/)** | Metrics of all Stackable products (kube-prometheus-stack, ServiceMonitors in `platform/manifests/prometheus/`); Grafana (AGPL-3.0) with Keycloak login, Stackable product dashboards, the product logs and the OPA decisions from OpenSearch |
 | **[Entropy Data](https://www.entropy-data.com/)** | Data product marketplace (Community Edition, [Helm chart](https://github.com/entropy-data/entropy-data-helm)); syncs the `tpch` and `data2day` Trino catalogs as assets. Setup adapted from [entropy-data/entropydata-dbt-demo](https://github.com/entropy-data/entropydata-dbt-demo) |
 | **[Apache Superset](https://superset.apache.org/)** | Data exploration and visualization |
 | **[dbt Core](https://www.getdbt.com/)** | Data transformation framework (TPC-H models) |

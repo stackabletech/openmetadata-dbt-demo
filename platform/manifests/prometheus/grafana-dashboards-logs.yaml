@@ -1,0 +1,501 @@
+---
+# Grafana dashboard "Stackable logs" on the OpenSearch data source `opensearch-logs`
+# (product logs in logs-YYYY.MM.DD, shipped by the Stackable Vector agents via the vector-aggregator).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-logs
+  namespace: platform
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: Stackable Data Platform
+data:
+  stackable-logs.json: |
+    {
+      "uid": "stackable-logs",
+      "title": "Stackable logs",
+      "tags": [
+        "logs",
+        "stackable"
+      ],
+      "description": "Logs of all Stackable products from OpenSearch (logs-YYYY.MM.DD, shipped by the Vector agents via the vector-aggregator). OPA decisions are in the 'OPA decisions' dashboard.",
+      "editable": true,
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-logs"
+            },
+            "query": "{\"find\": \"terms\", \"field\": \"cluster.keyword\"}",
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "allValue": "*",
+            "sort": 1,
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "container",
+            "label": "Container",
+            "type": "query",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-logs"
+            },
+            "query": "{\"find\": \"terms\", \"field\": \"container.keyword\", \"query\": \"cluster.keyword:${cluster:lucene}\"}",
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "allValue": "*",
+            "sort": 1,
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "level",
+            "label": "Level",
+            "type": "custom",
+            "query": "ERROR,WARN,INFO,DEBUG,TRACE",
+            "multi": true,
+            "includeAll": true,
+            "allValue": "*",
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "label": "Search (Lucene)",
+            "type": "textbox",
+            "query": "*",
+            "current": {
+              "text": "*",
+              "value": "*"
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Log volume by level",
+          "description": "Log lines per time slot and level.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-logs"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-logs"
+              },
+              "queryType": "lucene",
+              "query": "cluster.keyword:${cluster:lucene} AND container.keyword:${container:lucene} AND level.keyword:${level:lucene} AND (${search:raw})",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "level.keyword",
+                  "settings": {
+                    "size": "5",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "9",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ERROR"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "WARN"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "INFO"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "DEBUG"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "TRACE"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "purple"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Log volume by product",
+          "description": "Log lines per time slot and Stackable cluster.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-logs"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-logs"
+              },
+              "queryType": "lucene",
+              "query": "cluster.keyword:${cluster:lucene} AND container.keyword:${container:lucene} AND level.keyword:${level:lucene} AND (${search:raw})",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "cluster.keyword",
+                  "settings": {
+                    "size": "15",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "9",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 3,
+          "type": "table",
+          "title": "Errors and warnings",
+          "description": "ERROR and WARN lines per cluster, container and logger, most frequent first.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-logs"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-logs"
+              },
+              "queryType": "lucene",
+              "query": "cluster.keyword:${cluster:lucene} AND container.keyword:${container:lucene} AND level.keyword:${level:lucene} AND (${search:raw}) AND level.keyword:(ERROR OR WARN)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                },
+                {
+                  "id": "5",
+                  "type": "max",
+                  "field": "timestamp"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "terms",
+                  "field": "cluster.keyword",
+                  "settings": {
+                    "size": "15",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "container.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "level.keyword",
+                  "settings": {
+                    "size": "2",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "6",
+                  "type": "terms",
+                  "field": "logger.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "1",
+                    "min_doc_count": "1"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "cluster.keyword": "Cluster",
+                  "container.keyword": "Container",
+                  "level.keyword": "Level",
+                  "logger.keyword": "Logger",
+                  "Count": "Lines",
+                  "Max": "Last seen"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "logs",
+          "title": "Log lines",
+          "description": "Newest first; expand a line for pod, logger, file and parse errors.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-logs"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 16,
+            "w": 24,
+            "h": 18
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-logs"
+              },
+              "queryType": "lucene",
+              "query": "cluster.keyword:${cluster:lucene} AND container.keyword:${container:lucene} AND level.keyword:${level:lucene} AND (${search:raw})",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "logs"
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true,
+            "showLabels": false,
+            "dedupStrategy": "none"
+          }
+        }
+      ]
+    }
