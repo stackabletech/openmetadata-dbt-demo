@@ -22,9 +22,11 @@ data:
 
     from typing import TYPE_CHECKING, Optional
 
+    import requests
+    from airflow.configuration import conf
     from airflow.models.dag import DagModel, DagTag
     from airflow.utils.session import create_session
-    from opa_auth_manager.opa_fab_auth_manager import OpaFabAuthManager, OpaInput
+    from opa_auth_manager.opa_fab_auth_manager import Cache, OpaFabAuthManager, OpaInput
     from sqlalchemy import select
 
     if TYPE_CHECKING:
@@ -38,6 +40,22 @@ data:
 
     class OpaTagsAuthManager(OpaFabAuthManager):
         """Adds `details.tags` to is_authorized_dag and filters DAG lists through OPA."""
+
+        def _ensure_opa_client(self) -> None:
+            """The parent creates its OPA cache and HTTP session only in init_flask_resources(),
+            which Airflow does not call on every auth manager instance it uses (e.g. the one
+            that filters DAG lists in the FastAPI app). Same settings as the parent."""
+            if not hasattr(self, "opa_cache"):
+                self.opa_cache = Cache(
+                    maxsize=conf.getint("core", "AUTH_OPA_CACHE_MAXSIZE", fallback=self.AUTH_OPA_CACHE_MAXSIZE_DEFAULT),
+                    ttl=conf.getint("core", "AUTH_OPA_CACHE_TTL_IN_SEC", fallback=self.AUTH_OPA_CACHE_TTL_IN_SEC_DEFAULT),
+                )
+            if not hasattr(self, "opa_session"):
+                self.opa_session = requests.Session()
+
+        def _is_authorized_in_opa(self, endpoint, input):
+            self._ensure_opa_client()
+            return super()._is_authorized_in_opa(endpoint, input)
 
         @staticmethod
         def _tags(dag_ids: Optional[list[str]] = None) -> dict[str, list[str]]:
