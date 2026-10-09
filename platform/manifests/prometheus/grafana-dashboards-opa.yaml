@@ -355,8 +355,7 @@ data:
                     "size": "2",
                     "order": "desc",
                     "orderBy": "1",
-                    "min_doc_count": "1",
-                    "missing": "-"
+                    "min_doc_count": "1"
                   }
                 },
                 {
