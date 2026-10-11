@@ -1,0 +1,594 @@
+---
+# Grafana dashboard "NiFi authorization": OPA's decisions for Apache NiFi (logs-opa-decisions-*,
+# system=nifi; policy platform/manifests/opa/rego-nifi-policies.yaml) with the Keycloak groups they
+# were based on. NiFi node requests (CN=generated certificate for pod) are left out.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-nifi
+  namespace: platform
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: Governance
+data:
+  nifi-authorization.json: |
+    {
+      "schemaVersion": 39,
+      "editable": true,
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "refresh": "30s",
+      "uid": "nifi-authorization",
+      "title": "NiFi authorization",
+      "tags": [
+        "nifi",
+        "opa",
+        "governance"
+      ],
+      "description": "OPA's decisions for Apache NiFi (logs-opa-decisions-*, system=nifi) with the Keycloak groups they were based on.",
+      "templating": {
+        "list": [
+          {
+            "name": "user",
+            "label": "User",
+            "type": "query",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-opa-decisions"
+            },
+            "query": "{\"find\": \"terms\", \"field\": \"user.keyword\", \"query\": \"system.keyword:nifi AND NOT user.keyword:\\\"CN=generated certificate for pod\\\"\"}",
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "allValue": "*",
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "Filters",
+            "type": "adhoc",
+            "datasource": {
+              "type": "grafana-opensearch-datasource",
+              "uid": "opensearch-opa-decisions"
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 900,
+          "type": "text",
+          "title": "",
+          "transparent": true,
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 3
+          },
+          "options": {
+            "mode": "html",
+            "content": "<div style=\"display:flex;align-items:center;gap:14px;height:100%\"><a href=\"/d/sdp-overview\"><img src=\"/public/img/stackable/stackable-icon.svg\" alt=\"Stackable\" style=\"height:40px\"></a><div><div style=\"font-size:20px;font-weight:600;line-height:1.2\">Stackable Data Platform</div><div style=\"opacity:0.7;font-size:13px\">NiFi: authorization decisions (OPA)</div></div><div style=\"margin-left:auto;font-size:13px;display:flex;gap:16px\"><a href=\"/d/sdp-overview\" style=\"opacity:0.85\">Overview</a><a href=\"/d/trino-queries\" style=\"opacity:0.85\">Trino queries</a><a href=\"/d/airflow-authorization\" style=\"opacity:0.85\">Airflow authorization</a><a href=\"/d/nifi-authorization\" style=\"font-weight:600;text-decoration:underline\">NiFi authorization</a><a href=\"/d/opa-decisions\" style=\"opacity:0.85\">OPA decisions</a><a href=\"/d/stackable-logs\" style=\"opacity:0.85\">Logs</a></div></div>"
+          }
+        },
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Authorization checks over time",
+          "description": "Final decisions (allowed, denied) and checks NiFi passed on to the parent component (resourceNotFound = 'inherit'). NiFi node requests left out.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 3,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:nifi AND user.keyword:${user:lucene} AND NOT user.keyword:\"CN=generated certificate for pod\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "filters",
+                  "settings": {
+                    "filters": [
+                      {
+                        "query": "result.keyword:allowed",
+                        "label": "allowed"
+                      },
+                      {
+                        "query": "result.keyword:denied",
+                        "label": "denied"
+                      },
+                      {
+                        "query": "result.keyword:inherit",
+                        "label": "passed to parent"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 80,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "allowed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "denied"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 2,
+          "type": "table",
+          "title": "Denied requests",
+          "description": "Who was denied what: user, read/write, component and the Keycloak groups the decision was based on.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 11,
+            "w": 24,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:nifi AND user.keyword:${user:lucene} AND NOT user.keyword:\"CN=generated certificate for pod\" AND result.keyword:denied",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                },
+                {
+                  "id": "9",
+                  "type": "max",
+                  "field": "timestamp"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "10"
+                },
+                {
+                  "type": "terms",
+                  "field": "method.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "11"
+                },
+                {
+                  "type": "terms",
+                  "field": "resource_name.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "12"
+                },
+                {
+                  "type": "terms",
+                  "field": "resource.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "13"
+                },
+                {
+                  "type": "terms",
+                  "field": "groups.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "14"
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "method.keyword": "Action",
+                  "resource_name.keyword": "Component",
+                  "resource.keyword": "Resource",
+                  "groups.keyword": "Groups",
+                  "Count": "Requests",
+                  "Max timestamp": "Last"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "table",
+          "title": "Team process groups: access per user",
+          "description": "The process groups marketing and finance: each team edits its own, users without a team may look, the other team sees nothing.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 12,
+            "h": 11
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:nifi AND user.keyword:${user:lucene} AND NOT user.keyword:\"CN=generated certificate for pod\" AND resource_name.keyword:(marketing OR finance OR \"Data for marketing\" OR \"Data for finance\") AND _exists_:allowed",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "10"
+                },
+                {
+                  "type": "terms",
+                  "field": "resource_name.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "11"
+                },
+                {
+                  "type": "terms",
+                  "field": "method.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "12"
+                },
+                {
+                  "type": "terms",
+                  "field": "allowed",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "13"
+                },
+                {
+                  "type": "terms",
+                  "field": "groups.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "14"
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "user.keyword": "User",
+                  "resource_name.keyword": "Process group",
+                  "method.keyword": "Action",
+                  "allowed": "Allowed",
+                  "groups.keyword": "Groups",
+                  "Count": "Checks"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "logs",
+          "title": "Decisions",
+          "description": "OPA decision log for NiFi, newest first.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 20,
+            "w": 12,
+            "h": 11
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:nifi AND user.keyword:${user:lucene} AND NOT user.keyword:\"CN=generated certificate for pod\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "logs"
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true
+          }
+        },
+        {
+          "id": 5,
+          "type": "table",
+          "title": "Components decided by their parent",
+          "description": "Checks the policy answered with resourceNotFound: NiFi then asks again for the parent (processor -> process group -> root). Shows which components inherit their permissions.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 31,
+            "w": 24,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:nifi AND user.keyword:${user:lucene} AND NOT user.keyword:\"CN=generated certificate for pod\" AND result.keyword:inherit",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "type": "terms",
+                  "field": "resource_name.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "10"
+                },
+                {
+                  "type": "terms",
+                  "field": "resource.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "11"
+                },
+                {
+                  "type": "terms",
+                  "field": "method.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "12"
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "resource_name.keyword": "Component",
+                  "resource.keyword": "Resource",
+                  "method.keyword": "Action",
+                  "Count": "Checks"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }

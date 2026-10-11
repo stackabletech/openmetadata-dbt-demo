@@ -347,7 +347,7 @@ spec:
                   } else if d.system == "airflow" {
                     d.drilldown = "/d/airflow-authorization/airflow-authorization?var-user=" + user_q
                   } else if d.system == "nifi" {
-                    d.drilldown = "/d/opa-decisions/opa-decisions?var-user=" + user_q
+                    d.drilldown = "/d/nifi-authorization/nifi-authorization?var-user=" + user_q
                   }
 
                   # --- 3. summary + full text without the bulky parts -----------------------------------

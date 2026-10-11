@@ -51,7 +51,7 @@ data:
           },
           "options": {
             "mode": "html",
-            "content": "<div style=\"display:flex;align-items:center;gap:14px;height:100%\"><a href=\"/d/sdp-overview\"><img src=\"/public/img/stackable/stackable-icon.svg\" alt=\"Stackable\" style=\"height:40px\"></a><div><div style=\"font-size:20px;font-weight:600;line-height:1.2\">Stackable Data Platform</div><div style=\"opacity:0.7;font-size:13px\">All products: status, authorization and drill-down</div></div><div style=\"margin-left:auto;font-size:13px;display:flex;gap:16px\"><a href=\"/d/sdp-overview\" style=\"font-weight:600;text-decoration:underline\">Overview</a><a href=\"/d/trino-queries\" style=\"opacity:0.85\">Trino queries</a><a href=\"/d/airflow-authorization\" style=\"opacity:0.85\">Airflow authorization</a><a href=\"/d/opa-decisions\" style=\"opacity:0.85\">OPA decisions</a><a href=\"/d/stackable-logs\" style=\"opacity:0.85\">Logs</a></div></div>"
+            "content": "<div style=\"display:flex;align-items:center;gap:14px;height:100%\"><a href=\"/d/sdp-overview\"><img src=\"/public/img/stackable/stackable-icon.svg\" alt=\"Stackable\" style=\"height:40px\"></a><div><div style=\"font-size:20px;font-weight:600;line-height:1.2\">Stackable Data Platform</div><div style=\"opacity:0.7;font-size:13px\">All products: status, authorization and drill-down</div></div><div style=\"margin-left:auto;font-size:13px;display:flex;gap:16px\"><a href=\"/d/sdp-overview\" style=\"font-weight:600;text-decoration:underline\">Overview</a><a href=\"/d/trino-queries\" style=\"opacity:0.85\">Trino queries</a><a href=\"/d/airflow-authorization\" style=\"opacity:0.85\">Airflow authorization</a><a href=\"/d/nifi-authorization\" style=\"opacity:0.85\">NiFi authorization</a><a href=\"/d/opa-decisions\" style=\"opacity:0.85\">OPA decisions</a><a href=\"/d/stackable-logs\" style=\"opacity:0.85\">Logs</a></div></div>"
           }
         },
         {
@@ -527,7 +527,7 @@ data:
           "id": 14,
           "type": "stat",
           "title": "NiFi",
-          "description": "Apache NiFi. Status: share of its Prometheus scrape targets that are up. Click: metrics dashboard.",
+          "description": "Apache NiFi. Status: share of its Prometheus scrape targets that are up. Click: governance dashboard. Metrics dashboard: link in the panel header.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -539,6 +539,10 @@ data:
             "h": 4
           },
           "links": [
+            {
+              "title": "Governance dashboard",
+              "url": "/d/nifi-authorization?${__url_time_range}"
+            },
             {
               "title": "Metrics dashboard",
               "url": "/d/C_8qIX04l?${__url_time_range}"
@@ -612,8 +616,8 @@ data:
               "noValue": "No metrics",
               "links": [
                 {
-                  "title": "NiFi: metrics",
-                  "url": "/d/C_8qIX04l?${__url_time_range}"
+                  "title": "NiFi: governance",
+                  "url": "/d/nifi-authorization?${__url_time_range}"
                 }
               ]
             },
@@ -1606,7 +1610,7 @@ data:
           "id": 26,
           "type": "table",
           "title": "Recent denials, all products",
-          "description": "Newest first. Click a row: Trino goes to the query's detail page, Airflow to its authorization dashboard (\u00b11 min around the decision).",
+          "description": "Newest first. Click a row: Trino goes to the query's detail page, Airflow and NiFi to their authorization dashboards (\u00b11 min around the decision).",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-opa-decisions"
