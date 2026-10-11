@@ -146,6 +146,21 @@ data:
           ],
           "transformations": [
             {
+              "id": "convertFieldType",
+              "options": {
+                "conversions": [
+                  {
+                    "targetField": "tables",
+                    "destinationType": "string"
+                  },
+                  {
+                    "targetField": "masked_columns",
+                    "destinationType": "string"
+                  }
+                ]
+              }
+            },
+            {
               "id": "organize",
               "options": {
                 "includeByName": {
