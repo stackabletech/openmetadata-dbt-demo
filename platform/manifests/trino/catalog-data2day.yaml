@@ -35,6 +35,11 @@ spec:
             key: credential
         iceberg.rest-catalog.oauth2.scope:
           value: "openid"
+        # Refreshing uses OAuth2 token exchange, which the Keycloak client doesn't allow
+        # ("Standard token exchange is not enabled"). Without refresh, Iceberg fetches a new
+        # token with the client credentials when the old one expires.
+        iceberg.rest-catalog.oauth2.token-refresh-enabled:
+          value: "false"
         iceberg.rest-catalog.vended-credentials-enabled:
           value: "false"
         fs.native-s3.enabled:
