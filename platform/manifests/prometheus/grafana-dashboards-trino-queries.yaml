@@ -1,8 +1,11 @@
 ---
-# Grafana dashboard "Trino queries": completed queries (logs-trino-queries-*, from Trino's HTTP event
-# listener via the vector-aggregator) with drill-down to the query's OPA decisions
-# (logs-opa-decisions-*), the OPA log in its time window and Trino log lines, plus links to the
-# Trino web UI (NodePort 30443).
+# Grafana dashboards for Trino queries (logs-trino-queries-*, from Trino's HTTP event listener via the
+# vector-aggregator):
+#   - "Trino queries": the list of completed queries with user, tables and what OPA did to them
+#     (access: allowed / masked / row filter / denied); clicking a row opens
+#   - "Trino query detail": one query (var-query_id + its time window from the link) with all fields,
+#     its OPA decisions (logs-opa-decisions-*), the Trino and OPA log, and a link to the Trino web UI
+#     (NodePort 30443).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,6 +18,13 @@ metadata:
 data:
   trino-queries.json: |
     {
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "refresh": "30s",
+      "editable": true,
       "uid": "trino-queries",
       "title": "Trino queries",
       "tags": [
@@ -22,14 +32,7 @@ data:
         "opa",
         "governance"
       ],
-      "description": "Completed Trino queries (HTTP event listener -> logs-trino-queries-*) with drill-down to OPA's decisions (logs-opa-decisions-*) and the OPA and Trino log, and links to the Trino web UI.",
-      "editable": true,
-      "schemaVersion": 39,
-      "time": {
-        "from": "now-6h",
-        "to": "now"
-      },
-      "refresh": "30s",
+      "description": "Completed Trino queries (HTTP event listener -> logs-trino-queries-*). Click a query for its details on 'Trino query detail'.",
       "templating": {
         "list": [
           {
@@ -56,6 +59,25 @@ data:
             }
           },
           {
+            "name": "access",
+            "label": "Access",
+            "type": "custom",
+            "query": "allowed,masked,row filter,denied",
+            "multi": true,
+            "includeAll": true,
+            "allValue": "*",
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            },
+            "description": "What OPA did to the query: allowed, masked (column masks), row filter, denied"
+          },
+          {
             "name": "state",
             "label": "State",
             "type": "custom",
@@ -72,26 +94,24 @@ data:
                 "$__all"
               ]
             }
-          },
-          {
-            "name": "query_id",
-            "label": "Query ID",
-            "type": "textbox",
-            "query": "",
-            "current": {
-              "text": "",
-              "value": ""
-            },
-            "description": "Set by the drill-down link in 'Queries'"
           }
         ]
       },
+      "links": [
+        {
+          "title": "Trino query detail",
+          "type": "link",
+          "url": "/d/trino-query-detail/trino-query-detail",
+          "keepTime": true,
+          "icon": "dashboard"
+        }
+      ],
       "panels": [
         {
           "id": 1,
           "type": "table",
           "title": "Queries",
-          "description": "Completed Trino queries, newest first. Click a query ID to drill down (sets the query and its time window); 'Trino UI' opens the query in the Trino web UI. Technical users (admin, cockpit) are left out.",
+          "description": "Completed Trino queries, newest first. Click a row for the query's details, OPA decisions and logs; 'Trino UI' opens the query in the Trino web UI. Access is what OPA did to the query. Technical users (admin, cockpit) are left out.",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-trino-queries"
@@ -100,7 +120,7 @@ data:
             "x": 0,
             "y": 0,
             "w": 24,
-            "h": 10
+            "h": 26
           },
           "targets": [
             {
@@ -110,14 +130,14 @@ data:
                 "uid": "opensearch-trino-queries"
               },
               "queryType": "lucene",
-              "query": "user.keyword:${user:lucene} AND state.keyword:${state:lucene} AND NOT user.keyword:(admin OR cockpit)",
+              "query": "user.keyword:${user:lucene} AND state.keyword:${state:lucene} AND access:${access:lucene} AND NOT user.keyword:(admin OR cockpit)",
               "timeField": "timestamp",
               "metrics": [
                 {
                   "id": "1",
                   "type": "raw_data",
                   "settings": {
-                    "size": "200"
+                    "size": "500"
                   }
                 }
               ],
@@ -131,12 +151,14 @@ data:
                 "includeByName": {
                   "timestamp": true,
                   "user": true,
+                  "access": true,
                   "state": true,
                   "error_code": true,
-                  "wall_s": true,
-                  "output_rows": true,
                   "tables": true,
                   "masked_columns": true,
+                  "row_filters": true,
+                  "wall_s": true,
+                  "output_rows": true,
                   "sql": true,
                   "query_id": true,
                   "trino_ui_url": true,
@@ -146,27 +168,31 @@ data:
                 "indexByName": {
                   "timestamp": 0,
                   "user": 1,
-                  "state": 2,
-                  "error_code": 3,
-                  "wall_s": 4,
-                  "output_rows": 5,
-                  "tables": 6,
-                  "masked_columns": 7,
-                  "sql": 8,
-                  "query_id": 9,
-                  "trino_ui_url": 10,
-                  "window_from_ms": 11,
-                  "window_to_ms": 12
+                  "access": 2,
+                  "state": 3,
+                  "error_code": 4,
+                  "tables": 5,
+                  "masked_columns": 6,
+                  "row_filters": 7,
+                  "wall_s": 8,
+                  "output_rows": 9,
+                  "sql": 10,
+                  "query_id": 11,
+                  "trino_ui_url": 12,
+                  "window_from_ms": 13,
+                  "window_to_ms": 14
                 },
                 "renameByName": {
                   "timestamp": "Time",
                   "user": "User",
+                  "access": "Access",
                   "state": "State",
                   "error_code": "Error",
-                  "wall_s": "Wall time",
-                  "output_rows": "Rows",
                   "tables": "Tables",
                   "masked_columns": "Masked columns",
+                  "row_filters": "Row filters",
+                  "wall_s": "Wall time",
+                  "output_rows": "Rows",
                   "sql": "SQL",
                   "query_id": "Query ID",
                   "trino_ui_url": "Trino UI"
@@ -181,27 +207,16 @@ data:
                   "type": "auto"
                 },
                 "inspect": true
-              }
+              },
+              "links": [
+                {
+                  "title": "Query details, OPA decisions and logs",
+                  "url": "/d/trino-query-detail/trino-query-detail?var-query_id=${__data.fields.query_id}&from=${__data.fields.window_from_ms}&to=${__data.fields.window_to_ms}",
+                  "targetBlank": false
+                }
+              ]
             },
             "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Query ID"
-                },
-                "properties": [
-                  {
-                    "id": "links",
-                    "value": [
-                      {
-                        "title": "Drill down: decisions and OPA log of this query",
-                        "url": "/d/trino-queries/trino-queries?var-query_id=${__data.fields.query_id}&from=${__data.fields.window_from_ms}&to=${__data.fields.window_to_ms}",
-                        "targetBlank": false
-                      }
-                    ]
-                  }
-                ]
-              },
               {
                 "matcher": {
                   "id": "byName",
@@ -289,6 +304,127 @@ data:
                     "value": true
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Access"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "allowed": {
+                            "color": "green",
+                            "index": 0
+                          },
+                          "masked": {
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "row filter": {
+                            "color": "orange",
+                            "index": 2
+                          },
+                          "masked + row filter": {
+                            "color": "orange",
+                            "index": 3
+                          },
+                          "denied": {
+                            "color": "red",
+                            "index": 4
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 150
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "User"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 130
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "State"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 190
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Wall time"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Rows"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 70
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Trino UI"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
               }
             ]
           },
@@ -301,21 +437,540 @@ data:
               }
             ]
           }
-        },
+        }
+      ]
+    }
+  trino-query-detail.json: |
+    {
+      "schemaVersion": 39,
+      "editable": true,
+      "uid": "trino-query-detail",
+      "title": "Trino query detail",
+      "tags": [
+        "trino",
+        "opa",
+        "governance"
+      ],
+      "description": "One Trino query: details, the OPA decisions it caused (with Keycloak groups and OpenMetadata data), and the Trino and OPA log. Opened from 'Trino queries'.",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "refresh": "",
+      "templating": {
+        "list": [
+          {
+            "name": "query_id",
+            "label": "Query ID",
+            "type": "textbox",
+            "query": "",
+            "current": {
+              "text": "",
+              "value": ""
+            },
+            "description": "Set by the link from 'Trino queries'"
+          }
+        ]
+      },
+      "links": [
         {
-          "id": 2,
-          "type": "table",
-          "title": "Query details",
-          "description": "All recorded fields of the selected query (click a query ID above, or set the variable).",
+          "title": "All queries",
+          "type": "link",
+          "url": "/d/trino-queries/trino-queries",
+          "icon": "arrow-left",
+          "keepTime": false
+        }
+      ],
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "User",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-trino-queries"
           },
           "gridPos": {
             "x": 0,
-            "y": 10,
-            "w": 10,
-            "h": 14
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "query_id.keyword:\"${query_id}\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "1"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^user$/",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Access",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "query_id.keyword:\"${query_id}\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "1"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^access$/",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "allowed": {
+                      "color": "green",
+                      "index": 0
+                    },
+                    "masked": {
+                      "color": "orange",
+                      "index": 1
+                    },
+                    "row filter": {
+                      "color": "orange",
+                      "index": 2
+                    },
+                    "masked + row filter": {
+                      "color": "orange",
+                      "index": 3
+                    },
+                    "denied": {
+                      "color": "red",
+                      "index": 4
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "State",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "query_id.keyword:\"${query_id}\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "1"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^state$/",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Error",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "query_id.keyword:\"${query_id}\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "1"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^error_code$/",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "noValue": "-"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Wall time",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "query_id.keyword:\"${query_id}\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "1"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^wall_s$/",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "unit": "s",
+              "decimals": 2
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Trino web UI",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 20,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "query_id.keyword:\"${query_id}\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "1"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^trino_ui_url$/",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "mappings": [
+                {
+                  "type": "regex",
+                  "options": {
+                    "pattern": "^https.*",
+                    "result": {
+                      "text": "open \u2197"
+                    }
+                  }
+                }
+              ],
+              "links": [
+                {
+                  "title": "Open in the Trino web UI",
+                  "url": "${__value.raw}",
+                  "targetBlank": true
+                }
+              ]
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 7,
+          "type": "table",
+          "title": "SQL",
+          "description": "The query text.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 24,
+            "h": 5
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "query_id.keyword:\"${query_id}\"",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "1"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "includeByName": {
+                  "sql": true
+                },
+                "renameByName": {}
+              }
+            }
+          ],
+          "options": {
+            "showHeader": false,
+            "cellHeight": "lg"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "cellOptions": {
+                  "type": "auto",
+                  "wrapText": true
+                },
+                "inspect": true
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 8,
+          "type": "table",
+          "title": "Query details",
+          "description": "All recorded fields of the query.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 9,
+            "w": 9,
+            "h": 16
           },
           "targets": [
             {
@@ -414,7 +1069,7 @@ data:
           }
         },
         {
-          "id": 3,
+          "id": 9,
           "type": "table",
           "title": "OPA decisions of this query",
           "description": "Authorization checks OPA answered for the selected query, with the Keycloak groups and OpenMetadata metadata they were based on. The ExecuteQuery check carries no query ID and is not listed.",
@@ -423,10 +1078,10 @@ data:
             "uid": "opensearch-opa-decisions"
           },
           "gridPos": {
-            "x": 10,
-            "y": 10,
-            "w": 14,
-            "h": 14
+            "x": 9,
+            "y": 9,
+            "w": 15,
+            "h": 16
           },
           "targets": [
             {
@@ -515,17 +1170,17 @@ data:
           }
         },
         {
-          "id": 4,
+          "id": 10,
           "type": "logs",
-          "title": "OPA log in the query's time window",
-          "description": "Log lines of the OPA servers (decision log lines excluded) during the selected time range; after a drill-down that is the query's runtime \u00b1 2 s.",
+          "title": "Trino log mentioning the query",
+          "description": "Trino coordinator and worker log lines that contain the selected query ID.",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-logs"
           },
           "gridPos": {
             "x": 0,
-            "y": 24,
+            "y": 25,
             "w": 12,
             "h": 12
           },
@@ -537,7 +1192,7 @@ data:
                 "uid": "opensearch-logs"
               },
               "queryType": "lucene",
-              "query": "cluster.keyword:opa AND NOT logger.keyword:decision",
+              "query": "cluster.keyword:trino AND \"${query_id}\"",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -556,17 +1211,17 @@ data:
           }
         },
         {
-          "id": 5,
+          "id": 11,
           "type": "logs",
-          "title": "Trino log mentioning the query",
-          "description": "Trino coordinator and worker log lines that contain the selected query ID.",
+          "title": "OPA log in the query's time window",
+          "description": "Log lines of the OPA servers (decision log lines excluded) in the query's runtime \u00b1 2 s (the time range set by the link from 'Trino queries').",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-logs"
           },
           "gridPos": {
             "x": 12,
-            "y": 24,
+            "y": 25,
             "w": 12,
             "h": 12
           },
@@ -578,7 +1233,7 @@ data:
                 "uid": "opensearch-logs"
               },
               "queryType": "lucene",
-              "query": "cluster.keyword:trino AND \"${query_id}\"",
+              "query": "cluster.keyword:opa AND NOT logger.keyword:decision",
               "timeField": "timestamp",
               "metrics": [
                 {

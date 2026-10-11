@@ -503,8 +503,8 @@ data:
                     "id": "links",
                     "value": [
                       {
-                        "title": "Query details, decisions and OPA log (dashboard Trino queries)",
-                        "url": "/d/trino-queries/trino-queries?var-query_id=${__value.raw}&${__url_time_range}"
+                        "title": "Query details, decisions and logs (dashboard Trino query detail)",
+                        "url": "/d/trino-query-detail/trino-query-detail?var-query_id=${__value.raw}&${__url_time_range}"
                       }
                     ]
                   }

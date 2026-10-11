@@ -418,6 +418,18 @@ spec:
                     d.error_message = fi.failureMessage
                   }
 
+                  # What the authorization (OPA) did to the query, for the overview: denied, masked and/or
+                  # row filter, else allowed. Other failures (syntax, missing table) aren't access decisions.
+                  access = []
+                  if d.error_code == "PERMISSION_DENIED" {
+                    access = ["denied"]
+                  } else {
+                    if length(masked_columns) > 0 { access = push(access, "masked") }
+                    if length(row_filters) > 0 { access = push(access, "row filter") }
+                    if length(access) == 0 { access = ["allowed"] }
+                  }
+                  d.access = join!(access, " + ")
+
                   # Time window for the drill-down in Grafana (query start - 2 s .. end + 2 s, epoch ms)
                   created = parse_timestamp(string(e.createTime) ?? "", "%+") ?? now()
                   ended = parse_timestamp(string(e.endTime) ?? "", "%+") ?? now()
