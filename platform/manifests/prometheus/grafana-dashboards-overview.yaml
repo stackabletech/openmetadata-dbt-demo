@@ -71,7 +71,7 @@ data:
           "id": 10,
           "type": "stat",
           "title": "Trino",
-          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: governance dashboard. Metrics dashboard: link in the panel header.",
+          "description": "Trino. Status: share of its Prometheus scrape targets that are up. Click: governance dashboard. Metrics dashboard: link in the panel header.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -178,14 +178,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 11,
           "type": "stat",
-          "title": "Apache Airflow",
-          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: governance dashboard.",
+          "title": "Airflow",
+          "description": "Apache Airflow. Status: share of its Prometheus scrape targets that are up. Click: governance dashboard.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -270,7 +273,7 @@ data:
               "noValue": "No metrics",
               "links": [
                 {
-                  "title": "Apache Airflow: governance",
+                  "title": "Airflow: governance",
                   "url": "/d/airflow-authorization?${__url_time_range}"
                 }
               ]
@@ -288,14 +291,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 12,
           "type": "stat",
-          "title": "Apache HDFS",
-          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: metrics dashboard.",
+          "title": "HDFS",
+          "description": "Apache Hadoop HDFS. Status: share of its Prometheus scrape targets that are up. Click: metrics dashboard.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -380,7 +386,7 @@ data:
               "noValue": "No metrics",
               "links": [
                 {
-                  "title": "Apache HDFS: metrics",
+                  "title": "HDFS: metrics",
                   "url": "/d/qjZGZ3AVz?${__url_time_range}"
                 }
               ]
@@ -398,14 +404,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 13,
           "type": "stat",
-          "title": "Apache Kafka",
-          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: metrics dashboard.",
+          "title": "Kafka",
+          "description": "Apache Kafka. Status: share of its Prometheus scrape targets that are up. Click: metrics dashboard.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -490,7 +499,7 @@ data:
               "noValue": "No metrics",
               "links": [
                 {
-                  "title": "Apache Kafka: metrics",
+                  "title": "Kafka: metrics",
                   "url": "/d/C_8qIX04k?${__url_time_range}"
                 }
               ]
@@ -508,14 +517,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 14,
           "type": "stat",
-          "title": "Apache NiFi",
-          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: metrics dashboard.",
+          "title": "NiFi",
+          "description": "Apache NiFi. Status: share of its Prometheus scrape targets that are up. Click: metrics dashboard.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -600,7 +612,7 @@ data:
               "noValue": "No metrics",
               "links": [
                 {
-                  "title": "Apache NiFi: metrics",
+                  "title": "NiFi: metrics",
                   "url": "/d/C_8qIX04l?${__url_time_range}"
                 }
               ]
@@ -618,14 +630,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 15,
           "type": "stat",
-          "title": "Apache Superset",
-          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "title": "Superset",
+          "description": "Apache Superset. Status: share of its Prometheus scrape targets that are up.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -718,14 +733,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 16,
           "type": "stat",
-          "title": "Apache Hive",
-          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "title": "Hive",
+          "description": "Apache Hive (metastore). Status: share of its Prometheus scrape targets that are up.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -818,14 +836,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 17,
           "type": "stat",
-          "title": "Apache ZooKeeper",
-          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "title": "ZooKeeper",
+          "description": "Apache ZooKeeper. Status: share of its Prometheus scrape targets that are up.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -918,14 +939,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 18,
           "type": "stat",
           "title": "OpenSearch",
-          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "description": "OpenSearch. Status: share of its Prometheus scrape targets that are up.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1018,14 +1042,17 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
           "id": 19,
           "type": "stat",
-          "title": "Open Policy Agent",
-          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: governance dashboard.",
+          "title": "OPA",
+          "description": "Open Policy Agent. Status: share of its Prometheus scrape targets that are up. Click: governance dashboard.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1110,7 +1137,7 @@ data:
               "noValue": "No metrics",
               "links": [
                 {
-                  "title": "Open Policy Agent: governance",
+                  "title": "OPA: governance",
                   "url": "/d/opa-decisions?${__url_time_range}"
                 }
               ]
@@ -1128,7 +1155,10 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "value",
-            "justifyMode": "center"
+            "justifyMode": "center",
+            "text": {
+              "valueSize": 32
+            }
           }
         },
         {
