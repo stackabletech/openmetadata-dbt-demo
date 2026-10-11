@@ -111,6 +111,19 @@ spec:
             - name: SERVER_MAX_REQUEST_HEADER_SIZE
               value: "64KiB"
           extraInitContainers:
+            # OpenMetadata creates its search indices and aliases (e.g. dataAsset) only at startup. If
+            # OpenSearch isn't up yet, the first documents auto-create indices without mappings or
+            # aliases and searches fail ("all shards failed") until a reindex with recreateIndex.
+            # 401 = OpenSearch and its security plugin are up (503 while security initializes).
+            - name: wait-for-opensearch
+              image: curlimages/curl:8.11.1
+              command:
+                - sh
+                - -c
+                - |
+                  until code=$(curl -sk -o /dev/null -w '%{http_code}' https://simple-opensearch-nodes-default:9200/) && { [ "$code" = 401 ] || [ "$code" = 200 ]; }; do
+                    echo "Waiting for OpenSearch (HTTP ${code:-none}) ..."; sleep 5
+                  done
             - name: convert-truststore
               image: eclipse-temurin:21-jre
               command:
