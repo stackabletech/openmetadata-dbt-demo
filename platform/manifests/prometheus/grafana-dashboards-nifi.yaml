@@ -202,7 +202,7 @@ data:
           "id": 2,
           "type": "table",
           "title": "Denied requests",
-          "description": "Who was denied what: user, read/write, component and the Keycloak groups the decision was based on.",
+          "description": "Who was denied what: user, read/write, component. The Keycloak groups behind the decisions are in 'Keycloak groups per user'.",
           "datasource": {
             "type": "grafana-opensearch-datasource",
             "uid": "opensearch-opa-decisions"
@@ -278,17 +278,6 @@ data:
                     "min_doc_count": "1"
                   },
                   "id": "13"
-                },
-                {
-                  "type": "terms",
-                  "field": "groups.keyword",
-                  "settings": {
-                    "size": "20",
-                    "order": "desc",
-                    "orderBy": "_count",
-                    "min_doc_count": "1"
-                  },
-                  "id": "14"
                 }
               ]
             }
@@ -319,9 +308,8 @@ data:
                   "method.keyword": "Action",
                   "resource_name.keyword": "Component",
                   "resource.keyword": "Resource",
-                  "groups.keyword": "Groups",
                   "Count": "Requests",
-                  "Max timestamp": "Last"
+                  "Max": "Last seen"
                 }
               }
             }
@@ -402,17 +390,6 @@ data:
                     "min_doc_count": "1"
                   },
                   "id": "13"
-                },
-                {
-                  "type": "terms",
-                  "field": "groups.keyword",
-                  "settings": {
-                    "size": "20",
-                    "order": "desc",
-                    "orderBy": "_count",
-                    "min_doc_count": "1"
-                  },
-                  "id": "14"
                 }
               ]
             }
@@ -443,7 +420,6 @@ data:
                   "resource_name.keyword": "Process group",
                   "method.keyword": "Action",
                   "allowed": "Allowed",
-                  "groups.keyword": "Groups",
                   "Count": "Checks"
                 }
               }
@@ -585,6 +561,93 @@ data:
                   "resource.keyword": "Resource",
                   "method.keyword": "Action",
                   "Count": "Checks"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "table",
+          "title": "Keycloak groups per user",
+          "description": "The Keycloak groups OPA's User Info Fetcher returned for each user (decisions with groups only).",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 40,
+            "w": 12,
+            "h": 7
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "system.keyword:nifi AND user.keyword:${user:lucene} AND NOT user.keyword:\"CN=generated certificate for pod\" AND _exists_:groups",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "type": "terms",
+                  "field": "user.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "9"
+                },
+                {
+                  "type": "terms",
+                  "field": "groups.keyword",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  },
+                  "id": "10"
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "groups.keyword": "Groups",
+                  "Count": "Decisions",
+                  "user.keyword": "User"
                 }
               }
             }
