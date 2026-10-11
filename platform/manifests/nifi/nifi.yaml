@@ -12,6 +12,15 @@ spec:
       - authenticationClass: nifi-keycloak
         oidc:
           clientCredentialsSecret: nifi-keycloak-client
+    # Authorization by OPA: package `nifi` (platform/manifests/opa/rego-nifi-policies.yaml), Keycloak
+    # groups via the User Info Fetcher, team process groups created by configure-nifi.yaml
+    authorization:
+      opa:
+        configMapName: opa
+        package: nifi
+        cache:
+          # Short, so group and policy changes show up quickly in the demo
+          entryTimeToLive: 10s
     sensitiveProperties:
       keySecret: nifi-sensitive-property-key
       autoGenerate: true

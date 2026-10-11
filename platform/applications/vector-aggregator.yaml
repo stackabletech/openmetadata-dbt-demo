@@ -312,6 +312,28 @@ spec:
                     }
                   }
 
+                  # --- NiFi (OPA authorizer plugin): user, read/write, component -------------------------
+                  # result is {allowed} or {resourceNotFound}: "not found" makes NiFi ask again for the parent
+                  # component, so it is no final decision (allowed stays unset, result = "inherit").
+                  if starts_with(string(d.path) ?? "", "nifi/") {
+                    d.system = "nifi"
+                    d.user = get(kv, ["input.identity.name"]) ?? null
+                    d.method = get(kv, ["input.action.name"]) ?? null
+                    d.operation = d.method
+                    d.resource = get(kv, ["input.resource.id"]) ?? null
+                    d.resource_name = get(kv, ["input.resource.name"]) ?? null
+                    d.requested_resource = get(kv, ["input.requestedResource.id"]) ?? null
+                    if (get(kv, ["result.resourceNotFound"]) ?? null) == "true" {
+                      d.result = "inherit"
+                    } else if (get(kv, ["result.allowed"]) ?? null) == "true" {
+                      d.result = "allowed"
+                      d.allowed = true
+                    } else {
+                      d.result = "denied"
+                      d.allowed = false
+                    }
+                  }
+
                   # --- Drill-down target in Grafana, for the cross-product dashboard "Stackable Data Platform":
                   # the product's governance dashboard, opened on this decision (±1 min). New products add a branch.
                   ts_ms = to_unix_timestamp(parse_timestamp(string(d.timestamp) ?? "", "%+") ?? now(), unit: "milliseconds")
@@ -324,6 +346,8 @@ spec:
                     d.drilldown = "/d/trino-queries/trino-queries?var-user=" + user_q
                   } else if d.system == "airflow" {
                     d.drilldown = "/d/airflow-authorization/airflow-authorization?var-user=" + user_q
+                  } else if d.system == "nifi" {
+                    d.drilldown = "/d/opa-decisions/opa-decisions?var-user=" + user_q
                   }
 
                   # --- 3. summary + full text without the bulky parts -----------------------------------
@@ -335,6 +359,9 @@ spec:
                     hidden_txt = null
                     if length(array(d.denied_resources) ?? []) > 0 { hidden_txt = "hidden: " + join!(array!(d.denied_resources), ", ") }
                     d.message = join!(compact([d.user, d.method, "dag list:", string(d.result) ?? null, "DAGs visible", hidden_txt]), " ")
+                  } else if d.system == "nifi" {
+                    verdict = if d.result == "inherit" { "-> parent" } else if d.allowed == true { "allowed" } else { "DENIED" }
+                    d.message = join!(compact([d.user, d.method, d.resource_name, d.resource, verdict]), " ")
                   } else if d.system == "airflow" {
                     verdict = if d.allowed == true { "allowed" } else { "DENIED" }
                     d.message = join!(compact([d.user, d.method, d.rule, d.resource, d.access_entity, d.access_view, d.resource_name, verdict]), " ")

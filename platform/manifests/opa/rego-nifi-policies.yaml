@@ -1,0 +1,149 @@
+---
+# Apache NiFi authorization policy (package `nifi`), queried by the OPA authorizer plugin in NiFi
+# (spec.clusterConfig.authorization.opa in platform/manifests/nifi/nifi.yaml).
+# Every request: {action: {name: read|write}, identity: {name, groups}, resource: {id, name},
+# requestedResource: {id, name}, properties}. The answer is {allowed} or {resourceNotFound}:
+# resourceNotFound makes NiFi ask again for the parent (processor -> process group -> ... -> root),
+# so rules only need to exist for the root canvas, the team process groups and global resources.
+# Decisions are based on `resource` (the component currently checked), not `requestedResource`.
+#
+# Same model as for Trino and Airflow: Keycloak groups, resolved per request by the User Info Fetcher.
+#   - `/admin`: everything
+#   - team members (`/marketing`, `/finance`): everything in their team's process group (named
+#     `marketing` / `finance`, created by platform/manifests/nifi/configure-nifi.yaml), including
+#     queue contents and provenance; read-only on the root canvas; nothing in the other team's group
+#   - everyone else (e.g. demo-user): read-only on the canvas and the team process groups, no data
+#   - NiFi nodes (and the configure-nifi Job, same certificate): proxying, data, process groups
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-policies
+  namespace: platform
+  labels:
+    opa.stackable.tech/bundle: "true"
+data:
+  nifi.rego: |
+    package nifi
+
+    import rego.v1
+
+    # NiFi nodes authenticate to each other with secret-operator certificates (this DN)
+    nifi_node := "CN=generated certificate for pod"
+
+    is_node if input.identity.name == nifi_node
+
+    # Keycloak group paths of the user, e.g. ["/admin", "/pii"]; none for the nodes
+    default groups := []
+
+    groups := g if {
+      not is_node
+      response := http.send({
+        "method": "POST",
+        "url": "http://127.0.0.1:9476/user",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"username": input.identity.name},
+      })
+      response.status_code == 200
+      g := response.body.groups
+    }
+
+    is_admin if "/admin" in groups
+
+    reading if input.action.name == "read"
+
+    resource_id := input.resource.id
+
+    resource_name := input.resource.name
+
+    # --- Teams ----------------------------------------------------------------------------
+    teams := {"marketing", "finance"}
+
+    team_member if {
+      some t in teams
+      concat("", ["/", t]) in groups
+    }
+
+    # The team a process group / its data / its provenance belongs to, by the group's name
+    pg_team := lower(resource_name) if {
+      startswith(resource_id, "/process-groups/")
+      lower(resource_name) in teams
+    }
+
+    data_team := t if {
+      startswith(resource_id, "/data/process-groups/")
+      some t in teams
+      lower(resource_name) == concat("", ["data for ", t])
+    }
+
+    data_team := t if {
+      startswith(resource_id, "/provenance-data/process-groups/")
+      some t in teams
+      lower(resource_name) == concat("", ["provenance data for ", t])
+    }
+
+    is_root_pg if {
+      startswith(resource_id, "/process-groups/")
+      resource_name == "NiFi Flow"
+    }
+
+    # --- Decisions ---------------------------------------------------------------------------
+    allowed if is_admin
+
+    # Global resources everyone may read: the canvas, system diagnostics, counters, controller
+    # settings, parameter contexts
+    allowed if {
+      reading
+      resource_id in {"/flow", "/system", "/counters", "/controller", "/parameter-contexts"}
+    }
+
+    # Root canvas: read for everyone, changes only for admins
+    allowed if {
+      is_root_pg
+      reading
+    }
+
+    # Team process groups: the team may do everything, users without a team may look
+    allowed if concat("", ["/", pg_team]) in groups
+
+    allowed if {
+      pg_team
+      reading
+      not team_member
+    }
+
+    # Queue contents and provenance of a team process group: the team only
+    allowed if concat("", ["/", data_team]) in groups
+
+    # NiFi nodes: proxy user requests, read data for proxied users, manage process groups
+    allowed if {
+      is_node
+      resource_id == "/proxy"
+    }
+
+    allowed if {
+      is_node
+      some prefix in ["/data/", "/provenance-data/", "/process-groups/", "/flow"]
+      startswith(resource_id, prefix)
+    }
+
+    # Explicit denials on resources this policy owns (no fallback to the parent)
+    denied if {
+      is_root_pg
+      not allowed
+    }
+
+    denied if {
+      pg_team
+      not allowed
+    }
+
+    denied if {
+      data_team
+      not allowed
+    }
+
+    allow := {"allowed": true} if {
+      allowed
+    } else := {"allowed": false, "message": "Denied by the OPA policy"} if {
+      denied
+    } else := {"resourceNotFound": true}

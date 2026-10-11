@@ -1,0 +1,103 @@
+---
+# Creates the team process groups `marketing` and `finance` (with a stopped sample processor each) on
+# the NiFi root canvas, for the OPA policy in platform/manifests/opa/rego-nifi-policies.yaml, which
+# recognises team process groups by name. Idempotent: existing groups are left alone.
+#
+# Authenticates with a secret-operator client certificate (identity "CN=generated certificate for
+# pod", like the NiFi nodes), which the policy allows to manage process groups.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configure-nifi-script
+  namespace: platform
+data:
+  configure.py: |
+    import json, ssl, time, urllib.request
+
+    NIFI = "https://nifi-node-default-0.nifi-node-default-headless.platform.svc.cluster.local:8443/nifi-api"
+    CERTS = "/certs"
+    TEAMS = {"marketing": {"x": 0, "y": 0}, "finance": {"x": 500, "y": 0}}
+
+    ctx = ssl.create_default_context(cafile=f"{CERTS}/ca.crt")
+    ctx.load_cert_chain(f"{CERTS}/tls.crt", f"{CERTS}/tls.key")
+
+    def call(method, path, body=None):
+        req = urllib.request.Request(NIFI + path, method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+            return json.loads(r.read().decode() or "{}")
+
+    for i in range(90):
+        try:
+            root = call("GET", "/flow/process-groups/root")["processGroupFlow"]
+            break
+        except Exception as e:
+            print(f"Waiting for NiFi ({i + 1}/90): {e}")
+            time.sleep(10)
+    else:
+        raise SystemExit("NiFi not reachable")
+
+    root_id = root["id"]
+    existing = {pg["component"]["name"] for pg in root["flow"]["processGroups"]}
+    for team, pos in TEAMS.items():
+        if team in existing:
+            print(f"Process group {team} exists")
+            continue
+        pg = call("POST", f"/process-groups/{root_id}/process-groups",
+                  {"revision": {"version": 0}, "component": {"name": team, "position": pos}})
+        call("POST", f"/process-groups/{pg['id']}/processors", {
+            "revision": {"version": 0},
+            "component": {
+                "type": "org.apache.nifi.processors.standard.GenerateFlowFile",
+                "name": f"{team} sample source",
+                "position": {"x": 0, "y": 0},
+                "config": {"schedulingPeriod": "60 sec", "autoTerminatedRelationships": ["success"]},
+            },
+        })
+        print(f"Created process group {team} ({pg['id']})")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-nifi-v1
+  namespace: platform
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: python:3.12-slim # renovate: datasource=docker depName=python
+          command: ["python", "-u", "/scripts/configure.py"]
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: certs
+              mountPath: /certs
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: script
+          configMap:
+            name: configure-nifi-script
+        - name: certs
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/format: tls-pem
+                  secrets.stackable.tech/scope: pod
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem
