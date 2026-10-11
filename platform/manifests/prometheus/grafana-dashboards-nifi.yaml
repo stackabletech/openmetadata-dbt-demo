@@ -283,8 +283,50 @@ data:
             }
           ],
           "fieldConfig": {
-            "defaults": {},
+            "defaults": {
+              "custom": {
+                "inspect": true
+              }
+            },
             "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Allowed"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 0
+                          },
+                          "false": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
+              },
               {
                 "matcher": {
                   "id": "byName",
@@ -296,6 +338,18 @@ data:
                     "value": "dateTimeAsIso"
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Action"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
               }
             ]
           },
@@ -303,6 +357,14 @@ data:
             {
               "id": "organize",
               "options": {
+                "indexByName": {
+                  "user.keyword": 0,
+                  "method.keyword": 1,
+                  "resource_name.keyword": 2,
+                  "resource.keyword": 3,
+                  "Count": 4,
+                  "Max": 5
+                },
                 "renameByName": {
                   "user.keyword": "User",
                   "method.keyword": "Action",
@@ -395,8 +457,50 @@ data:
             }
           ],
           "fieldConfig": {
-            "defaults": {},
+            "defaults": {
+              "custom": {
+                "inspect": true
+              }
+            },
             "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Allowed"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 0
+                          },
+                          "false": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
+              },
               {
                 "matcher": {
                   "id": "byName",
@@ -408,6 +512,18 @@ data:
                     "value": "dateTimeAsIso"
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Action"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
               }
             ]
           },
@@ -415,6 +531,14 @@ data:
             {
               "id": "organize",
               "options": {
+                "indexByName": {
+                  "user.keyword": 0,
+                  "resource_name.keyword": 1,
+                  "method.keyword": 2,
+                  "allowed": 3,
+                  "Count": 4,
+                  "Max": 5
+                },
                 "renameByName": {
                   "user.keyword": "User",
                   "resource_name.keyword": "Process group",
@@ -536,8 +660,50 @@ data:
             }
           ],
           "fieldConfig": {
-            "defaults": {},
+            "defaults": {
+              "custom": {
+                "inspect": true
+              }
+            },
             "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Allowed"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 0
+                          },
+                          "false": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
+              },
               {
                 "matcher": {
                   "id": "byName",
@@ -549,6 +715,18 @@ data:
                     "value": "dateTimeAsIso"
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Action"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
               }
             ]
           },
@@ -556,6 +734,13 @@ data:
             {
               "id": "organize",
               "options": {
+                "indexByName": {
+                  "resource_name.keyword": 0,
+                  "resource.keyword": 1,
+                  "method.keyword": 2,
+                  "Count": 3,
+                  "Max": 4
+                },
                 "renameByName": {
                   "resource_name.keyword": "Component",
                   "resource.keyword": "Resource",
@@ -624,8 +809,50 @@ data:
             }
           ],
           "fieldConfig": {
-            "defaults": {},
+            "defaults": {
+              "custom": {
+                "inspect": true
+              }
+            },
             "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Allowed"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 0
+                          },
+                          "false": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
+              },
               {
                 "matcher": {
                   "id": "byName",
@@ -637,6 +864,18 @@ data:
                     "value": "dateTimeAsIso"
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Action"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 80
+                  }
+                ]
               }
             ]
           },
@@ -644,6 +883,11 @@ data:
             {
               "id": "organize",
               "options": {
+                "indexByName": {
+                  "groups.keyword": 0,
+                  "Count": 1,
+                  "Max": 2
+                },
                 "renameByName": {
                   "groups.keyword": "Groups",
                   "Count": "Decisions",
