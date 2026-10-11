@@ -152,16 +152,15 @@ data:
                   "timestamp": true,
                   "user": true,
                   "access": true,
-                  "state": true,
-                  "error_code": true,
                   "tables": true,
                   "masked_columns": true,
-                  "row_filters": true,
+                  "sql": true,
+                  "state": true,
+                  "error_code": true,
                   "wall_s": true,
                   "output_rows": true,
-                  "sql": true,
-                  "query_id": true,
                   "trino_ui_url": true,
+                  "query_id": true,
                   "window_from_ms": true,
                   "window_to_ms": true
                 },
@@ -169,18 +168,17 @@ data:
                   "timestamp": 0,
                   "user": 1,
                   "access": 2,
-                  "state": 3,
-                  "error_code": 4,
-                  "tables": 5,
-                  "masked_columns": 6,
-                  "row_filters": 7,
+                  "tables": 3,
+                  "masked_columns": 4,
+                  "sql": 5,
+                  "state": 6,
+                  "error_code": 7,
                   "wall_s": 8,
                   "output_rows": 9,
-                  "sql": 10,
+                  "trino_ui_url": 10,
                   "query_id": 11,
-                  "trino_ui_url": 12,
-                  "window_from_ms": 13,
-                  "window_to_ms": 14
+                  "window_from_ms": 12,
+                  "window_to_ms": 13
                 },
                 "renameByName": {
                   "timestamp": "Time",
@@ -213,6 +211,17 @@ data:
                   "title": "Query details, OPA decisions and logs",
                   "url": "/d/trino-query-detail/trino-query-detail?var-query_id=${__data.fields.query_id}&from=${__data.fields.window_from_ms}&to=${__data.fields.window_to_ms}",
                   "targetBlank": false
+                }
+              ],
+              "mappings": [
+                {
+                  "type": "regex",
+                  "options": {
+                    "pattern": "^\\[\\s*\\]$",
+                    "result": {
+                      "text": " "
+                    }
+                  }
                 }
               ]
             },
@@ -423,6 +432,54 @@ data:
                   {
                     "id": "custom.width",
                     "value": 80
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Error"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 170
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Tables"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 260
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Masked columns"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 300
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Query ID"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
                   }
                 ]
               }
