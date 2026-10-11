@@ -5,8 +5,6 @@ metadata:
   name: nifi
   namespace: platform
 spec:
-  clusterOperation:
-    stopped: true
   image:
     productVersion: 2.7.2
   clusterConfig:

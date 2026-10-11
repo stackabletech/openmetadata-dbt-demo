@@ -39,7 +39,7 @@ spec:
 ---
 # NiFi serves metrics over HTTPS only and authenticates the client: mTLS with a certificate of
 # the secret-operator CA (see prometheus-tls-certificate.yaml). The pod's FQDN below the headless
-# Service is in NiFi's certificate. NiFi is stopped by default in this demo (nifi.yaml).
+# Service is in NiFi's certificate.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
