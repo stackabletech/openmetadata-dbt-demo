@@ -306,10 +306,20 @@ data:
                             "color": "green",
                             "index": 0
                           },
+                          "1": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 1
+                          },
                           "false": {
                             "text": "no",
                             "color": "red",
-                            "index": 1
+                            "index": 2
+                          },
+                          "0": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 3
                           }
                         }
                       }
@@ -480,10 +490,20 @@ data:
                             "color": "green",
                             "index": 0
                           },
+                          "1": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 1
+                          },
                           "false": {
                             "text": "no",
                             "color": "red",
-                            "index": 1
+                            "index": 2
+                          },
+                          "0": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 3
                           }
                         }
                       }
@@ -683,10 +703,20 @@ data:
                             "color": "green",
                             "index": 0
                           },
+                          "1": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 1
+                          },
                           "false": {
                             "text": "no",
                             "color": "red",
-                            "index": 1
+                            "index": 2
+                          },
+                          "0": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 3
                           }
                         }
                       }
@@ -832,10 +862,20 @@ data:
                             "color": "green",
                             "index": 0
                           },
+                          "1": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 1
+                          },
                           "false": {
                             "text": "no",
                             "color": "red",
-                            "index": 1
+                            "index": 2
+                          },
+                          "0": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 3
                           }
                         }
                       }
