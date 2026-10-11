@@ -4,5 +4,9 @@ kind: ConfigMap
 metadata:
   name: vector-aggregator-discovery
   namespace: platform
+  annotations:
+    # Before configure-opensearch-logs (wave -1): that Job waits for OpenSearch, and OpenSearch
+    # (like every Stackable pod with a Vector agent) doesn't start without this ConfigMap
+    argocd.argoproj.io/sync-wave: "-2"
 data:
   ADDRESS: "vector-aggregator.platform.svc.cluster.local:6000"
