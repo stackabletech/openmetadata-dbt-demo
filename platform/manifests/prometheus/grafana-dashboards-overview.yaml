@@ -1164,7 +1164,7 @@ data:
         {
           "id": 2,
           "type": "row",
-          "title": "Authorization (OPA), all products: people only, technical users (admin, cockpit) left out",
+          "title": "Authorization (OPA), all products: people only, technical users (admin, cockpit, NiFi nodes) left out",
           "collapsed": false,
           "gridPos": {
             "x": 0,
@@ -1197,7 +1197,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "NOT user.keyword:(admin OR cockpit)",
+              "query": "NOT user.keyword:(admin OR cockpit OR \"CN=generated certificate for pod\")",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -1265,7 +1265,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit)",
+              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit OR \"CN=generated certificate for pod\")",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -1333,7 +1333,7 @@ data:
                 "uid": "opensearch-trino-queries"
               },
               "queryType": "lucene",
-              "query": "access:masked AND NOT user.keyword:(admin OR cockpit)",
+              "query": "access:masked AND NOT user.keyword:(admin OR cockpit OR \"CN=generated certificate for pod\")",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -1401,7 +1401,7 @@ data:
                 "uid": "opensearch-trino-queries"
               },
               "queryType": "lucene",
-              "query": "access:denied AND NOT user.keyword:(admin OR cockpit)",
+              "query": "access:denied AND NOT user.keyword:(admin OR cockpit OR \"CN=generated certificate for pod\")",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -1469,7 +1469,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "NOT user.keyword:(admin OR cockpit)",
+              "query": "NOT user.keyword:(admin OR cockpit OR \"CN=generated certificate for pod\")",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -1547,7 +1547,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit)",
+              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit OR \"CN=generated certificate for pod\")",
               "timeField": "timestamp",
               "metrics": [
                 {
@@ -1625,7 +1625,7 @@ data:
                 "uid": "opensearch-opa-decisions"
               },
               "queryType": "lucene",
-              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit)",
+              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit OR \"CN=generated certificate for pod\")",
               "timeField": "timestamp",
               "metrics": [
                 {
