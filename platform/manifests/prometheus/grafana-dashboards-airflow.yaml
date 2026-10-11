@@ -65,6 +65,22 @@ data:
       },
       "panels": [
         {
+          "id": 900,
+          "type": "text",
+          "title": "",
+          "transparent": true,
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 3
+          },
+          "options": {
+            "mode": "html",
+            "content": "<div style=\"display:flex;align-items:center;gap:14px;height:100%\"><a href=\"/d/sdp-overview\"><img src=\"/public/img/stackable/stackable-icon.svg\" alt=\"Stackable\" style=\"height:40px\"></a><div><div style=\"font-size:20px;font-weight:600;line-height:1.2\">Stackable Data Platform</div><div style=\"opacity:0.7;font-size:13px\">Airflow: authorization decisions (OPA)</div></div><div style=\"margin-left:auto;font-size:13px;display:flex;gap:16px\"><a href=\"/d/sdp-overview\" style=\"opacity:0.85\">Overview</a><a href=\"/d/trino-queries\" style=\"opacity:0.85\">Trino queries</a><a href=\"/d/airflow-authorization\" style=\"font-weight:600;text-decoration:underline\">Airflow authorization</a><a href=\"/d/opa-decisions\" style=\"opacity:0.85\">OPA decisions</a><a href=\"/d/stackable-logs\" style=\"opacity:0.85\">Logs</a></div></div>"
+          }
+        },
+        {
           "id": 1,
           "type": "timeseries",
           "title": "Authorization checks over time",
@@ -75,7 +91,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 0,
+            "y": 3,
             "w": 24,
             "h": 8
           },
@@ -188,7 +204,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 8,
+            "y": 11,
             "w": 24,
             "h": 10
           },
@@ -345,7 +361,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 18,
+            "y": 21,
             "w": 12,
             "h": 12
           },
@@ -484,7 +500,7 @@ data:
           },
           "gridPos": {
             "x": 12,
-            "y": 18,
+            "y": 21,
             "w": 12,
             "h": 12
           },
@@ -525,7 +541,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 30,
+            "y": 33,
             "w": 24,
             "h": 9
           },
@@ -683,7 +699,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 39,
+            "y": 42,
             "w": 24,
             "h": 8
           },

@@ -1,0 +1,1742 @@
+---
+# Grafana dashboard "Stackable Data Platform": the entry point across all products and Grafana's home
+# dashboard (grafana.ini dashboards.default_home_dashboard_path in platform/applications/prometheus.yaml).
+#   - product tiles: status from Prometheus (share of scrape targets up); click -> the product's governance
+#     dashboard (Trino queries, Airflow authorization, OPA decisions) or its metrics dashboard
+#   - authorization across products from the OPA decision log (logs-opa-decisions-*), per product
+#   - recent denials; each row drills down via the decision's `drilldown` field (set by the
+#     vector-aggregator, transform opa_decisions). A new product: tile here + branch there.
+# Generated together with the headers of the governance dashboards (logo: grafana-branding.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-overview
+  namespace: platform
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: Stackable Data Platform
+data:
+  sdp-overview.json: |
+    {
+      "uid": "sdp-overview",
+      "title": "Stackable Data Platform",
+      "tags": [
+        "stackable",
+        "overview",
+        "governance"
+      ],
+      "description": "Entry point across all products: status (Prometheus), authorization decisions (OPA, OpenSearch) and drill-down into the product dashboards.",
+      "editable": true,
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "refresh": "1m",
+      "templating": {
+        "list": []
+      },
+      "panels": [
+        {
+          "id": 900,
+          "type": "text",
+          "title": "",
+          "transparent": true,
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 3
+          },
+          "options": {
+            "mode": "html",
+            "content": "<div style=\"display:flex;align-items:center;gap:14px;height:100%\"><a href=\"/d/sdp-overview\"><img src=\"/public/img/stackable/stackable-icon.svg\" alt=\"Stackable\" style=\"height:40px\"></a><div><div style=\"font-size:20px;font-weight:600;line-height:1.2\">Stackable Data Platform</div><div style=\"opacity:0.7;font-size:13px\">All products: status, authorization and drill-down</div></div><div style=\"margin-left:auto;font-size:13px;display:flex;gap:16px\"><a href=\"/d/sdp-overview\" style=\"font-weight:600;text-decoration:underline\">Overview</a><a href=\"/d/trino-queries\" style=\"opacity:0.85\">Trino queries</a><a href=\"/d/airflow-authorization\" style=\"opacity:0.85\">Airflow authorization</a><a href=\"/d/opa-decisions\" style=\"opacity:0.85\">OPA decisions</a><a href=\"/d/stackable-logs\" style=\"opacity:0.85\">Logs</a></div></div>"
+          }
+        },
+        {
+          "id": 1,
+          "type": "row",
+          "title": "Products",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 3,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "Trino",
+          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: governance dashboard. Metrics dashboard: link in the panel header.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "links": [
+            {
+              "title": "Governance dashboard",
+              "url": "/d/trino-queries?${__url_time_range}"
+            },
+            {
+              "title": "Metrics dashboard",
+              "url": "/d/-mVc4yO4k?${__url_time_range}"
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"trino\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"trino\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": [
+                {
+                  "title": "Trino: governance",
+                  "url": "/d/trino-queries?${__url_time_range}"
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 11,
+          "type": "stat",
+          "title": "Apache Airflow",
+          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: governance dashboard.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "links": [
+            {
+              "title": "Governance dashboard",
+              "url": "/d/airflow-authorization?${__url_time_range}"
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"airflow\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"airflow\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": [
+                {
+                  "title": "Apache Airflow: governance",
+                  "url": "/d/airflow-authorization?${__url_time_range}"
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 12,
+          "type": "stat",
+          "title": "Apache HDFS",
+          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: metrics dashboard.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "links": [
+            {
+              "title": "Metrics dashboard",
+              "url": "/d/qjZGZ3AVz?${__url_time_range}"
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"hdfs\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"hdfs\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": [
+                {
+                  "title": "Apache HDFS: metrics",
+                  "url": "/d/qjZGZ3AVz?${__url_time_range}"
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 13,
+          "type": "stat",
+          "title": "Apache Kafka",
+          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: metrics dashboard.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "links": [
+            {
+              "title": "Metrics dashboard",
+              "url": "/d/C_8qIX04k?${__url_time_range}"
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"kafka\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"kafka\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": [
+                {
+                  "title": "Apache Kafka: metrics",
+                  "url": "/d/C_8qIX04k?${__url_time_range}"
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 14,
+          "type": "stat",
+          "title": "Apache NiFi",
+          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: metrics dashboard.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "links": [
+            {
+              "title": "Metrics dashboard",
+              "url": "/d/C_8qIX04l?${__url_time_range}"
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"nifi\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"nifi\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": [
+                {
+                  "title": "Apache NiFi: metrics",
+                  "url": "/d/C_8qIX04l?${__url_time_range}"
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 15,
+          "type": "stat",
+          "title": "Apache Superset",
+          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 20,
+            "y": 4,
+            "w": 4,
+            "h": 4
+          },
+          "links": [],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"superset\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"superset\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 16,
+          "type": "stat",
+          "title": "Apache Hive",
+          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 4,
+            "h": 4
+          },
+          "links": [],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"hive\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"hive\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 17,
+          "type": "stat",
+          "title": "Apache ZooKeeper",
+          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 8,
+            "w": 4,
+            "h": 4
+          },
+          "links": [],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"zookeeper\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"zookeeper\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 18,
+          "type": "stat",
+          "title": "OpenSearch",
+          "description": "Status: share of the product's Prometheus scrape targets that are up.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 8,
+            "w": 4,
+            "h": 4
+          },
+          "links": [],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"opensearch\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"opensearch\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 19,
+          "type": "stat",
+          "title": "Open Policy Agent",
+          "description": "Status: share of the product's Prometheus scrape targets that are up. Click: governance dashboard.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 8,
+            "w": 4,
+            "h": 4
+          },
+          "links": [
+            {
+              "title": "Governance dashboard",
+              "url": "/d/opa-decisions?${__url_time_range}"
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "instant": true,
+              "range": false,
+              "expr": "sum(up{namespace=\"platform\",app_kubernetes_io_name=\"opa\"}) / count(up{namespace=\"platform\",app_kubernetes_io_name=\"opa\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 1,
+                    "to": 1,
+                    "result": {
+                      "text": "Up",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                },
+                {
+                  "type": "range",
+                  "options": {
+                    "from": 0.0001,
+                    "to": 0.9999,
+                    "result": {
+                      "text": "Degraded",
+                      "color": "orange",
+                      "index": 1
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red",
+                      "index": 2
+                    }
+                  }
+                },
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "No metrics",
+                      "color": "#5a5a5a",
+                      "index": 3
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#5a5a5a"
+              },
+              "noValue": "No metrics",
+              "links": [
+                {
+                  "title": "Open Policy Agent: governance",
+                  "url": "/d/opa-decisions?${__url_time_range}"
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 2,
+          "type": "row",
+          "title": "Authorization (OPA), all products: people only, technical users (admin, cockpit) left out",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 12,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 20,
+          "type": "stat",
+          "title": "Authorization checks",
+          "description": "Decisions OPA made for people, all products.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 13,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "blue"
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 21,
+          "type": "stat",
+          "title": "Denied",
+          "description": "Checks OPA denied (Trino: access denied; Airflow: action not allowed).",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 13,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "red"
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 22,
+          "type": "stat",
+          "title": "Masked Trino queries",
+          "description": "Trino queries that returned masked columns.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 13,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "access:masked AND NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "orange"
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 23,
+          "type": "stat",
+          "title": "Denied Trino queries",
+          "description": "Trino queries that failed with access denied.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-trino-queries"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 13,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-trino-queries"
+              },
+              "queryType": "lucene",
+              "query": "access:denied AND NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "red"
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "value",
+            "justifyMode": "center"
+          }
+        },
+        {
+          "id": 24,
+          "type": "timeseries",
+          "title": "Checks per product",
+          "description": "OPA decisions for people over time, per product.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 17,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "system.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 70,
+                "stacking": {
+                  "mode": "normal"
+                },
+                "lineWidth": 0
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 25,
+          "type": "timeseries",
+          "title": "Denials per product",
+          "description": "Denied checks over time, per product.",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 17,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "system.keyword",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 70,
+                "stacking": {
+                  "mode": "normal"
+                },
+                "lineWidth": 0
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
+        },
+        {
+          "id": 26,
+          "type": "table",
+          "title": "Recent denials, all products",
+          "description": "Newest first. Click a row: Trino goes to the query's detail page, Airflow to its authorization dashboard (\u00b11 min around the decision).",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "opensearch-opa-decisions"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 25,
+            "w": 24,
+            "h": 10
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-opensearch-datasource",
+                "uid": "opensearch-opa-decisions"
+              },
+              "queryType": "lucene",
+              "query": "allowed:false AND NOT user.keyword:(admin OR cockpit)",
+              "timeField": "timestamp",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "raw_data",
+                  "settings": {
+                    "size": "100"
+                  }
+                }
+              ],
+              "bucketAggs": []
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "includeByName": {
+                  "timestamp": true,
+                  "system": true,
+                  "user": true,
+                  "message": true,
+                  "drilldown": true,
+                  "window_from_ms": true,
+                  "window_to_ms": true
+                },
+                "indexByName": {
+                  "timestamp": 0,
+                  "system": 1,
+                  "user": 2,
+                  "message": 3,
+                  "drilldown": 4,
+                  "window_from_ms": 5,
+                  "window_to_ms": 6
+                },
+                "renameByName": {
+                  "timestamp": "Time",
+                  "system": "Product",
+                  "user": "User",
+                  "message": "Decision"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "links": [
+                {
+                  "title": "Drill down",
+                  "url": "${__data.fields.drilldown}&from=${__data.fields.window_from_ms}&to=${__data.fields.window_to_ms}"
+                }
+              ]
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 190
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Product"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 110
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "User"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 150
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "drilldown"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "window_from_ms"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "window_to_ms"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [
+              {
+                "displayName": "Time",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ]
+    }

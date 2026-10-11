@@ -312,6 +312,20 @@ spec:
                     }
                   }
 
+                  # --- Drill-down target in Grafana, for the cross-product dashboard "Stackable Data Platform":
+                  # the product's governance dashboard, opened on this decision (±1 min). New products add a branch.
+                  ts_ms = to_unix_timestamp(parse_timestamp(string(d.timestamp) ?? "", "%+") ?? now(), unit: "milliseconds")
+                  d.window_from_ms = ts_ms - 60000
+                  d.window_to_ms = ts_ms + 60000
+                  user_q = encode_percent(string(d.user) ?? "", ascii_set: "COMPONENT")
+                  if d.system == "trino" && d.query_id != null {
+                    d.drilldown = "/d/trino-query-detail/trino-query-detail?var-query_id=" + encode_percent(string!(d.query_id), ascii_set: "COMPONENT")
+                  } else if d.system == "trino" {
+                    d.drilldown = "/d/trino-queries/trino-queries?var-user=" + user_q
+                  } else if d.system == "airflow" {
+                    d.drilldown = "/d/airflow-authorization/airflow-authorization?var-user=" + user_q
+                  }
+
                   # --- 3. summary + full text without the bulky parts -----------------------------------
                   target = join(compact([d.catalog, d.schema, d.table]), ".") ?? ""
                   outcome = if d.allowed == true { "allowed" } else if d.allowed == false { "DENIED" } else if length(masks) > 0 { to_string(length(masks)) + " column mask(s)" } else if d.path == "trino/batch" { to_string(length(allowed)) + " of " + to_string(length(names)) + " allowed" } else if length(filters) > 0 { to_string(length(filters)) + " row filter(s)" } else if d.path == "trino/rowFilters" { "no row filter" } else if d.path == "trino/batchColumnMasks" { "no column mask" } else { d.path }

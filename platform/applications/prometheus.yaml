@@ -117,9 +117,20 @@ spec:
                 items:
                   - key: ca.crt
                     path: ca.crt
+            # Stackable logo for the dashboard headers, served at /public/img/stackable/
+            # (platform/manifests/prometheus/grafana-branding.yaml)
+            extraConfigmapMounts:
+              - name: stackable-branding
+                configMap: grafana-branding
+                mountPath: /usr/share/grafana/public/img/stackable
+                readOnly: true
             grafana.ini:
               server:
                 root_url: "http://$__env{NODE_IP}:30301"
+              # Entry point across all products (grafana-dashboards-overview.yaml), written by the
+              # dashboard sidecar into its folder directory
+              dashboards:
+                default_home_dashboard_path: "/tmp/dashboards/Stackable Data Platform/sdp-overview.json"
               analytics:
                 check_for_updates: false
                 reporting_enabled: false
