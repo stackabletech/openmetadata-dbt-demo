@@ -60,7 +60,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-nifi-v1
+  name: configure-nifi-v2
   namespace: platform
 spec:
   backoffLimit: 10
