@@ -126,3 +126,4 @@ All applications should use:
 
 - `just deploy` — bootstrap the cluster with stackablectl (installs ArgoCD, Forgejo, then ArgoCD takes over)
 - `just seal-secrets` — re-seal all plaintext secrets from `secrets/` into `platform/manifests/`
+- `just grafana-dashboards` — regenerate the generated Grafana dashboards in `platform/manifests/prometheus/` (Trino queries/detail, NiFi authorization, the "Stackable Data Platform" overview, the common header) from `scripts/grafana-dashboards.py`; commit script and YAML together

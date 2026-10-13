@@ -170,3 +170,9 @@ cockpit-bookmarks:
 # cluster (node IP, ports, Cockpit bookmarks). Open it from disk, no server needed.
 demo-page out="demo.html":
     ./scripts/demo-page.sh {{out}}
+
+# Regenerate the generated Grafana dashboards (Trino queries/detail, NiFi authorization, the
+# "Stackable Data Platform" overview, the common header) in platform/manifests/prometheus/.
+# Commit the script change together with the regenerated YAML.
+grafana-dashboards:
+    uv run --quiet --with pyyaml scripts/grafana-dashboards.py
