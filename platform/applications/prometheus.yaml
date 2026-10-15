@@ -22,6 +22,16 @@ spec:
       helm:
         releaseName: prometheus
         valuesObject:
+          # Apply the CRDs in a pre-install/pre-upgrade hook Job (ArgoCD: PreSync) before the
+          # operator starts. Without it, on a clean deploy the operator can start before the
+          # `prometheuses` CRD is established, skips its Prometheus controller for good and never
+          # creates the Prometheus server (no metrics until the operator is restarted).
+          crds:
+            upgradeJob:
+              enabled: true
+              image:
+                busybox:
+                  tag: "1.37.0"
           # No alert routing in the demo
           alertmanager:
             enabled: false
