@@ -103,6 +103,10 @@ stringData:
         # in platform/manifests/vector-aggregator/configure-opensearch-logs.yaml
         - "indices:admin/index_template/*"
       index_permissions:
+        - index_patterns: ["logs", "opa_decisions", "trino_queries"]
+          allowed_actions:
+            - "indices:admin/aliases"
+            - "indices:admin/aliases/get"
         - index_patterns: ["logs-*"]
           allowed_actions:
             - "indices:data/write/bulk*"
@@ -110,6 +114,9 @@ stringData:
             - "indices:admin/create"
             - "indices:admin/mapping/put"
             - "indices:admin/mappings/fields/get"
+            # Aliases logs / opa_decisions / trino_queries (index templates and existing indices)
+            - "indices:admin/aliases"
+            - "indices:admin/aliases/get"
   roles_mapping.yml: |
     ---
     _meta:

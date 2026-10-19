@@ -6,6 +6,11 @@
 # Vector agent (`errors`) and the OPA decision parser in the vector-aggregator.
 #
 # Sets the markers on the existing indices and, via an index template, on every new daily index.
+# Also gives the daily indices stable aliases, which Trino shows as tables:
+#   logs           product logs        (logs-YYYY.MM.DD)
+#   opa_decisions  OPA decision log    (logs-opa-decisions-*)
+#   trino_queries  Trino query events  (logs-trino-queries-*)
+# Only one composable template applies per index, so each index type has its own template.
 # Idempotent. Runs as the `logs` user (role logs_writer).
 apiVersion: v1
 kind: ConfigMap
@@ -52,12 +57,19 @@ data:
     }
     TEMPLATE = "logs-trino-meta"
     PRIORITY = 100
+    LOGS_ALIAS = "logs"
+
+    # OPA decisions (vector-aggregator, transform opa_decisions): same markers, own alias
+    DECISIONS_TEMPLATE = "logs-opa-decisions"
+    DECISIONS_PRIORITY = 110
+    DECISIONS_ALIAS = "opa_decisions"
 
     # Trino query events (vector-aggregator, transform trino_queries). Only one composable template
     # applies per index, so this one repeats the array markers and also fixes the numeric types:
     # dynamic mapping would type e.g. cpu_s as long if the day's first query had cpu_s 0.
     QUERIES_TEMPLATE = "logs-trino-queries"
     QUERIES_PRIORITY = 110
+    QUERIES_ALIAS = "trino_queries"
     QUERIES_META = {**TRINO_META, "tables": ARRAY, "masked_columns": ARRAY}
     QUERIES_PROPERTIES = {
         **{f: {"type": "double"} for f in ("wall_s", "cpu_s", "queued_s", "planning_s", "execution_s")},
@@ -93,7 +105,7 @@ data:
     templates = retry("Listing index templates", lambda: call("GET", "/_index_template"))
     for t in templates.get("index_templates", []):
         it = t["index_template"]
-        if t["name"] not in (TEMPLATE, QUERIES_TEMPLATE) and it.get("priority", 0) >= PRIORITY and any(
+        if t["name"] not in (TEMPLATE, DECISIONS_TEMPLATE, QUERIES_TEMPLATE) and it.get("priority", 0) >= PRIORITY and any(
             p in ("*", "logs-*") or p.startswith("logs") for p in it["index_patterns"]
         ):
             print(f"WARNING: index template {t['name']} ({it['index_patterns']}, priority "
@@ -102,16 +114,25 @@ data:
     retry("Writing the index template", lambda: call("PUT", f"/_index_template/{TEMPLATE}", {
         "index_patterns": ["logs-*"],
         "priority": PRIORITY,
-        "template": {"mappings": {"_meta": {"trino": TRINO_META}}},
-        "_meta": {"description": "Array markers for Trino's OpenSearch connector"},
+        "template": {"mappings": {"_meta": {"trino": TRINO_META}}, "aliases": {LOGS_ALIAS: {}}},
+        "_meta": {"description": "Product logs: array markers for Trino's OpenSearch connector, alias logs"},
     }))
     print(f"Index template {TEMPLATE} written")
+
+    retry("Writing the decision index template", lambda: call("PUT", f"/_index_template/{DECISIONS_TEMPLATE}", {
+        "index_patterns": ["logs-opa-decisions-*"],
+        "priority": DECISIONS_PRIORITY,
+        "template": {"mappings": {"_meta": {"trino": TRINO_META}}, "aliases": {DECISIONS_ALIAS: {}}},
+        "_meta": {"description": "OPA decisions: array markers for Trino, alias opa_decisions"},
+    }))
+    print(f"Index template {DECISIONS_TEMPLATE} written")
 
     retry("Writing the query index template", lambda: call("PUT", f"/_index_template/{QUERIES_TEMPLATE}", {
         "index_patterns": ["logs-trino-queries-*"],
         "priority": QUERIES_PRIORITY,
-        "template": {"mappings": {"_meta": {"trino": QUERIES_META}, "properties": QUERIES_PROPERTIES}},
-        "_meta": {"description": "Trino query events: array markers for Trino, numeric types"},
+        "template": {"mappings": {"_meta": {"trino": QUERIES_META}, "properties": QUERIES_PROPERTIES},
+                     "aliases": {QUERIES_ALIAS: {}}},
+        "_meta": {"description": "Trino query events: array markers for Trino, numeric types, alias trino_queries"},
     }))
     print(f"Index template {QUERIES_TEMPLATE} written")
 
@@ -119,11 +140,25 @@ data:
     result = retry("Updating existing indices", lambda: call(
         "PUT", "/logs-*/_mapping?allow_no_indices=true", {"_meta": {"trino": TRINO_META}}))
     print(f"Existing logs-* indices updated: {result}")
+
+    # Aliases on the existing indices (new ones get them from the templates). Product logs are the
+    # daily indices without a type prefix: logs-2026.10.19 etc.
+    existing = retry("Listing indices", lambda: call("GET", "/_cat/indices/logs-*?format=json&h=index"))
+    names = [i["index"] for i in existing]
+    groups = {
+        LOGS_ALIAS: [n for n in names if n[len("logs-"):][:1].isdigit()],
+        DECISIONS_ALIAS: [n for n in names if n.startswith("logs-opa-decisions-")],
+        QUERIES_ALIAS: [n for n in names if n.startswith("logs-trino-queries-")],
+    }
+    actions = [{"add": {"index": n, "alias": alias}} for alias, idx in groups.items() for n in idx]
+    if actions:
+        retry("Adding aliases", lambda: call("POST", "/_aliases", {"actions": actions}))
+    print("Aliases: " + ", ".join(f"{a} ({len(i)} indices)" for a, i in groups.items()))
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-opensearch-logs-v2
+  name: configure-opensearch-logs-v3
   namespace: platform
   annotations:
     # Before the vector-aggregator (wave 0) changes: the index templates must exist before the

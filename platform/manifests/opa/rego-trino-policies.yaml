@@ -39,6 +39,8 @@ data:
         {"catalog": "hive", "allow": "read-only"},
         {"catalog": "tpch", "allow": "read-only"},
         {"catalog": "tpcds", "allow": "read-only"},
+        # Logs and audit trail from OpenSearch (tables restricted below)
+        {"catalog": "opensearch", "allow": "read-only"},
         # Needed for JDBC/BI clients (system.jdbc, system.metadata).
         {"catalog": "system", "allow": "read-only"},
       ],
@@ -47,6 +49,24 @@ data:
         {"group": "/admin", "catalog": ".*", "schema": ".*", "owner": true},
       ],
       "tables": [
+        # --- OpenSearch (catalog opensearch): only the three aliases, for everyone ---
+        # The catalog connects as one technical OpenSearch user (Trino's OpenSearch connector has
+        # no impersonation), so per-user access is decided here. Admins see all three tables,
+        # everyone else only their own rows of the audit trail. These rules come before the admin
+        # rules (first match wins), so the daily indices behind the aliases stay hidden for all.
+        # Alternatives in parentheses: the engine anchors patterns as ^pattern$, so a bare
+        # "a|b" would become "^a|b$" and "^logs" would match every daily index.
+        {"user": "admin", "catalog": "opensearch", "schema": "default", "table": "(logs|opa_decisions|trino_queries)", "privileges": ["SELECT"]},
+        {"group": "/admin", "catalog": "opensearch", "schema": "default", "table": "(logs|opa_decisions|trino_queries)", "privileges": ["SELECT"]},
+        {
+          "catalog": "opensearch",
+          "schema": "default",
+          "table": "(opa_decisions|trino_queries)",
+          "privileges": ["SELECT"],
+          "filter": "\"user\" = current_user",
+        },
+        {"catalog": "opensearch", "privileges": []},
+
         # --- Admins: unrestricted. ---
         {"user": "admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
         {"group": "/admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
