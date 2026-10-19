@@ -141,24 +141,24 @@ data:
         "PUT", "/logs-*/_mapping?allow_no_indices=true", {"_meta": {"trino": TRINO_META}}))
     print(f"Existing logs-* indices updated: {result}")
 
-    # Aliases on the existing indices (new ones get them from the templates). Product logs are the
-    # daily indices without a type prefix: logs-2026.10.19 etc.
-    existing = retry("Listing indices", lambda: call("GET", "/_cat/indices/logs-*?format=json&h=index"))
-    names = [i["index"] for i in existing]
-    groups = {
-        LOGS_ALIAS: [n for n in names if n[len("logs-"):][:1].isdigit()],
-        DECISIONS_ALIAS: [n for n in names if n.startswith("logs-opa-decisions-")],
-        QUERIES_ALIAS: [n for n in names if n.startswith("logs-trino-queries-")],
-    }
-    actions = [{"add": {"index": n, "alias": alias}} for alias, idx in groups.items() for n in idx]
-    if actions:
-        retry("Adding aliases", lambda: call("POST", "/_aliases", {"actions": actions}))
-    print("Aliases: " + ", ".join(f"{a} ({len(i)} indices)" for a, i in groups.items()))
+    # Aliases on the existing indices (new ones get them from the templates). OpenSearch resolves the
+    # wildcards itself; product logs are the daily indices without a type prefix (logs-2026.10.19).
+    # No match (fresh cluster) is fine.
+    for pattern, alias in (("logs-2*", LOGS_ALIAS), ("logs-opa-decisions-*", DECISIONS_ALIAS),
+                           ("logs-trino-queries-*", QUERIES_ALIAS)):
+        def add():
+            try:
+                return call("POST", "/_aliases", {"actions": [{"add": {"index": pattern, "alias": alias}}]})
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return {"acknowledged": "no indices yet"}
+                raise
+        print(f"Alias {alias} on {pattern}: {retry(f'Adding alias {alias}', add)}")
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-opensearch-logs-v3
+  name: configure-opensearch-logs-v4
   namespace: platform
   annotations:
     # Before the vector-aggregator (wave 0) changes: the index templates must exist before the
