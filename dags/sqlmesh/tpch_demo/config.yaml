@@ -1,0 +1,36 @@
+# SQLMesh version of the dbt project in dags/dbt/tpch_demo: same staging views and marts,
+# built by the DAG sqlmesh_tpch_demo (dags/tpch_sqlmesh_dag.py).
+#
+# Virtual layer (what users query): data2day.demo_sqlmesh, views only.
+# Physical layer (versioned tables behind the views): data2day.sqlmesh__demo_sqlmesh, closed to
+# everyone but `admin` by the OPA policy, so nobody bypasses the masks on the views.
+gateways:
+  trino:
+    connection:
+      type: trino
+      # HTTP basic auth, validated by Trino's PASSWORD authenticator (trino-users static auth),
+      # same as dbt's profiles.yml. TRINO_PASSWORD is injected into the executor pod.
+      method: basic
+      host: trino-coordinator
+      port: 8443
+      http_scheme: https
+      verify: false
+      user: admin
+      password: "{{ env_var('TRINO_PASSWORD') }}"
+      catalog: data2day
+      session_properties:
+        query_max_run_time: 5m
+    # Trino can't hold SQLMesh's state (snapshots, intervals, environments), so it lives in
+    # PostgreSQL. Credentials follow the convention of the other demo databases (postgres.yaml).
+    state_connection:
+      type: postgres
+      host: postgresql-sqlmesh.shared.svc.cluster.local
+      port: 5432
+      user: sqlmesh
+      password: sqlmesh
+      database: sqlmesh
+
+default_gateway: trino
+
+model_defaults:
+  dialect: trino

@@ -71,7 +71,15 @@ data:
         {"user": "admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
         {"group": "/admin", "catalog": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
 
+        # --- SQLMesh physical layer: closed to everyone but the admins above ---
+        # data2day.sqlmesh__<schema> holds the versioned tables behind the views in
+        # data2day.demo_sqlmesh. Read directly, they would bypass the owner check and masks
+        # on the views. Unmatched tables are denied anyway; this rule keeps it that way if a
+        # broader data2day rule is added below.
+        {"catalog": "data2day", "schema": "sqlmesh__.*", "privileges": []},
+
         # --- PII demo on the dbt marts (catalog data2day, schema demo) ---
+        # The SQLMesh copy of the same marts (schema demo_sqlmesh) gets the same rules.
         # Two flavours, side by side for the talk:
         #   - customer_lifetime_value: masks HARDCODED here, per group (below).
         #   - every other table in data2day.demo: masks driven by the
@@ -84,13 +92,13 @@ data:
         {
           "group": "/pii",
           "catalog": "data2day",
-          "schema": "demo",
+          "schema": "(demo|demo_sqlmesh)",
           "table": "customer_lifetime_value",
           "privileges": ["SELECT"],
         },
         {
           "catalog": "data2day",
-          "schema": "demo",
+          "schema": "(demo|demo_sqlmesh)",
           "table": "customer_lifetime_value",
           "privileges": ["SELECT"],
           "columns": [
@@ -101,7 +109,7 @@ data:
 
         # All other marts (and the rest of schema demo) are readable by everyone,
         # subject to the OpenMetadata-driven rules at the end of this file.
-        {"catalog": "data2day", "schema": "demo", "privileges": ["SELECT"]},
+        {"catalog": "data2day", "schema": "(demo|demo_sqlmesh)", "privileges": ["SELECT"]},
 
         # Read-only access to the sample/source catalogs for exploration.
         {"catalog": "tpch", "privileges": ["SELECT"]},
@@ -161,15 +169,18 @@ data:
     # rejected), access is denied and columns are masked.
     # =========================================================================
 
-    # Scope: the dbt marts and staging views. Other catalogs aren't affected.
+    # Scope: the dbt marts and staging views (demo) and their SQLMesh copy (demo_sqlmesh,
+    # views only). Other catalogs aren't affected.
+    governed_schemas := {"demo", "demo_sqlmesh"}
+
     governed(catalog, schema) if {
       catalog == "data2day"
-      schema == "demo"
+      schema in governed_schemas
     }
 
-    # Service accounts: dbt, the OpenMetadata ingestion and the Airflow connection
-    # all use the static Trino user `admin`. dbt builds the marts from the staging
-    # views, so it must neither be denied nor read masked values.
+    # Service accounts: dbt, SQLMesh, the OpenMetadata ingestion and the Airflow
+    # connection all use the static Trino user `admin`. dbt and SQLMesh build the marts
+    # from the staging views, so they must neither be denied nor read masked values.
     exempt_users := {"admin"}
 
     exempt if input.context.identity.user in exempt_users

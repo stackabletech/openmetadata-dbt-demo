@@ -167,6 +167,26 @@ opa-tags-auth-manager.yaml`): it sends the DAG's tags to OPA and lets OPA filter
 
 Moving a user between teams is a Keycloak group change, effective after ~10 s.
 
+### Same marts, built by SQLMesh
+
+The Airflow DAG `sqlmesh_tpch_demo` builds the same 8 staging views and 6 marts with SQLMesh
+(`dags/sqlmesh/tpch_demo`, models ported 1:1 from the dbt project) into `data2day.demo_sqlmesh`.
+Differences to the dbt run:
+
+- **One task instead of one pod per model.** `sqlmesh plan` applies model changes, `sqlmesh run`
+  refreshes marts whose (daily) interval is due.
+- **Virtual layer.** `data2day.demo_sqlmesh` holds only views. The tables behind them are versioned
+  in `data2day.sqlmesh__demo_sqlmesh`; a changed model gets a new table and the view is switched
+  over. Only `admin` can read that schema, so the masks on the views can't be bypassed.
+- **Audits** on each mart's grain (not null, unique) fail the plan if the data is wrong.
+- **State in PostgreSQL** (`postgresql-sqlmesh` in `shared`), Trino can't hold it.
+- **OpenMetadata has no SQLMesh integration.** The views show up through the Trino metadata
+  ingestion, with the model and column descriptions (SQLMesh writes them as Trino comments), but
+  without the model lineage the dbt ingestion adds.
+
+The OPA rules are the same as for `data2day.demo`: owned marts readable, `order_summary` denied until
+it has an owner, `customer_lifetime_value` masked per group, other columns masked by tag.
+
 ### Reset after a rehearsal
 
 - Keycloak: remove `demo-user` from `/pii`.
@@ -180,5 +200,5 @@ Moving a user between teams is a Keycloak group change, effective after ~10 s.
 - **The DAG hangs in `wait_for_services`:** check `trino-init`. It needs an active Trino worker.
 - **OpenMetadata answers 431:** too many cookies for the node IP; clear them or use a private
   window. (The header limit is raised to 64 KiB, this should be rare.)
-- **Avoid in Q&A:** `tpch.tiny.customer` is readable unmasked. Only `data2day.demo` is
-  governed.
+- **Avoid in Q&A:** `tpch.tiny.customer` is readable unmasked. Only `data2day.demo` and
+  `data2day.demo_sqlmesh` are governed.

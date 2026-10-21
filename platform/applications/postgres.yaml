@@ -20,6 +20,9 @@ spec:
             extendedConfiguration: ""
           - component: keycloak
             extendedConfiguration: ""
+          # State of the SQLMesh project (dags/sqlmesh/tpch_demo), Trino can't hold it
+          - component: sqlmesh
+            extendedConfiguration: ""
   template:
     metadata:
       name: "{{component}}-postgres"
