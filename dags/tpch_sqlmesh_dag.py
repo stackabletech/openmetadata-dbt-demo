@@ -20,6 +20,7 @@ from openmetadata_helpers import check_services_ready, set_om_owners, trigger_om
 
 SQLMESH_PROJECT_PATH = Path("/stackable/app/git-0/current/dags/sqlmesh/tpch_demo")
 SQLMESH_VERSION = "0.236.3"
+SQLMESH_STATE_DB = ("postgresql-sqlmesh.shared.svc.cluster.local", 5432)
 
 # Same as dbt_tpch_demo: every mart gets an owner except order_summary, so both schemas
 # behave alike under the OpenMetadata-driven rules. The staging views stay unowned.
@@ -33,6 +34,21 @@ OM_OWNED_TABLES = [
         "supplier_performance",
     )
 ]
+
+
+def check_ready():
+    """Services of the dbt DAG, plus SQLMesh's state database (deployed alongside, may lag)."""
+    import socket
+
+    try:
+        socket.create_connection(SQLMESH_STATE_DB, timeout=5).close()
+        print(f"  SQLMesh state database {SQLMESH_STATE_DB[0]} is reachable.")
+    except OSError as e:
+        print(f"  SQLMesh state database not ready: {e}")
+        return False
+    # data2day.demo comes from trino-init: once it exists, the Lakekeeper warehouse is usable.
+    # SQLMesh creates its own schemas.
+    return check_services_ready("data2day.demo")
 
 
 def run_sqlmesh(project_path: str):
@@ -69,12 +85,9 @@ with DAG(
     default_args={"retries": 1000},
 ) as dag:
 
-    # data2day.demo comes from trino-init: once it exists, the Lakekeeper warehouse is usable.
-    # SQLMesh creates its own schemas.
     wait_for_services = PythonSensor(
         task_id="wait_for_services",
-        python_callable=check_services_ready,
-        op_kwargs={"trino_schema": "data2day.demo"},
+        python_callable=check_ready,
         poke_interval=60,
         timeout=2400,
         mode="reschedule",
