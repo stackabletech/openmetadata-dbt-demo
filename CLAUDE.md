@@ -107,7 +107,7 @@ sources:
 | `deployment` | ArgoCD, SealedSecrets, Forgejo |
 | `stackable-operators` | Stackable operators |
 | `shared` | GarageFS, all PostgreSQL instances (airflow, hive, hive-iceberg, openmetadata, superset, entropy-data, sqlmesh) |
-| `platform` | Airflow, Trino, Hive, HDFS, ZooKeeper, Kafka, NiFi, OpenMetadata, Entropy Data, OpenSearch, Superset, Lakekeeper, Prometheus, Grafana, solar generator and ingest flow job, all init jobs |
+| `platform` | Airflow, Trino, Hive, HDFS, ZooKeeper, Kafka, NiFi, OpenMetadata, Entropy Data, OpenSearch, Superset, Lakekeeper, Prometheus, Grafana, solar generator and ingest flow job, solar Spark jobs, Spark History Server, all init jobs |
 
 Cross-namespace service references must use FQDNs (`<svc>.<namespace>.svc.cluster.local`).
 Services within the same namespace can use short names.

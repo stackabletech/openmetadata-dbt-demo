@@ -1,0 +1,65 @@
+---
+# Spark History Server: the Spark UI for finished and running SparkApplications (bronze
+# streaming, silver and gold batch jobs). Every SparkApplication writes its event log to
+# s3://spark-logs/eventlogs/ (`logFileDirectory` with bucket reference spark-logs).
+#
+# Bucket, key and the Secret spark-s3-credentials are created by the GarageFS init Job.
+# Note: the History Server UI has no authentication, unlike the Keycloak-protected UIs.
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: spark-s3-credentials
+spec:
+  backend:
+    k8sSearch:
+      searchNamespace:
+        pod: {}
+---
+apiVersion: s3.stackable.tech/v1alpha1
+kind: S3Connection
+metadata:
+  name: garage
+  namespace: platform
+spec:
+  host: garage.shared.svc.cluster.local
+  port: 3900
+  accessStyle: Path
+  region:
+    name: garage
+  credentials:
+    secretClass: spark-s3-credentials
+---
+apiVersion: s3.stackable.tech/v1alpha1
+kind: S3Bucket
+metadata:
+  name: spark-logs
+  namespace: platform
+spec:
+  bucketName: spark-logs
+  connection:
+    reference: garage
+---
+apiVersion: spark.stackable.tech/v1alpha1
+kind: SparkHistoryServer
+metadata:
+  name: spark-history
+  namespace: platform
+spec:
+  image:
+    productVersion: 3.5.8
+  vectorAggregatorConfigMapName: vector-aggregator-discovery
+  logFileDirectory:
+    s3:
+      prefix: eventlogs/
+      bucket:
+        reference: spark-logs
+  nodes:
+    roleConfig:
+      listenerClass: external-unstable
+    config:
+      cleaner: true
+      logging:
+        enableVectorAgent: true
+    roleGroups:
+      default:
+        replicas: 1

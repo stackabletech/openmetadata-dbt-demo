@@ -163,12 +163,23 @@ data:
       --from-literal=secretAccessKey="$KEY_SECRET" \
       -n platform --dry-run=client -o yaml | kubectl apply -f -
 
+    # Spark event logs for the Spark History Server (solar demo). The Secret is labelled for the
+    # secret-operator SecretClass spark-s3-credentials (platform/manifests/spark-history/).
+    ensure_key spark
+    ensure_bucket spark-logs spark
+    kubectl create secret generic spark-s3-credentials \
+      --from-literal=accessKey="$KEY_ID" \
+      --from-literal=secretKey="$KEY_SECRET" \
+      -n platform --dry-run=client -o yaml \
+      | kubectl label --local -f - secrets.stackable.tech/class=spark-s3-credentials -o yaml \
+      | kubectl apply -f -
+
     echo "=== GarageFS Init Complete ==="
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-garagefs-v4
+  name: configure-garagefs-v5
   namespace: shared
 spec:
   backoffLimit: 50
