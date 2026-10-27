@@ -1,0 +1,89 @@
+---
+# Creates the solar Kafka topics with a bounded retention, or adjusts existing ones.
+#
+# The broker's log volume is small (2Gi by default) and Kafka keeps data for 7 days by
+# default; at ~650 MB/h from the generator it filled up within 3 hours and the broker
+# stopped. Bronze keeps everything in Iceberg, so Kafka only needs a few hours as a buffer
+# (the bronze watchdog restarts a failed streaming job within 5 minutes).
+#
+#   solar-inverter          3 h, at most 1.2 GB, 100 MB segments (so old data can be deleted)
+#   solar-weather, -clouds  24 h
+#   solar-sites, solar-weather_stations  7 d (small; republished by the generator every 24 h)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configure-solar-topics-script
+  namespace: platform
+data:
+  configure.sh: |
+    set -eu
+    cd /stackable/kafka/bin
+    cat > /tmp/client.properties <<PROPS
+    security.protocol=SSL
+    ssl.truststore.type=PEM
+    ssl.truststore.location=/stackable/tls/ca.crt
+    PROPS
+    ARGS="--bootstrap-server $KAFKA --command-config /tmp/client.properties"
+
+    topic() {
+      name="$1"; config="$2"
+      ./kafka-topics.sh $ARGS --create --if-not-exists --topic "$name" --partitions 1 \
+        --replication-factor 1 $(echo "$config" | tr ',' '\n' | sed 's/^/--config /' | tr '\n' ' ') 2>/dev/null
+      ./kafka-configs.sh $ARGS --alter --entity-type topics --entity-name "$name" --add-config "$config" 2>/dev/null
+      echo "$name: $config"
+    }
+
+    topic solar-inverter retention.ms=10800000,retention.bytes=1200000000,segment.bytes=104857600
+    topic solar-weather retention.ms=86400000,segment.bytes=104857600
+    topic solar-clouds retention.ms=86400000,segment.bytes=104857600
+    topic solar-sites retention.ms=604800000
+    topic solar-weather_stations retention.ms=604800000
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-solar-topics-v1
+  namespace: platform
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: oci.stackable.tech/sdp/kafka:3.9.1-stackable26.3.0
+          command: ["/bin/bash", "/scripts/configure.sh"]
+          env:
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef: { name: kafka, key: KAFKA }
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: tls
+              mountPath: /stackable/tls
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: script
+          configMap:
+            name: configure-solar-topics-script
+        - name: tls
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/format: tls-pem
+                  secrets.stackable.tech/scope: pod
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem
