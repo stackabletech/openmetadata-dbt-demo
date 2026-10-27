@@ -1,0 +1,198 @@
+---
+# Bronze layer of the solar ingestion demo: a Spark Structured Streaming job that copies the
+# measurement topics from Kafka into Iceberg tables in data2day.solar_bronze, unchanged.
+#
+#   solar-inverter -> solar_bronze.inverter_raw
+#   solar-weather  -> solar_bronze.weather_raw
+#   solar-clouds   -> solar_bronze.clouds_raw
+#
+# One row per Kafka message: the message as received (`value`), its Kafka coordinates and the
+# ingest time. Append-only, partitioned by day of the Kafka timestamp; parsing and cleaning
+# happen in silver. The master data topics (solar-sites, solar-weather_stations) are read by
+# the dimension job instead.
+#
+# Spark 3.5.8 (SDP 26.3 LTS): there is no Iceberg Spark runtime for Spark 4.1 yet.
+# Catalog access like Trino's data2day catalog: Lakekeeper REST with the lakekeeper-service
+# client credentials, data files in Garage S3. Streaming checkpoints go to the same bucket.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: solar-bronze-job
+  namespace: platform
+data:
+  bronze.py: |
+    import os
+
+    from pyspark.sql import SparkSession
+    from pyspark.sql.functions import col, current_timestamp
+
+    CATALOG = "data2day"
+    SCHEMA = f"{CATALOG}.solar_bronze"
+    STREAMS = ["inverter", "weather", "clouds"]
+    CHECKPOINTS = "s3a://iceberg-warehouse/checkpoints/solar-bronze"
+    S3_ENDPOINT = "http://garage.shared.svc.cluster.local:3900"
+    KAFKA_TLS = "/stackable/kafka-tls"
+
+    spark = (
+        SparkSession.builder.appName("solar-bronze")
+        .config(f"spark.sql.catalog.{CATALOG}", "org.apache.iceberg.spark.SparkCatalog")
+        .config(f"spark.sql.catalog.{CATALOG}.type", "rest")
+        .config(f"spark.sql.catalog.{CATALOG}.uri", "http://lakekeeper:8181/catalog")
+        .config(f"spark.sql.catalog.{CATALOG}.warehouse", "data2day")
+        .config(f"spark.sql.catalog.{CATALOG}.credential", os.environ["LAKEKEEPER_CREDENTIAL"])
+        .config(f"spark.sql.catalog.{CATALOG}.oauth2-server-uri", os.environ["KEYCLOAK_TOKEN_URL"])
+        .config(f"spark.sql.catalog.{CATALOG}.scope", "openid")
+        # Keycloak doesn't allow the token exchange Iceberg uses to refresh (same as Trino).
+        .config(f"spark.sql.catalog.{CATALOG}.token-refresh-enabled", "false")
+        .config(f"spark.sql.catalog.{CATALOG}.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+        .config(f"spark.sql.catalog.{CATALOG}.s3.endpoint", S3_ENDPOINT)
+        .config(f"spark.sql.catalog.{CATALOG}.s3.path-style-access", "true")
+        .config(f"spark.sql.catalog.{CATALOG}.client.region", "garage")
+        .config(f"spark.sql.catalog.{CATALOG}.s3.access-key-id", os.environ["S3_ACCESS_KEY"])
+        .config(f"spark.sql.catalog.{CATALOG}.s3.secret-access-key", os.environ["S3_SECRET_KEY"])
+        .getOrCreate()
+    )
+    hadoop = spark.sparkContext._jsc.hadoopConfiguration()
+    for key, value in {
+        "fs.s3a.endpoint": S3_ENDPOINT,
+        "fs.s3a.path.style.access": "true",
+        "fs.s3a.endpoint.region": "garage",
+        "fs.s3a.access.key": os.environ["S3_ACCESS_KEY"],
+        "fs.s3a.secret.key": os.environ["S3_SECRET_KEY"],
+    }.items():
+        hadoop.set(key, value)
+
+    spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {SCHEMA}")
+    for stream in STREAMS:
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {SCHEMA}.{stream}_raw (
+                value STRING COMMENT 'Kafka message as received (one JSON reading)',
+                kafka_topic STRING,
+                kafka_partition INT,
+                kafka_offset BIGINT,
+                kafka_timestamp TIMESTAMP,
+                ingested_at TIMESTAMP COMMENT 'When this job wrote the row'
+            )
+            USING iceberg
+            PARTITIONED BY (days(kafka_timestamp))
+            COMMENT 'Solar demo bronze: raw {stream} readings from Kafka topic solar-{stream}, synthetic data'
+        """)
+
+    for stream in STREAMS:
+        (
+            spark.readStream.format("kafka")
+            .option("kafka.bootstrap.servers", os.environ["KAFKA"])
+            .option("kafka.security.protocol", "SSL")
+            .option("kafka.ssl.truststore.type", "PEM")
+            .option("kafka.ssl.truststore.location", f"{KAFKA_TLS}/ca.crt")
+            .option("subscribe", f"solar-{stream}")
+            .option("startingOffsets", "earliest")
+            .option("maxOffsetsPerTrigger", 500000)
+            .load()
+            .select(
+                col("value").cast("string").alias("value"),
+                col("topic").alias("kafka_topic"),
+                col("partition").alias("kafka_partition"),
+                col("offset").alias("kafka_offset"),
+                col("timestamp").alias("kafka_timestamp"),
+                current_timestamp().alias("ingested_at"),
+            )
+            .writeStream.format("iceberg")
+            .outputMode("append")
+            .trigger(processingTime="1 minute")
+            .option("checkpointLocation", f"{CHECKPOINTS}/{stream}")
+            # A micro-batch can span midnight; write to several day partitions without sorting.
+            .option("fanout-enabled", "true")
+            .queryName(f"bronze-{stream}")
+            .toTable(f"{SCHEMA}.{stream}_raw")
+        )
+
+    spark.streams.awaitAnyTermination()
+---
+apiVersion: spark.stackable.tech/v1alpha1
+kind: SparkApplication
+metadata:
+  name: solar-bronze
+  namespace: platform
+spec:
+  sparkImage:
+    productVersion: 3.5.8
+  mode: cluster
+  mainApplicationFile: local:///stackable/spark/jobs/bronze.py
+  deps:
+    packages:
+      - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.12.0
+      - org.apache.iceberg:iceberg-aws-bundle:1.12.0
+      - org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.8
+  env:
+    - name: KAFKA
+      valueFrom:
+        configMapKeyRef:
+          name: kafka
+          key: KAFKA
+    - name: LAKEKEEPER_CREDENTIAL
+      valueFrom:
+        secretKeyRef:
+          name: lakekeeper-service-credentials
+          key: credential
+    - name: KEYCLOAK_TOKEN_URL
+      value: http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo/protocol/openid-connect/token
+    - name: S3_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: garagefs-lakekeeper-credentials
+          key: accessKeyId
+    - name: S3_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: garagefs-lakekeeper-credentials
+          key: secretAccessKey
+  volumes:
+    - name: job
+      configMap:
+        name: solar-bronze-job
+    - name: kafka-tls
+      ephemeral:
+        volumeClaimTemplate:
+          metadata:
+            annotations:
+              secrets.stackable.tech/class: tls
+              secrets.stackable.tech/format: tls-pem
+              secrets.stackable.tech/scope: pod
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: "1"
+            storageClassName: secrets.stackable.tech
+            volumeMode: Filesystem
+  job:
+    config:
+      volumeMounts:
+        - name: job
+          mountPath: /stackable/spark/jobs
+  driver:
+    config:
+      resources:
+        cpu:
+          min: 500m
+          max: "1"
+        memory:
+          limit: 2Gi
+      volumeMounts:
+        - name: job
+          mountPath: /stackable/spark/jobs
+        - name: kafka-tls
+          mountPath: /stackable/kafka-tls
+  executor:
+    replicas: 1
+    config:
+      resources:
+        cpu:
+          min: 500m
+          max: "1"
+        memory:
+          limit: 2Gi
+      volumeMounts:
+        - name: kafka-tls
+          mountPath: /stackable/kafka-tls
