@@ -713,6 +713,9 @@ data:
                 .option("subscribe", f"solar-{stream}")
                 .option("startingOffsets", "earliest")
                 .option("maxOffsetsPerTrigger", 500000)
+                # Kafka keeps the solar topics only for hours (configure-solar-topics.yaml). After a
+                # longer outage, skip what expired instead of failing on every restart.
+                .option("failOnDataLoss", "false")
                 .load()
                 .select(col("value").cast("string").alias("value"),
                         col("topic").alias("kafka_topic"), col("partition").alias("kafka_partition"),
