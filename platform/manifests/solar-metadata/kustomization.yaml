@@ -1,0 +1,18 @@
+---
+# OpenMetadata setup for the solar demo (configure_openmetadata.py): lineage bot and its token
+# Secret for the Spark jobs, Superset dashboard service with lineage to the Trino tables.
+# Bump the Job name to re-run it after changing the script.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - job.yaml
+
+configMapGenerator:
+  - name: configure-solar-metadata-script
+    namespace: platform
+    files:
+      - configure_openmetadata.py
+
+generatorOptions:
+  disableNameSuffixHash: true
