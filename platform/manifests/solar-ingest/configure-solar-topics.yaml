@@ -28,8 +28,10 @@ data:
     topic() {
       name="$1"; config="$2"
       ./kafka-topics.sh $ARGS --create --if-not-exists --topic "$name" --partitions 1 \
-        --replication-factor 1 $(echo "$config" | tr ',' '\n' | sed 's/^/--config /' | tr '\n' ' ') 2>/dev/null
-      ./kafka-configs.sh $ARGS --alter --entity-type topics --entity-name "$name" --add-config "$config" 2>/dev/null
+        --replication-factor 1 $(echo "$config" | tr ',' '\n' | sed 's/^/--config /' | tr '\n' ' ') \
+        2>&1 | grep -v -E '^\s|INFO' || true
+      ./kafka-configs.sh $ARGS --alter --entity-type topics --entity-name "$name" --add-config "$config" \
+        2>&1 | grep -v -E '^\s|INFO' || true
       echo "$name: $config"
     }
 
@@ -42,7 +44,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-topics-v1
+  name: configure-solar-topics-v2
   namespace: platform
 spec:
   backoffLimit: 20
@@ -52,7 +54,7 @@ spec:
       containers:
         - name: configure
           image: oci.stackable.tech/sdp/kafka:3.9.1-stackable26.3.0
-          command: ["/bin/bash", "/scripts/configure.sh"]
+          command: ["/bin/bash", "-x", "/scripts/configure.sh"]
           env:
             - name: KAFKA
               valueFrom:
