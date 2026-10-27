@@ -2,6 +2,7 @@
 # Code of the solar demo's Spark batch jobs, mounted at /stackable/spark/jobs by the
 # SparkAppTemplate solar-spark. Airflow (dags/solar_pipeline.py) runs them as SparkApplications.
 #
+#   bronze.py: Kafka -> bronze, continuous streaming (kept running by DAG solar_bronze_watchdog)
 #   dims.py:   master data from Kafka (solar-sites, solar-weather_stations) into
 #              data2day.solar_silver.dim_site / dim_weather_station
 #   silver.py: bronze -> silver (checks, quarantine, dedup, energy, performance ratio)
@@ -661,3 +662,73 @@ data:
 
     if __name__ == "__main__":
         run("solar_gold", main)
+
+  bronze.py: |
+    """Bronze: Kafka -> Iceberg, continuously (Spark Structured Streaming).
+
+      solar-inverter -> solar_bronze.inverter_raw
+      solar-weather  -> solar_bronze.weather_raw
+      solar-clouds   -> solar_bronze.clouds_raw
+
+    One row per Kafka message: the message as received, its Kafka coordinates and the ingest
+    time; append-only, partitioned by day. Runs until it fails; the Airflow DAG
+    solar_bronze_watchdog starts a new one, which resumes from the checkpoints.
+    """
+
+    import os
+    import sys
+
+    sys.path.insert(0, "/stackable/spark/jobs")
+
+    from pyspark.sql.functions import col, current_timestamp
+
+    from solar_common import CATALOG, KAFKA_TLS, run, session
+
+    SCHEMA = f"{CATALOG}.solar_bronze"
+    STREAMS = ["inverter", "weather", "clouds"]
+    CHECKPOINTS = "s3a://iceberg-warehouse/checkpoints/solar-bronze"
+
+
+    def main():
+        spark = session("solar-bronze")
+        spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {SCHEMA}")
+        for stream in STREAMS:
+            spark.sql(f"""
+                CREATE TABLE IF NOT EXISTS {SCHEMA}.{stream}_raw (
+                    value STRING COMMENT 'Kafka message as received (one JSON reading)',
+                    kafka_topic STRING, kafka_partition INT, kafka_offset BIGINT,
+                    kafka_timestamp TIMESTAMP,
+                    ingested_at TIMESTAMP COMMENT 'When this job wrote the row')
+                USING iceberg PARTITIONED BY (days(kafka_timestamp))
+                COMMENT 'Solar demo bronze: raw {stream} readings from Kafka topic solar-{stream}, synthetic data'
+            """)
+
+        for stream in STREAMS:
+            (
+                spark.readStream.format("kafka")
+                .option("kafka.bootstrap.servers", os.environ["KAFKA"])
+                .option("kafka.security.protocol", "SSL")
+                .option("kafka.ssl.truststore.type", "PEM")
+                .option("kafka.ssl.truststore.location", f"{KAFKA_TLS}/ca.crt")
+                .option("subscribe", f"solar-{stream}")
+                .option("startingOffsets", "earliest")
+                .option("maxOffsetsPerTrigger", 500000)
+                .load()
+                .select(col("value").cast("string").alias("value"),
+                        col("topic").alias("kafka_topic"), col("partition").alias("kafka_partition"),
+                        col("offset").alias("kafka_offset"), col("timestamp").alias("kafka_timestamp"),
+                        current_timestamp().alias("ingested_at"))
+                .writeStream.format("iceberg")
+                .outputMode("append")
+                .trigger(processingTime="1 minute")
+                .option("checkpointLocation", f"{CHECKPOINTS}/{stream}")
+                # A micro-batch can span midnight; write to several day partitions without sorting.
+                .option("fanout-enabled", "true")
+                .queryName(f"bronze-{stream}")
+                .toTable(f"{SCHEMA}.{stream}_raw")
+            )
+        spark.streams.awaitAnyTermination()
+
+
+    if __name__ == "__main__":
+        run("solar_bronze", main)

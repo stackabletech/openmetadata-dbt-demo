@@ -80,7 +80,8 @@ spec:
           min: 500m
           max: "1"
         memory:
-          limit: 2Gi
+          # The bronze streaming driver was killed at 2Gi after ~70 min.
+          limit: 4Gi
       volumeMounts:
         - name: jobs
           mountPath: /stackable/spark/jobs
