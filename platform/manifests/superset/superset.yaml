@@ -39,6 +39,9 @@ spec:
           superset_config.py:
             AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Gamma"]}'
             AUTH_ROLES_SYNC_AT_LOGIN: "true"
+            # Base map for the deck.gl charts (solar demo) without a Mapbox key; the default CSP
+            # already allows tile.openstreetmap.org. OSM tiles need visible attribution.
+            DECKGL_BASE_MAP: "[['tile://https://tile.openstreetmap.org/{z}/{x}/{y}.png', 'Streets (OpenStreetMap)']]"
     podOverrides:
       spec:
         containers:
