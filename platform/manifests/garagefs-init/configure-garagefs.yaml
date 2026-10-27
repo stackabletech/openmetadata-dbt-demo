@@ -79,10 +79,12 @@ data:
       local name="$1"
       echo "Creating API key '$name'..."
       local output
-      output=$($GARAGE_CMD key info "$name" 2>&1) || output=$($GARAGE_CMD key create "$name" 2>&1)
+      # --show-secret: without it, Garage 1.x prints "(redacted)" for existing keys and the
+      # Secrets below would be overwritten with that placeholder on every re-run.
+      output=$($GARAGE_CMD key info --show-secret "$name" 2>&1) || output=$($GARAGE_CMD key create "$name" 2>&1)
       KEY_ID=$(echo "$output" | grep "Key ID:" | awk '{print $NF}')
       KEY_SECRET=$(echo "$output" | grep "Secret key:" | awk '{print $NF}')
-      if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ]; then
+      if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ] || [ "$KEY_SECRET" = "(redacted)" ]; then
         echo "ERROR: Failed to extract credentials for key '$name'"
         echo "Output: $output"
         exit 1
@@ -179,7 +181,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-garagefs-v5
+  name: configure-garagefs-v6
   namespace: shared
 spec:
   backoffLimit: 50
