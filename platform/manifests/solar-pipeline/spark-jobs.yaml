@@ -558,7 +558,9 @@ data:
                          F.avg("ac_kw").alias("avg_ac_kw"),
                          F.sum("interval_energy_kwh").alias("energy_kwh"),
                          (F.avg("expected_kw") * SLOT_SECONDS / 3600).alias("expected_kwh"),
-                         (F.avg("ac_kw") / F.avg("expected_kw")).alias("performance_ratio"),
+                         # Daylight only, as in silver: at night the sensor noise gives tiny expected values.
+                         F.when(F.avg("expected_kw") > 0.05 * F.first("kwp_dc"),
+                                F.avg("ac_kw") / F.avg("expected_kw")).alias("performance_ratio"),
                          F.sum(F.when(F.col("status") == "FAULT", 1).otherwise(0)).cast("int").alias("fault_readings")))
         per_site.createOrReplaceTempView("per_site")
         site_15min = spark.sql(f"""
@@ -584,7 +586,8 @@ data:
                       F.count("*").cast("int").alias("sites"), F.sum("kwp_dc").alias("kwp_dc"),
                       F.sum("avg_ac_kw").alias("power_kw"), F.sum("energy_kwh").alias("energy_kwh"),
                       F.sum("expected_kwh").alias("expected_kwh"),
-                      (F.sum("avg_ac_kw") * SLOT_SECONDS / 3600 / F.sum("expected_kwh")).alias("performance_ratio"),
+                      F.when(F.sum("expected_kwh") > 0.05 * F.sum("kwp_dc") * SLOT_SECONDS / 3600,
+                             F.sum("avg_ac_kw") * SLOT_SECONDS / 3600 / F.sum("expected_kwh")).alias("performance_ratio"),
                       F.sum(F.col("underperforming").cast("int")).cast("int").alias("underperforming_sites"))
                  .withColumn("updated_at", F.current_timestamp()))
         replace_window(spark, fleet, f"{GOLD}.fleet_15min", ["plz", "slot"], f"t.slot >= TIMESTAMP '{start}'")
