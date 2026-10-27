@@ -112,9 +112,12 @@ data:
 apiVersion: spark.stackable.tech/v1alpha1
 kind: SparkApplication
 metadata:
-  name: solar-bronze
+  # A finished SparkApplication is not resubmitted when its spec changes: bump the suffix to
+  # run a new version (ArgoCD prunes the old one).
+  name: solar-bronze-v2
   namespace: platform
 spec:
+  vectorAggregatorConfigMapName: vector-aggregator-discovery
   sparkImage:
     productVersion: 3.5.8
   mode: cluster
@@ -173,6 +176,8 @@ spec:
           mountPath: /stackable/spark/jobs
   driver:
     config:
+      logging:
+        enableVectorAgent: true
       resources:
         cpu:
           min: 500m
@@ -187,6 +192,8 @@ spec:
   executor:
     replicas: 1
     config:
+      logging:
+        enableVectorAgent: true
       resources:
         cpu:
           min: 500m
