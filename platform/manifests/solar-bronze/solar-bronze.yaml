@@ -13,7 +13,8 @@
 #
 # Spark 3.5.8 (SDP 26.3 LTS): there is no Iceberg Spark runtime for Spark 4.1 yet.
 # Catalog access like Trino's data2day catalog: Lakekeeper REST with the lakekeeper-service
-# client credentials, data files in Garage S3. Streaming checkpoints go to the same bucket.
+# client credentials, data files in Garage S3 through s3a with the Garage keys (not Iceberg's
+# S3FileIO, whose remote signing via Lakekeeper fails). Checkpoints go to the same bucket.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -44,16 +45,16 @@ data:
         .config(f"spark.sql.catalog.{CATALOG}.scope", "openid")
         # Keycloak doesn't allow the token exchange Iceberg uses to refresh (same as Trino).
         .config(f"spark.sql.catalog.{CATALOG}.token-refresh-enabled", "false")
-        .config(f"spark.sql.catalog.{CATALOG}.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        .config(f"spark.sql.catalog.{CATALOG}.s3.endpoint", S3_ENDPOINT)
-        .config(f"spark.sql.catalog.{CATALOG}.s3.path-style-access", "true")
-        .config(f"spark.sql.catalog.{CATALOG}.client.region", "garage")
-        .config(f"spark.sql.catalog.{CATALOG}.s3.access-key-id", os.environ["S3_ACCESS_KEY"])
-        .config(f"spark.sql.catalog.{CATALOG}.s3.secret-access-key", os.environ["S3_SECRET_KEY"])
+        # Data files through Hadoop's s3a with the Garage keys. Iceberg's own S3FileIO would
+        # have Lakekeeper sign every request (no STS here), and that signing call fails (404).
+        .config(f"spark.sql.catalog.{CATALOG}.io-impl", "org.apache.iceberg.hadoop.HadoopFileIO")
         .getOrCreate()
     )
+    # s3a for the checkpoints and, via HadoopFileIO, the Iceberg files (table locations are
+    # s3://...). HadoopFileIO ships this configuration to the executors.
     hadoop = spark.sparkContext._jsc.hadoopConfiguration()
     for key, value in {
+        "fs.s3.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
         "fs.s3a.endpoint": S3_ENDPOINT,
         "fs.s3a.path.style.access": "true",
         "fs.s3a.endpoint.region": "garage",
@@ -114,7 +115,7 @@ kind: SparkApplication
 metadata:
   # A finished SparkApplication is not resubmitted when its spec changes: bump the suffix to
   # run a new version (ArgoCD prunes the old one).
-  name: solar-bronze-v2
+  name: solar-bronze-v3
   namespace: platform
 spec:
   vectorAggregatorConfigMapName: vector-aggregator-discovery
