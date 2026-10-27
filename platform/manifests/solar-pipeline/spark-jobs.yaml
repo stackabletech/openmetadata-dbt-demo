@@ -1,0 +1,168 @@
+---
+# Code of the solar demo's Spark batch jobs, mounted at /stackable/spark/jobs by the
+# SparkAppTemplate solar-spark. Airflow (dags/solar_pipeline.py) runs them as SparkApplications.
+#
+#   dims.py: master data from Kafka (solar-sites, solar-weather_stations) into
+#            data2day.solar_silver.dim_site / dim_weather_station
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: solar-spark-jobs
+  namespace: platform
+data:
+  solar_common.py: |
+    """Shared setup for the solar Spark jobs: Iceberg catalog data2day, S3, Kafka, error logging."""
+
+    import os
+    import traceback
+
+    from pyspark.sql import SparkSession
+
+    CATALOG = "data2day"
+    S3_ENDPOINT = "http://garage.shared.svc.cluster.local:3900"
+    KAFKA_TLS = "/stackable/kafka-tls"
+
+    SITES_ATTRIBUTION = (
+        "Marktstammdatenregister - (c) Bundesnetzagentur fuer Elektrizitaet, Gas, "
+        "Telekommunikation, Post und Eisenbahnen | dl-de/by-2-0; postcode areas (c) OpenStreetMap "
+        "contributors, ODbL-1.0. Site IDs are synthetic; positions of non-park sites are random "
+        "points within their postcode area, not real locations."
+    )
+
+
+    def session(app_name):
+        """SparkSession with the data2day catalog configured like Trino's (see solar-bronze)."""
+        c = f"spark.sql.catalog.{CATALOG}"
+        spark = (
+            SparkSession.builder.appName(app_name)
+            .config(c, "org.apache.iceberg.spark.SparkCatalog")
+            .config(f"{c}.type", "rest")
+            .config(f"{c}.uri", "http://lakekeeper:8181/catalog")
+            .config(f"{c}.warehouse", "data2day")
+            .config(f"{c}.rest.auth.type", "oauth2")
+            .config(f"{c}.credential", os.environ["LAKEKEEPER_CREDENTIAL"])
+            .config(f"{c}.oauth2-server-uri", os.environ["KEYCLOAK_TOKEN_URL"])
+            .config(f"{c}.scope", "openid")
+            .config(f"{c}.token-refresh-enabled", "false")
+            # s3a with the Garage keys; Iceberg's S3FileIO would need Lakekeeper remote signing,
+            # which fails here.
+            .config(f"{c}.io-impl", "org.apache.iceberg.hadoop.HadoopFileIO")
+            .getOrCreate()
+        )
+        hadoop = spark.sparkContext._jsc.hadoopConfiguration()
+        for key, value in {
+            "fs.s3.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+            "fs.s3a.endpoint": S3_ENDPOINT,
+            "fs.s3a.path.style.access": "true",
+            "fs.s3a.endpoint.region": "garage",
+            "fs.s3a.access.key": os.environ["S3_ACCESS_KEY"],
+            "fs.s3a.secret.key": os.environ["S3_SECRET_KEY"],
+        }.items():
+            hadoop.set(key, value)
+        return spark
+
+
+    def kafka_options(topic):
+        """Batch read of a whole topic over TLS."""
+        return {
+            "kafka.bootstrap.servers": os.environ["KAFKA"],
+            "kafka.security.protocol": "SSL",
+            "kafka.ssl.truststore.type": "PEM",
+            "kafka.ssl.truststore.location": f"{KAFKA_TLS}/ca.crt",
+            "subscribe": topic,
+            "startingOffsets": "earliest",
+            "endingOffsets": "latest",
+        }
+
+
+    def log(spark, name):
+        return spark.sparkContext._jvm.org.apache.logging.log4j.LogManager.getLogger(name)
+
+
+    def run(name, main):
+        """Run main(); Python tracebacks go to stderr, which the Vector agent doesn't collect,
+        so log them through log4j to get them into OpenSearch."""
+        try:
+            main()
+        except Exception:
+            active = SparkSession.getActiveSession()
+            if active is not None:
+                log(active, name).error(traceback.format_exc())
+            raise
+
+  dims.py: |
+    """Master data from Kafka into dimension tables (full refresh, latest record per ID).
+
+    The generator publishes its active sites and the weather station grid to solar-sites and
+    solar-weather_stations at startup and every 24 h. This job reads both topics completely,
+    keeps the latest record per ID and replaces the tables atomically. An empty topic (e.g.
+    after retention) leaves the table untouched.
+    """
+
+    import sys
+
+    sys.path.insert(0, "/stackable/spark/jobs")
+
+    from pyspark.sql import Window
+    from pyspark.sql.functions import col, current_timestamp, from_json, row_number, to_date, to_timestamp
+    from pyspark.sql.types import BooleanType, DoubleType, StringType, StructField, StructType
+
+    from solar_common import CATALOG, SITES_ATTRIBUTION, kafka_options, log, run, session
+
+    SCHEMA = f"{CATALOG}.solar_silver"
+
+    SITE = StructType([StructField(name, kind) for name, kind in [
+        ("published_at", StringType()), ("site_id", StringType()), ("kind", StringType()),
+        ("bundesland", StringType()), ("landkreis", StringType()), ("gemeinde", StringType()),
+        ("plz", StringType()), ("kwp_dc", DoubleType()), ("kw_ac", DoubleType()),
+        ("feedin_limit", DoubleType()), ("commissioned", StringType()),
+        ("orientation", StringType()), ("azimuth_deg", DoubleType()), ("tilt_deg", DoubleType()),
+        ("orientation_imputed", BooleanType()), ("has_storage", BooleanType()),
+        ("lat", DoubleType()), ("lon", DoubleType()), ("placement", StringType()),
+        ("weather_station_id", StringType()),
+    ]])
+
+    STATION = StructType([StructField(name, kind) for name, kind in [
+        ("published_at", StringType()), ("station_id", StringType()),
+        ("lat", DoubleType()), ("lon", DoubleType()),
+        ("lat_min", DoubleType()), ("lat_max", DoubleType()),
+        ("lon_min", DoubleType()), ("lon_max", DoubleType()),
+    ]])
+
+
+    def latest(spark, topic, schema, key):
+        raw = spark.read.format("kafka").options(**kafka_options(topic)).load()
+        parsed = raw.select(from_json(col("value").cast("string"), schema).alias("r"), col("offset"))
+        newest = Window.partitionBy(f"r.{key}").orderBy(col("r.published_at").desc(), col("offset").desc())
+        return (parsed.where(col(f"r.{key}").isNotNull())
+                .withColumn("n", row_number().over(newest)).where("n = 1")
+                .select("r.*")
+                .withColumn("published_at", to_timestamp("published_at"))
+                .withColumn("loaded_at", current_timestamp()))
+
+
+    def replace(spark, df, table, comment):
+        count = df.count()
+        if count == 0:
+            log(spark, "solar_dims").warn(f"No records for {table}, table left unchanged")
+            return
+        (df.writeTo(f"{SCHEMA}.{table}").using("iceberg")
+         .tableProperty("comment", comment).createOrReplace())
+        log(spark, "solar_dims").info(f"Replaced {SCHEMA}.{table} with {count} rows")
+
+
+    def main():
+        spark = session("solar-dims")
+        spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {SCHEMA}")
+        sites = latest(spark, "solar-sites", SITE, "site_id").withColumn("commissioned", to_date("commissioned"))
+        replace(spark, sites, "dim_site",
+                "Solar demo: active PV sites (latest record per site_id from Kafka topic solar-sites). "
+                + SITES_ATTRIBUTION)
+        stations = latest(spark, "solar-weather_stations", STATION, "station_id")
+        replace(spark, stations, "dim_weather_station",
+                "Solar demo: simulated weather stations, one per ~28 x 26 km grid cell (latest record per "
+                "station_id from Kafka topic solar-weather_stations). Synthetic data.")
+
+
+    if __name__ == "__main__":
+        run("solar_dims", main)

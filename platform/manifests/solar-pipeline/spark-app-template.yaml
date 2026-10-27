@@ -1,0 +1,102 @@
+---
+# Everything the solar batch jobs share. Airflow (dags/solar_pipeline.py) creates minimal
+# SparkApplications (image, mode, script) that reference this template through the annotations
+#   spark-application.template.merge: "true"
+#   spark-application.template.0.name: solar-spark
+# Templates are applied once, when the SparkApplication is created.
+#
+# Same catalog, S3 and Kafka setup as the bronze streaming job (platform/manifests/solar-bronze/).
+apiVersion: spark.stackable.tech/v1alpha1
+kind: SparkApplicationTemplate
+metadata:
+  name: solar-spark
+  namespace: platform
+spec:
+  mode: cluster
+  sparkImage:
+    productVersion: 3.5.8
+  mainApplicationFile: local:///stackable/spark/jobs/dims.py
+  vectorAggregatorConfigMapName: vector-aggregator-discovery
+  logFileDirectory:
+    s3:
+      prefix: eventlogs/
+      bucket:
+        reference: spark-logs
+  sparkConf:
+    # The operator's region for the event log bucket is ignored by Hadoop 3.4
+    # (see platform/manifests/spark-history/spark-history.yaml).
+    spark.hadoop.fs.s3a.bucket.spark-logs.endpoint.region: garage
+  deps:
+    packages:
+      - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.12.0
+      - org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.8
+  env:
+    - name: KAFKA
+      valueFrom:
+        configMapKeyRef: { name: kafka, key: KAFKA }
+    - name: LAKEKEEPER_CREDENTIAL
+      valueFrom:
+        secretKeyRef: { name: lakekeeper-service-credentials, key: credential }
+    - name: KEYCLOAK_TOKEN_URL
+      value: http://keycloak-service.platform.svc.cluster.local:8080/realms/stackable-demo/protocol/openid-connect/token
+    - name: S3_ACCESS_KEY
+      valueFrom:
+        secretKeyRef: { name: garagefs-lakekeeper-credentials, key: accessKeyId }
+    - name: S3_SECRET_KEY
+      valueFrom:
+        secretKeyRef: { name: garagefs-lakekeeper-credentials, key: secretAccessKey }
+  volumes:
+    - name: jobs
+      configMap:
+        name: solar-spark-jobs
+    - name: kafka-tls
+      ephemeral:
+        volumeClaimTemplate:
+          metadata:
+            annotations:
+              secrets.stackable.tech/class: tls
+              secrets.stackable.tech/format: tls-pem
+              secrets.stackable.tech/scope: pod
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: "1"
+            storageClassName: secrets.stackable.tech
+            volumeMode: Filesystem
+  job:
+    config:
+      volumeMounts:
+        - name: jobs
+          mountPath: /stackable/spark/jobs
+  driver:
+    config:
+      logging:
+        enableVectorAgent: true
+      resources:
+        cpu:
+          min: 500m
+          max: "1"
+        memory:
+          limit: 2Gi
+      volumeMounts:
+        - name: jobs
+          mountPath: /stackable/spark/jobs
+        - name: kafka-tls
+          mountPath: /stackable/kafka-tls
+  executor:
+    replicas: 1
+    config:
+      logging:
+        enableVectorAgent: true
+      resources:
+        cpu:
+          min: 500m
+          max: "1"
+        memory:
+          limit: 2Gi
+      volumeMounts:
+        - name: jobs
+          mountPath: /stackable/spark/jobs
+        - name: kafka-tls
+          mountPath: /stackable/kafka-tls
