@@ -2,7 +2,8 @@
 #
 # Each task creates a minimal SparkApplication (image, mode, script) that references the
 # SparkApplicationTemplate solar-spark (platform/manifests/solar-pipeline/), waits until it has
-# finished and deletes it after success. The run stays visible in the Spark History Server.
+# finished and deletes it after success. The bronze streaming job runs indefinitely; the
+# watchdog DAG starts a new one whenever none is running. The run stays visible in the Spark History Server.
 # On failure the SparkApplication is kept; the driver log is in OpenSearch (logs-*, field
 # `cluster` = the application name).
 #
@@ -20,11 +21,15 @@ GROUP, VERSION, PLURAL = "spark.stackable.tech", "v1alpha1", "sparkapplications"
 TIMEOUT = timedelta(minutes=30)
 
 
-def run_spark_job(script):
+def spark_api():
     from kubernetes import client, config
 
     config.load_incluster_config()
-    api = client.CustomObjectsApi()
+    return client.CustomObjectsApi()
+
+
+def create_spark_app(api, script):
+    """Create a minimal SparkApplication for jobs/<script>.py from the template; return its name."""
     # Unique per start; Kubernetes names are lowercase, at most 63 characters. Not derived from
     # the logical date: in Airflow 3 manually triggered runs have none.
     name = f"solar-{script}-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
@@ -45,7 +50,13 @@ def run_spark_job(script):
         },
     })
     print(f"Created SparkApplication {name}")
+    return name
 
+
+def run_spark_job(script):
+    """Run a batch job to completion; delete it after success, keep it after failure."""
+    api = spark_api()
+    name = create_spark_app(api, script)
     deadline = datetime.now() + TIMEOUT
     phase = None
     while datetime.now() < deadline:
@@ -62,6 +73,31 @@ def run_spark_job(script):
                                f"(logs-*, cluster: {name}), kept for inspection")
         time.sleep(15)
     raise TimeoutError(f"SparkApplication {name} not finished after {TIMEOUT}")
+
+
+def ensure_bronze():
+    """Keep exactly one bronze streaming job running.
+
+    Any solar-bronze* SparkApplication that hasn't finished counts as running (also one that is
+    still being submitted), so two drivers never write to the same checkpoints. Finished ones
+    are cleaned up except the newest, which is kept for inspection.
+    """
+    api = spark_api()
+    apps = [a for a in api.list_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL)["items"]
+            if a["metadata"]["name"].startswith("solar-bronze")]
+    active = [a["metadata"]["name"] for a in apps
+              if (a.get("status") or {}).get("phase") not in ("Succeeded", "Failed")]
+    if active:
+        print(f"Bronze is running: {', '.join(active)}")
+        return
+    finished = sorted(apps, key=lambda a: a["metadata"]["creationTimestamp"])
+    for app in finished[:-1]:
+        api.delete_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL, app["metadata"]["name"])
+        print(f"Deleted finished {app['metadata']['name']}")
+    if finished:
+        print(f"Last bronze job {finished[-1]['metadata']['name']} ended "
+              f"({(finished[-1].get('status') or {}).get('phase')}); starting a new one")
+    create_spark_app(api, "bronze")
 
 
 with DAG(
@@ -102,3 +138,16 @@ with DAG(
         op_kwargs={"script": "gold"},
     )
     silver >> gold
+
+
+with DAG(
+    dag_id="solar_bronze_watchdog",
+    description="Solar demo: keep the bronze streaming job (Kafka -> Iceberg) running",
+    start_date=datetime(2026, 10, 27),
+    schedule="*/5 * * * *",
+    catchup=False,
+    max_active_runs=1,
+    is_paused_upon_creation=False,
+    tags=["solar"],
+) as dag:
+    PythonOperator(task_id="ensure_bronze", python_callable=ensure_bronze)
