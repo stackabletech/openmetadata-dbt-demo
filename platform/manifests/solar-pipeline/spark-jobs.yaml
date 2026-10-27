@@ -220,8 +220,10 @@ data:
     DDL = [
         f"""CREATE TABLE IF NOT EXISTS {SILVER}.inverter_readings (
             site_id STRING, ts TIMESTAMP, ac_kw DOUBLE, energy_total_kwh DOUBLE,
-            interval_energy_kwh DOUBLE COMMENT 'Energy since the previous reading; after a counter reset the counter value',
-            counter_reset BOOLEAN, dc_v DOUBLE, inv_temp_c DOUBLE, status STRING,
+            interval_energy_kwh DOUBLE COMMENT 'Energy since the previous reading; after a counter reset the counter value; null after an implausible jump',
+            counter_reset BOOLEAN COMMENT 'Counter went down',
+            counter_jump BOOLEAN COMMENT 'Counter went up by more than kw_ac could produce in the elapsed time (e.g. meter replaced)',
+            dc_v DOUBLE, inv_temp_c DOUBLE, status STRING,
             plz STRING, landkreis STRING, bundesland STRING, kwp_dc DOUBLE, kw_ac DOUBLE,
             orientation STRING, weather_station_id STRING,
             ghi_wm2 DOUBLE COMMENT 'Measured by the weather station of the site cell, same minute',
@@ -353,25 +355,37 @@ data:
         previous = (spark.table(f"{SILVER}.inverter_readings")
                     .where(F.col("ts") >= lo - timedelta(hours=ENERGY_LOOKBACK_HOURS))
                     .join(new.select("site_id").distinct(), "site_id", "left_semi")
-                    .select("site_id", "ts", "energy_total_kwh", F.lit(False).alias("is_new")))
-        timeline = previous.unionByName(new.select("site_id", "ts", "energy_total_kwh", F.lit(True).alias("is_new")))
-        delta = F.col("energy_total_kwh") - F.lag("energy_total_kwh").over(Window.partitionBy("site_id").orderBy("ts"))
-        energy = (timeline.withColumn("delta", delta).where("is_new")
+                    .select("site_id", "ts", "energy_total_kwh", "kw_ac", F.lit(False).alias("is_new")))
+        timeline = previous.unionByName(
+            new.select("site_id", "ts", "energy_total_kwh", "kw_ac", F.lit(True).alias("is_new")))
+        by_site = Window.partitionBy("site_id").orderBy("ts")
+        hours = (F.col("ts").cast("long") - F.lag("ts").over(by_site).cast("long")) / 3600
+        # A counter that goes up by more than the inverter could produce in the elapsed time was
+        # replaced or re-initialised (e.g. a generator restart after a reset): no interval value.
+        plausible_max = F.col("kw_ac") * hours * ABOVE_CAPACITY + 0.01
+        energy = (timeline
+                  .withColumn("delta", F.col("energy_total_kwh") - F.lag("energy_total_kwh").over(by_site))
+                  .withColumn("max_kwh", plausible_max)
+                  .where("is_new")
                   .select("site_id", "ts",
                           (F.col("delta") < 0).alias("counter_reset"),
+                          (F.col("delta") > F.col("max_kwh")).alias("counter_jump"),
                           F.when(F.col("delta") < 0, F.col("energy_total_kwh"))
+                          .when(F.col("delta") > F.col("max_kwh"), F.lit(None))
                           .otherwise(F.col("delta")).alias("interval_energy_kwh")))
 
         factor = F.create_map(*[F.lit(x) for kv in ORIENTATION_FACTOR.items() for x in kv])[F.col("orientation")]
         cap = F.least(F.col("kw_ac"), F.coalesce(F.col("feedin_limit") * F.col("kwp_dc"), F.col("kw_ac")))
-        expected = F.least(F.col("ghi_wm2") / 1000 * F.col("kwp_dc") * F.coalesce(factor, F.lit(0.8)) * DERATE, cap)
+        # least() ignores nulls: without a weather reading there is no expected output.
+        expected = F.when(F.col("ghi_wm2").isNotNull(), F.least(
+            F.col("ghi_wm2") / 1000 * F.col("kwp_dc") * F.coalesce(factor, F.lit(0.8)) * DERATE, cap))
         out = (new.join(energy, ["site_id", "ts"], "left")
                .withColumn("expected_kw", expected)
                .withColumn("performance_ratio",
                            F.when(F.col("expected_kw") > 0.05 * F.col("kwp_dc"), F.col("ac_kw") / F.col("expected_kw")))
                .withColumn("processed_at", F.current_timestamp()))
         (out.select("site_id", "ts", "ac_kw", "energy_total_kwh", "interval_energy_kwh", "counter_reset",
-                    "dc_v", "inv_temp_c", "status", "plz", "landkreis", "bundesland", "kwp_dc", "kw_ac",
+                    "counter_jump", "dc_v", "inv_temp_c", "status", "plz", "landkreis", "bundesland", "kwp_dc", "kw_ac",
                     "orientation", "weather_station_id", "ghi_wm2", "expected_kw", "performance_ratio",
                     "kafka_offset", "ingested_at", "processed_at")
          .writeTo(f"{SILVER}.inverter_readings").append())
