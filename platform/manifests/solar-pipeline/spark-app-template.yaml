@@ -26,6 +26,8 @@ spec:
     # The operator's region for the event log bucket is ignored by Hadoop 3.4
     # (see platform/manifests/spark-history/spark-history.yaml).
     spark.hadoop.fs.s3a.bucket.spark-logs.endpoint.region: garage
+    # MERGE INTO in the gold job; a static setting, so it must be set at submit time.
+    spark.sql.extensions: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
   deps:
     packages:
       - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.12.0
