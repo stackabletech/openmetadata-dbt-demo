@@ -1,0 +1,17 @@
+---
+# Solar demo dashboards in Superset, as code (configure_superset.py). The Job is idempotent;
+# bump its name to re-run it after changing the script.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - job.yaml
+
+configMapGenerator:
+  - name: configure-solar-dashboards-script
+    namespace: platform
+    files:
+      - configure_superset.py
+
+generatorOptions:
+  disableNameSuffixHash: true

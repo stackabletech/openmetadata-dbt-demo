@@ -1,0 +1,38 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-solar-dashboards-v1
+  namespace: platform
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: python:3.12-slim # renovate: datasource=docker depName=python
+          command: ["python", "-u", "/scripts/configure_superset.py"]
+          env:
+            - name: SUPERSET_USER
+              valueFrom:
+                secretKeyRef: { name: simple-superset-credentials, key: adminUser.username }
+            - name: SUPERSET_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: simple-superset-credentials, key: adminUser.password }
+            - name: TRINO_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: trino-users, key: admin }
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: script
+          configMap:
+            name: configure-solar-dashboards-script
