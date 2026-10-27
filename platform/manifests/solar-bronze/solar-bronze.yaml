@@ -23,6 +23,7 @@ metadata:
 data:
   bronze.py: |
     import os
+    import traceback
 
     from pyspark.sql import SparkSession
     from pyspark.sql.functions import col, current_timestamp
@@ -34,88 +35,103 @@ data:
     S3_ENDPOINT = "http://garage.shared.svc.cluster.local:3900"
     KAFKA_TLS = "/stackable/kafka-tls"
 
-    spark = (
-        SparkSession.builder.appName("solar-bronze")
-        .config(f"spark.sql.catalog.{CATALOG}", "org.apache.iceberg.spark.SparkCatalog")
-        .config(f"spark.sql.catalog.{CATALOG}.type", "rest")
-        .config(f"spark.sql.catalog.{CATALOG}.uri", "http://lakekeeper:8181/catalog")
-        .config(f"spark.sql.catalog.{CATALOG}.warehouse", "data2day")
-        .config(f"spark.sql.catalog.{CATALOG}.credential", os.environ["LAKEKEEPER_CREDENTIAL"])
-        .config(f"spark.sql.catalog.{CATALOG}.oauth2-server-uri", os.environ["KEYCLOAK_TOKEN_URL"])
-        .config(f"spark.sql.catalog.{CATALOG}.scope", "openid")
-        # Keycloak doesn't allow the token exchange Iceberg uses to refresh (same as Trino).
-        .config(f"spark.sql.catalog.{CATALOG}.token-refresh-enabled", "false")
-        # Data files through Hadoop's s3a with the Garage keys. Iceberg's own S3FileIO would
-        # have Lakekeeper sign every request (no STS here), and that signing call fails (404).
-        .config(f"spark.sql.catalog.{CATALOG}.io-impl", "org.apache.iceberg.hadoop.HadoopFileIO")
-        .getOrCreate()
-    )
-    # s3a for the checkpoints and, via HadoopFileIO, the Iceberg files (table locations are
-    # s3://...). HadoopFileIO ships this configuration to the executors.
-    hadoop = spark.sparkContext._jsc.hadoopConfiguration()
-    for key, value in {
-        "fs.s3.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
-        "fs.s3a.endpoint": S3_ENDPOINT,
-        "fs.s3a.path.style.access": "true",
-        "fs.s3a.endpoint.region": "garage",
-        "fs.s3a.access.key": os.environ["S3_ACCESS_KEY"],
-        "fs.s3a.secret.key": os.environ["S3_SECRET_KEY"],
-    }.items():
-        hadoop.set(key, value)
-
-    spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {SCHEMA}")
-    for stream in STREAMS:
-        spark.sql(f"""
-            CREATE TABLE IF NOT EXISTS {SCHEMA}.{stream}_raw (
-                value STRING COMMENT 'Kafka message as received (one JSON reading)',
-                kafka_topic STRING,
-                kafka_partition INT,
-                kafka_offset BIGINT,
-                kafka_timestamp TIMESTAMP,
-                ingested_at TIMESTAMP COMMENT 'When this job wrote the row'
-            )
-            USING iceberg
-            PARTITIONED BY (days(kafka_timestamp))
-            COMMENT 'Solar demo bronze: raw {stream} readings from Kafka topic solar-{stream}, synthetic data'
-        """)
-
-    for stream in STREAMS:
-        (
-            spark.readStream.format("kafka")
-            .option("kafka.bootstrap.servers", os.environ["KAFKA"])
-            .option("kafka.security.protocol", "SSL")
-            .option("kafka.ssl.truststore.type", "PEM")
-            .option("kafka.ssl.truststore.location", f"{KAFKA_TLS}/ca.crt")
-            .option("subscribe", f"solar-{stream}")
-            .option("startingOffsets", "earliest")
-            .option("maxOffsetsPerTrigger", 500000)
-            .load()
-            .select(
-                col("value").cast("string").alias("value"),
-                col("topic").alias("kafka_topic"),
-                col("partition").alias("kafka_partition"),
-                col("offset").alias("kafka_offset"),
-                col("timestamp").alias("kafka_timestamp"),
-                current_timestamp().alias("ingested_at"),
-            )
-            .writeStream.format("iceberg")
-            .outputMode("append")
-            .trigger(processingTime="1 minute")
-            .option("checkpointLocation", f"{CHECKPOINTS}/{stream}")
-            # A micro-batch can span midnight; write to several day partitions without sorting.
-            .option("fanout-enabled", "true")
-            .queryName(f"bronze-{stream}")
-            .toTable(f"{SCHEMA}.{stream}_raw")
+    def main():
+        spark = (
+            SparkSession.builder.appName("solar-bronze")
+            .config(f"spark.sql.catalog.{CATALOG}", "org.apache.iceberg.spark.SparkCatalog")
+            .config(f"spark.sql.catalog.{CATALOG}.type", "rest")
+            .config(f"spark.sql.catalog.{CATALOG}.uri", "http://lakekeeper:8181/catalog")
+            .config(f"spark.sql.catalog.{CATALOG}.warehouse", "data2day")
+            .config(f"spark.sql.catalog.{CATALOG}.credential", os.environ["LAKEKEEPER_CREDENTIAL"])
+            .config(f"spark.sql.catalog.{CATALOG}.oauth2-server-uri", os.environ["KEYCLOAK_TOKEN_URL"])
+            .config(f"spark.sql.catalog.{CATALOG}.scope", "openid")
+            # Keycloak doesn't allow the token exchange Iceberg uses to refresh (same as Trino).
+            .config(f"spark.sql.catalog.{CATALOG}.token-refresh-enabled", "false")
+            # Data files through Hadoop's s3a with the Garage keys. Iceberg's own S3FileIO would
+            # have Lakekeeper sign every request (no STS here), and that signing call fails (404).
+            .config(f"spark.sql.catalog.{CATALOG}.io-impl", "org.apache.iceberg.hadoop.HadoopFileIO")
+            .getOrCreate()
         )
+        # s3a for the checkpoints and, via HadoopFileIO, the Iceberg files (table locations are
+        # s3://...). HadoopFileIO ships this configuration to the executors.
+        hadoop = spark.sparkContext._jsc.hadoopConfiguration()
+        for key, value in {
+            "fs.s3.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+            "fs.s3a.endpoint": S3_ENDPOINT,
+            "fs.s3a.path.style.access": "true",
+            "fs.s3a.endpoint.region": "garage",
+            "fs.s3a.access.key": os.environ["S3_ACCESS_KEY"],
+            "fs.s3a.secret.key": os.environ["S3_SECRET_KEY"],
+        }.items():
+            hadoop.set(key, value)
 
-    spark.streams.awaitAnyTermination()
+        spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {SCHEMA}")
+        for stream in STREAMS:
+            spark.sql(f"""
+                CREATE TABLE IF NOT EXISTS {SCHEMA}.{stream}_raw (
+                    value STRING COMMENT 'Kafka message as received (one JSON reading)',
+                    kafka_topic STRING,
+                    kafka_partition INT,
+                    kafka_offset BIGINT,
+                    kafka_timestamp TIMESTAMP,
+                    ingested_at TIMESTAMP COMMENT 'When this job wrote the row'
+                )
+                USING iceberg
+                PARTITIONED BY (days(kafka_timestamp))
+                COMMENT 'Solar demo bronze: raw {stream} readings from Kafka topic solar-{stream}, synthetic data'
+            """)
+
+        for stream in STREAMS:
+            (
+                spark.readStream.format("kafka")
+                .option("kafka.bootstrap.servers", os.environ["KAFKA"])
+                .option("kafka.security.protocol", "SSL")
+                .option("kafka.ssl.truststore.type", "PEM")
+                .option("kafka.ssl.truststore.location", f"{KAFKA_TLS}/ca.crt")
+                .option("subscribe", f"solar-{stream}")
+                .option("startingOffsets", "earliest")
+                .option("maxOffsetsPerTrigger", 500000)
+                .load()
+                .select(
+                    col("value").cast("string").alias("value"),
+                    col("topic").alias("kafka_topic"),
+                    col("partition").alias("kafka_partition"),
+                    col("offset").alias("kafka_offset"),
+                    col("timestamp").alias("kafka_timestamp"),
+                    current_timestamp().alias("ingested_at"),
+                )
+                .writeStream.format("iceberg")
+                .outputMode("append")
+                .trigger(processingTime="1 minute")
+                .option("checkpointLocation", f"{CHECKPOINTS}/{stream}")
+                # A micro-batch can span midnight; write to several day partitions without sorting.
+                .option("fanout-enabled", "true")
+                .queryName(f"bronze-{stream}")
+                .toTable(f"{SCHEMA}.{stream}_raw")
+            )
+
+        spark.streams.awaitAnyTermination()
+
+
+    if __name__ == "__main__":
+        try:
+            main()
+        except Exception:
+            # Python tracebacks go to stderr, which the Vector agent doesn't collect; log through
+            # log4j so the error ends up in OpenSearch with the rest of the driver log.
+            active = SparkSession.getActiveSession()
+            if active is not None:
+                active.sparkContext._jvm.org.apache.logging.log4j.LogManager.getLogger(
+                    "solar_bronze").error(traceback.format_exc())
+            raise
+
 ---
 apiVersion: spark.stackable.tech/v1alpha1
 kind: SparkApplication
 metadata:
   # A finished SparkApplication is not resubmitted when its spec changes: bump the suffix to
   # run a new version (ArgoCD prunes the old one).
-  name: solar-bronze-v5
+  name: solar-bronze-v6
   namespace: platform
 spec:
   vectorAggregatorConfigMapName: vector-aggregator-discovery
