@@ -131,7 +131,7 @@ kind: SparkApplication
 metadata:
   # A finished SparkApplication is not resubmitted when its spec changes: bump the suffix to
   # run a new version (ArgoCD prunes the old one).
-  name: solar-bronze-v6
+  name: solar-bronze-v7
   namespace: platform
 spec:
   vectorAggregatorConfigMapName: vector-aggregator-discovery
