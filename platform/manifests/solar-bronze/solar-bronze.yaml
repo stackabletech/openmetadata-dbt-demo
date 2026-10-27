@@ -115,7 +115,7 @@ kind: SparkApplication
 metadata:
   # A finished SparkApplication is not resubmitted when its spec changes: bump the suffix to
   # run a new version (ArgoCD prunes the old one).
-  name: solar-bronze-v4
+  name: solar-bronze-v5
   namespace: platform
 spec:
   vectorAggregatorConfigMapName: vector-aggregator-discovery
@@ -129,6 +129,10 @@ spec:
     productVersion: 3.5.8
   mode: cluster
   mainApplicationFile: local:///stackable/spark/jobs/bronze.py
+  sparkConf:
+    # The operator's region setting for the event log bucket is ignored by Hadoop 3.4
+    # (see platform/manifests/spark-history/spark-history.yaml).
+    spark.hadoop.fs.s3a.bucket.spark-logs.endpoint.region: garage
   deps:
     packages:
       - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.12.0
