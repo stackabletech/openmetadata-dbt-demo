@@ -79,3 +79,20 @@ with DAG(
         python_callable=run_spark_job,
         op_kwargs={"script": "dims"},
     )
+
+
+with DAG(
+    dag_id="solar_silver",
+    description="Solar demo: bronze -> silver (checks, quarantine, deduplication, energy, performance ratio)",
+    start_date=datetime(2026, 10, 27),
+    schedule="*/10 * * * *",
+    catchup=False,
+    max_active_runs=1,
+    is_paused_upon_creation=False,
+    tags=["solar"],
+) as dag:
+    PythonOperator(
+        task_id="silver",
+        python_callable=run_spark_job,
+        op_kwargs={"script": "silver"},
+    )

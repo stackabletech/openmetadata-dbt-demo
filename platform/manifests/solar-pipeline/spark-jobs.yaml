@@ -2,8 +2,9 @@
 # Code of the solar demo's Spark batch jobs, mounted at /stackable/spark/jobs by the
 # SparkAppTemplate solar-spark. Airflow (dags/solar_pipeline.py) runs them as SparkApplications.
 #
-#   dims.py: master data from Kafka (solar-sites, solar-weather_stations) into
-#            data2day.solar_silver.dim_site / dim_weather_station
+#   dims.py:   master data from Kafka (solar-sites, solar-weather_stations) into
+#              data2day.solar_silver.dim_site / dim_weather_station
+#   silver.py: bronze -> silver (checks, quarantine, dedup, energy, performance ratio)
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -166,3 +167,255 @@ data:
 
     if __name__ == "__main__":
         run("solar_dims", main)
+
+  silver.py: |
+    """Bronze -> silver: parse, check, deduplicate, enrich. Incremental by Kafka offset.
+
+    Per run, for each stream: the bronze rows after the last processed offset (at most
+    MAX_ROWS_PER_RUN per partition, so the first run catches up in portions). Rejected rows go
+    to solar_silver.quarantine with a reason; the first matching rule wins. Duplicates (within
+    the run, or already in silver) are quarantined as `duplicate`, the rest is appended.
+    Progress is stored in solar_silver.processing_state after the silver tables are written; a
+    re-run after a crash finds the rows already in silver and quarantines them as duplicates.
+
+    Weather runs first, so the inverter readings of the same run can use its irradiance.
+    """
+
+    import sys
+    from datetime import timedelta
+
+    sys.path.insert(0, "/stackable/spark/jobs")
+
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
+    from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType
+
+    from solar_common import CATALOG, log, run, session
+
+    BRONZE = f"{CATALOG}.solar_bronze"
+    SILVER = f"{CATALOG}.solar_silver"
+    STATE = f"{SILVER}.processing_state"
+    MAX_ROWS_PER_RUN = 3_000_000
+    NIGHT_GHI_WM2 = 5.0          # below this the sun is down (or nearly)
+    NIGHT_MIN_KW = 0.05          # output above this at night is implausible
+    ABOVE_CAPACITY = 1.1         # x kw_ac
+    DERATE = 0.8                 # temperature, wiring, inverter losses
+    ENERGY_LOOKBACK_HOURS = 3    # how far back to look for a site's previous reading
+    # Coarse yield factor per orientation relative to a south-facing array, on horizontal
+    # irradiance. Good enough to compare a site with its peers; not a physical model.
+    ORIENTATION_FACTOR = {"S": 1.0, "SE": 0.95, "SW": 0.95, "E": 0.85, "W": 0.85, "EW": 0.85,
+                          "NE": 0.7, "NW": 0.7, "N": 0.6, "TRACK": 1.15}
+
+    INVERTER = StructType([StructField(n, t) for n, t in [
+        ("ts", StringType()), ("site_id", StringType()), ("ac_kw", DoubleType()),
+        ("energy_total_kwh", DoubleType()), ("dc_v", DoubleType()), ("inv_temp_c", DoubleType()),
+        ("status", StringType())]])
+    WEATHER = StructType([StructField(n, t) for n, t in [
+        ("ts", StringType()), ("station_id", StringType()), ("ghi_wm2", DoubleType()),
+        ("air_temp_c", DoubleType())]])
+    CLOUDS = StructType([StructField(n, t) for n, t in [
+        ("ts", StringType()), ("part", IntegerType()), ("min_dimming", DoubleType()),
+        ("geojson", StringType())]])
+
+    DDL = [
+        f"""CREATE TABLE IF NOT EXISTS {SILVER}.inverter_readings (
+            site_id STRING, ts TIMESTAMP, ac_kw DOUBLE, energy_total_kwh DOUBLE,
+            interval_energy_kwh DOUBLE COMMENT 'Energy since the previous reading; after a counter reset the counter value',
+            counter_reset BOOLEAN, dc_v DOUBLE, inv_temp_c DOUBLE, status STRING,
+            plz STRING, landkreis STRING, bundesland STRING, kwp_dc DOUBLE, kw_ac DOUBLE,
+            orientation STRING, weather_station_id STRING,
+            ghi_wm2 DOUBLE COMMENT 'Measured by the weather station of the site cell, same minute',
+            expected_kw DOUBLE COMMENT 'ghi/1000 x kwp x orientation factor x derate, capped at kw_ac and feed-in limit',
+            performance_ratio DOUBLE COMMENT 'ac_kw / expected_kw, daylight only',
+            kafka_offset BIGINT, ingested_at TIMESTAMP, processed_at TIMESTAMP)
+           USING iceberg PARTITIONED BY (days(ts))
+           COMMENT 'Solar demo silver: checked, deduplicated and enriched inverter readings (synthetic data)'""",
+        f"""CREATE TABLE IF NOT EXISTS {SILVER}.weather_readings (
+            station_id STRING, ts TIMESTAMP, ghi_wm2 DOUBLE, air_temp_c DOUBLE,
+            kafka_offset BIGINT, ingested_at TIMESTAMP, processed_at TIMESTAMP)
+           USING iceberg PARTITIONED BY (days(ts))
+           COMMENT 'Solar demo silver: checked and deduplicated weather station readings (synthetic data)'""",
+        f"""CREATE TABLE IF NOT EXISTS {SILVER}.cloud_polygons (
+            ts TIMESTAMP, part INT, min_dimming DOUBLE, geojson STRING, processed_at TIMESTAMP)
+           USING iceberg PARTITIONED BY (days(ts))
+           COMMENT 'Solar demo silver: simulated cloud cover as GeoJSON polygons, for map overlays only'""",
+        f"""CREATE TABLE IF NOT EXISTS {SILVER}.quarantine (
+            stream STRING, reason STRING, value STRING, kafka_partition INT, kafka_offset BIGINT,
+            kafka_timestamp TIMESTAMP, ingested_at TIMESTAMP, quarantined_at TIMESTAMP)
+           USING iceberg PARTITIONED BY (days(quarantined_at))
+           COMMENT 'Solar demo silver: rejected bronze rows with the reason (first matching rule)'""",
+        f"""CREATE TABLE IF NOT EXISTS {STATE} (
+            source STRING, kafka_partition INT, last_offset BIGINT, processed_at TIMESTAMP)
+           USING iceberg
+           COMMENT 'Solar demo silver: last processed Kafka offset per bronze table and partition'""",
+    ]
+
+
+    def new_rows(spark, stream):
+        """Bronze rows after the last processed offset, at most MAX_ROWS_PER_RUN per partition."""
+        state = (spark.table(STATE).where(F.col("source") == stream)
+                 .select("kafka_partition", "last_offset"))
+        last = F.coalesce(F.col("last_offset"), F.lit(-1))
+        return (spark.table(f"{BRONZE}.{stream}_raw")
+                .join(state, "kafka_partition", "left")
+                .where((F.col("kafka_offset") > last) & (F.col("kafka_offset") <= last + MAX_ROWS_PER_RUN))
+                .drop("last_offset"))
+
+
+    def quarantine(rows, stream, reason_col="reason"):
+        (rows.select(F.lit(stream).alias("stream"), F.col(reason_col).alias("reason"), "value",
+                     "kafka_partition", "kafka_offset", "kafka_timestamp", "ingested_at",
+                     F.current_timestamp().alias("quarantined_at"))
+         .writeTo(f"{SILVER}.quarantine").append())
+
+
+    def first_failure(rules):
+        """Reason of the first matching rule, else null."""
+        expr = F.lit(None).cast("string")
+        for condition, reason in reversed(rules):
+            expr = F.when(condition, F.lit(reason)).otherwise(expr)
+        return expr
+
+
+    def split_duplicates(spark, rows, keys, table):
+        """(new, duplicates): duplicates within the run (keep the lowest offset) or already in table."""
+        n = F.row_number().over(Window.partitionBy(*keys).orderBy("kafka_offset"))
+        ranked = rows.withColumn("n", n)
+        firsts = ranked.where("n = 1").drop("n")
+        repeats = ranked.where("n > 1").drop("n")
+        bounds = firsts.agg(F.min("ts"), F.max("ts")).first()
+        if bounds[0] is None:
+            return firsts, repeats
+        existing = (spark.table(table).where(F.col("ts").between(bounds[0], bounds[1]))
+                    .select(*keys).distinct())
+        new = firsts.join(existing, keys, "left_anti")
+        known = firsts.join(existing, keys, "left_semi")
+        return new, repeats.unionByName(known)
+
+
+    def parsed(batch, schema):
+        return (batch.withColumn("r", F.from_json("value", schema))
+                .select("*", "r.*").drop("r")
+                .withColumn("ts", F.to_timestamp("ts")))
+
+
+    def process_weather(spark, batch):
+        stations = spark.table(f"{SILVER}.dim_weather_station").select("station_id", F.lit(True).alias("known"))
+        rows = parsed(batch, WEATHER).join(stations, "station_id", "left")
+        rows = rows.withColumn("reason", first_failure([
+            (F.col("ts").isNull() | F.col("station_id").isNull() | F.col("ghi_wm2").isNull(), "missing_required"),
+            (F.col("known").isNull(), "unknown_station"),
+            (F.col("ghi_wm2") < 0, "negative_irradiance"),
+        ])).cache()
+        quarantine(rows.where(F.col("reason").isNotNull()), "weather")
+        new, dups = split_duplicates(spark, rows.where(F.col("reason").isNull()), ["station_id", "ts"],
+                                     f"{SILVER}.weather_readings")
+        quarantine(dups.withColumn("reason", F.lit("duplicate")), "weather")
+        (new.select("station_id", "ts", "ghi_wm2", "air_temp_c", "kafka_offset", "ingested_at",
+                    F.current_timestamp().alias("processed_at"))
+         .writeTo(f"{SILVER}.weather_readings").append())
+
+
+    def process_inverter(spark, batch):
+        sites = spark.table(f"{SILVER}.dim_site").select(
+            "site_id", "plz", "landkreis", "bundesland", "kwp_dc", "kw_ac", "feedin_limit",
+            "orientation", "weather_station_id")
+        rows = parsed(batch, INVERTER).join(sites, "site_id", "left")
+        bounds = rows.agg(F.min("ts"), F.max("ts")).first()
+        if bounds[0] is not None:
+            # Irradiance of the site's weather station in the same minute.
+            weather = (spark.table(f"{SILVER}.weather_readings")
+                       .where(F.col("ts").between(bounds[0] - timedelta(minutes=10), bounds[1]))
+                       .groupBy(F.col("station_id").alias("weather_station_id"),
+                                F.date_trunc("minute", "ts").alias("minute"))
+                       .agg(F.avg("ghi_wm2").alias("ghi_wm2")))
+            rows = (rows.withColumn("minute", F.date_trunc("minute", "ts"))
+                    .join(weather, ["weather_station_id", "minute"], "left").drop("minute"))
+        else:
+            rows = rows.withColumn("ghi_wm2", F.lit(None).cast("double"))
+        rows = rows.withColumn("reason", first_failure([
+            (F.col("ts").isNull() | F.col("site_id").isNull() | F.col("ac_kw").isNull(), "missing_required"),
+            (F.col("kwp_dc").isNull(), "unknown_site"),
+            (F.col("ac_kw") < 0, "negative_power"),
+            (F.col("ac_kw") > F.col("kw_ac") * ABOVE_CAPACITY, "above_capacity"),
+            ((F.col("ghi_wm2") < NIGHT_GHI_WM2) & (F.col("ac_kw") > NIGHT_MIN_KW), "output_at_night"),
+        ])).cache()
+        quarantine(rows.where(F.col("reason").isNotNull()), "inverter")
+        new, dups = split_duplicates(spark, rows.where(F.col("reason").isNull()), ["site_id", "ts"],
+                                     f"{SILVER}.inverter_readings")
+        quarantine(dups.withColumn("reason", F.lit("duplicate")), "inverter")
+        new = new.cache()
+        if new.isEmpty():
+            return
+
+        # Energy since the nearest earlier reading of the same site (from silver or this run).
+        lo = new.agg(F.min("ts")).first()[0]
+        previous = (spark.table(f"{SILVER}.inverter_readings")
+                    .where(F.col("ts") >= lo - timedelta(hours=ENERGY_LOOKBACK_HOURS))
+                    .join(new.select("site_id").distinct(), "site_id", "left_semi")
+                    .select("site_id", "ts", "energy_total_kwh", F.lit(False).alias("is_new")))
+        timeline = previous.unionByName(new.select("site_id", "ts", "energy_total_kwh", F.lit(True).alias("is_new")))
+        delta = F.col("energy_total_kwh") - F.lag("energy_total_kwh").over(Window.partitionBy("site_id").orderBy("ts"))
+        energy = (timeline.withColumn("delta", delta).where("is_new")
+                  .select("site_id", "ts",
+                          (F.col("delta") < 0).alias("counter_reset"),
+                          F.when(F.col("delta") < 0, F.col("energy_total_kwh"))
+                          .otherwise(F.col("delta")).alias("interval_energy_kwh")))
+
+        factor = F.create_map(*[F.lit(x) for kv in ORIENTATION_FACTOR.items() for x in kv])[F.col("orientation")]
+        cap = F.least(F.col("kw_ac"), F.coalesce(F.col("feedin_limit") * F.col("kwp_dc"), F.col("kw_ac")))
+        expected = F.least(F.col("ghi_wm2") / 1000 * F.col("kwp_dc") * F.coalesce(factor, F.lit(0.8)) * DERATE, cap)
+        out = (new.join(energy, ["site_id", "ts"], "left")
+               .withColumn("expected_kw", expected)
+               .withColumn("performance_ratio",
+                           F.when(F.col("expected_kw") > 0.05 * F.col("kwp_dc"), F.col("ac_kw") / F.col("expected_kw")))
+               .withColumn("processed_at", F.current_timestamp()))
+        (out.select("site_id", "ts", "ac_kw", "energy_total_kwh", "interval_energy_kwh", "counter_reset",
+                    "dc_v", "inv_temp_c", "status", "plz", "landkreis", "bundesland", "kwp_dc", "kw_ac",
+                    "orientation", "weather_station_id", "ghi_wm2", "expected_kw", "performance_ratio",
+                    "kafka_offset", "ingested_at", "processed_at")
+         .writeTo(f"{SILVER}.inverter_readings").append())
+
+
+    def process_clouds(spark, batch):
+        rows = parsed(batch, CLOUDS).withColumn("reason", first_failure([
+            (F.col("ts").isNull() | F.col("part").isNull() | F.col("geojson").isNull(), "missing_required"),
+        ])).cache()
+        quarantine(rows.where(F.col("reason").isNotNull()), "clouds")
+        new, dups = split_duplicates(spark, rows.where(F.col("reason").isNull()), ["ts", "part"],
+                                     f"{SILVER}.cloud_polygons")
+        quarantine(dups.withColumn("reason", F.lit("duplicate")), "clouds")
+        (new.select("ts", "part", "min_dimming", "geojson", F.current_timestamp().alias("processed_at"))
+         .writeTo(f"{SILVER}.cloud_polygons").append())
+
+
+    def advance(spark, stream, batch):
+        done = (batch.groupBy("kafka_partition").agg(F.max("kafka_offset").alias("last_offset"))
+                .select(F.lit(stream).alias("source"), "kafka_partition", "last_offset",
+                        F.current_timestamp().alias("processed_at")))
+        others = spark.table(STATE).join(done.select("source", "kafka_partition"),
+                                         ["source", "kafka_partition"], "left_anti")
+        state = others.unionByName(done).localCheckpoint()   # read STATE fully before overwriting it
+        state.writeTo(STATE).overwrite(F.lit(True))
+
+
+    def main():
+        spark = session("solar-silver")
+        logger = log(spark, "solar_silver")
+        for ddl in DDL:
+            spark.sql(ddl)
+        for stream, process in [("weather", process_weather), ("inverter", process_inverter),
+                                ("clouds", process_clouds)]:
+            batch = new_rows(spark, stream).cache()
+            count = batch.count()
+            if count == 0:
+                logger.info(f"{stream}: nothing new")
+                continue
+            process(spark, batch)
+            advance(spark, stream, batch)
+            logger.info(f"{stream}: processed {count} bronze rows")
+            batch.unpersist()
+
+
+    if __name__ == "__main__":
+        run("solar_silver", main)
