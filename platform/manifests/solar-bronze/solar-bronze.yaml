@@ -131,7 +131,7 @@ kind: SparkApplication
 metadata:
   # A finished SparkApplication is not resubmitted when its spec changes: bump the suffix to
   # run a new version (ArgoCD prunes the old one).
-  name: solar-bronze-v7
+  name: solar-bronze-v8
   namespace: platform
 spec:
   vectorAggregatorConfigMapName: vector-aggregator-discovery
@@ -210,7 +210,8 @@ spec:
           min: 500m
           max: "1"
         memory:
-          limit: 2Gi
+          # v7 was killed after ~70 min without any log line (most likely its memory limit) at 2Gi.
+          limit: 4Gi
       volumeMounts:
         - name: job
           mountPath: /stackable/spark/jobs
