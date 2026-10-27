@@ -1,0 +1,223 @@
+---
+# Creates the NiFi process group `solar ingest` on the root canvas and starts it:
+#
+#   ListenHTTP (port 8090, Service nifi-listenhttp) --> PublishKafka (topic solar-${stream})
+#
+# The solar generator POSTs NDJSON batches, one stream per POST, the stream name in the
+# `stream` HTTP header. PublishKafka splits each batch at newlines, so every reading becomes
+# one Kafka message, unchanged: NiFi only forwards, cleaning happens in silver. Topics are
+# created by Kafka on first use (solar-inverter, solar-weather, solar-clouds).
+#
+# Idempotent: if the process group exists it is only (re)started, not changed. To change the
+# flow, delete the process group in NiFi and bump the Job name.
+#
+# Authenticates like configure-nifi.yaml, with a secret-operator client certificate that the
+# OPA policy treats as a NiFi node.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configure-solar-ingest-script
+  namespace: platform
+data:
+  configure.py: |
+    import json, os, ssl, time, urllib.request
+
+    NIFI = "https://nifi-node-default-0.nifi-node-default-headless.platform.svc.cluster.local:8443/nifi-api"
+    CERTS = "/certs"
+    PG_NAME = "solar ingest"
+    KAFKA = os.environ["KAFKA"]
+    # Truststore of the NiFi node's own TLS volume (secret-operator SecretClass `tls`, the same
+    # CA as Kafka's server certificates). Path and password are the operator's defaults.
+    TRUSTSTORE = "/stackable/server_tls/truststore.p12"
+    TRUSTSTORE_PASSWORD = "secret"
+
+    ctx = ssl.create_default_context(cafile=f"{CERTS}/ca.crt")
+    ctx.load_cert_chain(f"{CERTS}/tls.crt", f"{CERTS}/tls.key")
+
+    def call(method, path, body=None):
+        req = urllib.request.Request(NIFI + path, method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+            return json.loads(r.read().decode() or "{}")
+
+    def bundle(kind, type_name):
+        """Bundle of a processor or controller service type, so no NiFi version is hardcoded."""
+        key = "processorTypes" if kind == "processor" else "controllerServiceTypes"
+        path = "/flow/processor-types" if kind == "processor" else "/flow/controller-service-types"
+        return next(t["bundle"] for t in call("GET", path)[key] if t["type"] == type_name)
+
+    def controller_service(pg_id, name, type_name, properties):
+        cs = call("POST", f"/process-groups/{pg_id}/controller-services", {
+            "revision": {"version": 0},
+            "component": {"name": name, "type": type_name,
+                          "bundle": bundle("service", type_name), "properties": properties},
+        })
+        print(f"Created controller service {name}")
+        return cs["id"]
+
+    def enable(cs_id):
+        for _ in range(30):
+            cs = call("GET", f"/controller-services/{cs_id}")
+            if cs["component"]["state"] == "ENABLED":
+                return
+            if cs["component"]["state"] == "DISABLED":
+                call("PUT", f"/controller-services/{cs_id}/run-status",
+                     {"revision": cs["revision"], "state": "ENABLED"})
+            time.sleep(2)
+        raise SystemExit(f"Controller service {cs_id} did not enable: "
+                         f"{cs['component'].get('validationErrors')}")
+
+    def processor(pg_id, name, type_name, position, properties, auto_terminate=()):
+        p = call("POST", f"/process-groups/{pg_id}/processors", {
+            "revision": {"version": 0},
+            "component": {"name": name, "type": type_name, "position": position,
+                          "bundle": bundle("processor", type_name),
+                          "config": {"properties": properties,
+                                     "autoTerminatedRelationships": list(auto_terminate)}},
+        })
+        print(f"Created processor {name}")
+        return p["id"]
+
+    def connect(pg_id, source, target, relationships):
+        call("POST", f"/process-groups/{pg_id}/connections", {
+            "revision": {"version": 0},
+            "component": {
+                "source": {"id": source, "groupId": pg_id, "type": "PROCESSOR"},
+                "destination": {"id": target, "groupId": pg_id, "type": "PROCESSOR"},
+                "selectedRelationships": relationships,
+            },
+        })
+
+    def remove(pg_id):
+        """Delete a half-built process group so the Job's next attempt starts clean."""
+        services = call("GET", f"/flow/process-groups/{pg_id}/controller-services")["controllerServices"]
+        for cs in services:
+            if cs["component"]["state"] != "DISABLED":
+                call("PUT", f"/controller-services/{cs['id']}/run-status",
+                     {"revision": cs["revision"], "state": "DISABLED"})
+        for _ in range(30):
+            states = [call("GET", f"/controller-services/{cs['id']}")["component"]["state"]
+                      for cs in services]
+            if all(st == "DISABLED" for st in states):
+                break
+            time.sleep(2)
+        pg = call("GET", f"/process-groups/{pg_id}")
+        call("DELETE", f"/process-groups/{pg_id}?version={pg['revision']['version']}")
+        print(f"Removed half-built process group {PG_NAME}")
+
+    def start(pg_id):
+        call("PUT", f"/flow/process-groups/{pg_id}", {"id": pg_id, "state": "RUNNING"})
+        print(f"Started process group {PG_NAME}")
+
+    for i in range(90):
+        try:
+            root = call("GET", "/flow/process-groups/root")["processGroupFlow"]
+            break
+        except Exception as e:
+            print(f"Waiting for NiFi ({i + 1}/90): {e}")
+            time.sleep(10)
+    else:
+        raise SystemExit("NiFi not reachable")
+
+    root_id = root["id"]
+    existing = {pg["component"]["name"]: pg["id"] for pg in root["flow"]["processGroups"]}
+    if PG_NAME in existing:
+        print(f"Process group {PG_NAME} exists")
+        start(existing[PG_NAME])
+        raise SystemExit(0)
+
+    pg_id = call("POST", f"/process-groups/{root_id}/process-groups", {
+        "revision": {"version": 0},
+        "component": {"name": PG_NAME, "position": {"x": 1000, "y": 0}},
+    })["id"]
+    print(f"Created process group {PG_NAME} ({pg_id})")
+
+    def build(pg_id):
+        ssl_id = controller_service(pg_id, "Kafka truststore", "org.apache.nifi.ssl.StandardSSLContextService", {
+            "Truststore Filename": TRUSTSTORE,
+            "Truststore Type": "PKCS12",
+            "Truststore Password": TRUSTSTORE_PASSWORD,
+        })
+        enable(ssl_id)
+        kafka_id = controller_service(pg_id, "Kafka", "org.apache.nifi.kafka.service.Kafka3ConnectionService", {
+            "bootstrap.servers": KAFKA,
+            "security.protocol": "SSL",
+            "SSL Context Service": ssl_id,
+        })
+        enable(kafka_id)
+
+        listen_id = processor(pg_id, "Receive generator batches", "org.apache.nifi.processors.standard.ListenHTTP",
+                              {"x": 0, "y": 0}, {
+                                  "Listening Port": "8090",
+                                  "Base Path": "contentListener",
+                                  "HTTP Headers for Attributes": "stream",
+                              })
+        publish_id = processor(pg_id, "Publish one message per reading", "org.apache.nifi.kafka.processors.PublishKafka",
+                               {"x": 0, "y": 250}, {
+                                   "Kafka Connection Service": kafka_id,
+                                   "Topic Name": "solar-${stream}",
+                                   "Message Demarcator": "\n",
+                                   # A single broker can't host Kafka's replicated transaction log.
+                                   "Transactions Enabled": "false",
+                               }, auto_terminate=["success"])
+        connect(pg_id, listen_id, publish_id, ["success"])
+        connect(pg_id, publish_id, publish_id, ["failure"])   # retry until Kafka takes it
+        start(pg_id)
+
+    try:
+        build(pg_id)
+    except Exception:
+        remove(pg_id)
+        raise
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-solar-ingest-v1
+  namespace: platform
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: python:3.12-slim # renovate: datasource=docker depName=python
+          command: ["python", "-u", "/scripts/configure.py"]
+          env:
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka
+                  key: KAFKA
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: certs
+              mountPath: /certs
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: script
+          configMap:
+            name: configure-solar-ingest-script
+        - name: certs
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/format: tls-pem
+                  secrets.stackable.tech/scope: pod
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem

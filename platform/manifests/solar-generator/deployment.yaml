@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
         - name: generator
-          image: oci.stackable.tech/sandbox/solar-generator:0.1.0-dev
+          image: oci.stackable.tech/sandbox/solar-generator:0.1.1-dev
           imagePullPolicy: Always
           env:
             - name: NIFI_URL
