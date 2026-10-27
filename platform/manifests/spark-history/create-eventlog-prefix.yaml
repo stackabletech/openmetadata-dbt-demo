@@ -1,0 +1,36 @@
+---
+# S3 has no directories, but the Spark History Server and every SparkApplication with
+# logFileDirectory insist that s3a://spark-logs/eventlogs/ exists. This Job puts the empty
+# marker object `eventlogs/` into the bucket (idempotent). Runs before the History Server.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-eventlog-prefix-v1
+  namespace: platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: aws
+          image: amazon/aws-cli:2.39.0 # renovate: datasource=docker depName=amazon/aws-cli
+          args: ["s3api", "put-object", "--bucket", "spark-logs", "--key", "eventlogs/",
+                 "--endpoint-url", "http://garage.shared.svc.cluster.local:3900"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: spark-s3-credentials, key: accessKey }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: spark-s3-credentials, key: secretKey }
+            - name: AWS_DEFAULT_REGION
+              value: garage
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi

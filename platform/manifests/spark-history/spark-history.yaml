@@ -52,6 +52,10 @@ spec:
   image:
     productVersion: 3.5.8
   vectorAggregatorConfigMapName: vector-aggregator-discovery
+  sparkConf:
+    # The operator writes the S3Connection region as fs.s3a.bucket.<b>.region, which Hadoop 3.4
+    # ignores (it reads endpoint.region); without it Garage rejects requests signed for us-east-1.
+    spark.hadoop.fs.s3a.bucket.spark-logs.endpoint.region: garage
   logFileDirectory:
     s3:
       prefix: eventlogs/
