@@ -8,7 +8,7 @@
 #
 # Needs the Role airflow-spark-applications (platform/manifests/solar-pipeline/airflow-rbac.yaml).
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
@@ -20,13 +20,14 @@ GROUP, VERSION, PLURAL = "spark.stackable.tech", "v1alpha1", "sparkapplications"
 TIMEOUT = timedelta(minutes=30)
 
 
-def run_spark_job(script, **context):
+def run_spark_job(script):
     from kubernetes import client, config
 
     config.load_incluster_config()
     api = client.CustomObjectsApi()
-    # Unique per run and attempt; Kubernetes names are lowercase, at most 63 characters.
-    name = f"solar-{script}-{context['ts_nodash'].lower()}-{context['ti'].try_number}"
+    # Unique per start; Kubernetes names are lowercase, at most 63 characters. Not derived from
+    # the logical date: in Airflow 3 manually triggered runs have none.
+    name = f"solar-{script}-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
     api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL, {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "SparkApplication",
