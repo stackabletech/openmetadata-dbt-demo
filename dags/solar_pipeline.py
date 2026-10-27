@@ -83,7 +83,7 @@ with DAG(
 
 with DAG(
     dag_id="solar_silver",
-    description="Solar demo: bronze -> silver (checks, quarantine, deduplication, energy, performance ratio)",
+    description="Solar demo: bronze -> silver (checks, quarantine, energy, performance ratio) -> gold (aggregates, fault events)",
     start_date=datetime(2026, 10, 27),
     schedule="*/10 * * * *",
     catchup=False,
@@ -91,8 +91,14 @@ with DAG(
     is_paused_upon_creation=False,
     tags=["solar"],
 ) as dag:
-    PythonOperator(
+    silver = PythonOperator(
         task_id="silver",
         python_callable=run_spark_job,
         op_kwargs={"script": "silver"},
     )
+    gold = PythonOperator(
+        task_id="gold",
+        python_callable=run_spark_job,
+        op_kwargs={"script": "gold"},
+    )
+    silver >> gold
