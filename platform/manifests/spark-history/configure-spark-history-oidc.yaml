@@ -1,0 +1,110 @@
+---
+# Registers the Keycloak client `spark-history` for the oauth2-proxy in front of the Spark
+# History Server UI (spark-history.yaml). Same shape as the other demo clients in
+# infrastructure/keycloak-manifests/configure-keycloak.yaml: confidential, demo client secret,
+# any redirect URI, audience mapper.
+#
+# A separate Job through the Keycloak admin API instead of a new resource in that Terraform:
+# it runs without persistent state, so re-running it would try to recreate the realm.
+# Idempotent: an existing client is left alone.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configure-spark-history-oidc-script
+  namespace: platform
+data:
+  configure.py: |
+    import json, os, time, urllib.parse, urllib.request
+
+    KEYCLOAK = "http://keycloak-service.platform.svc.cluster.local:8080"
+    REALM = "stackable-demo"
+    CLIENT_ID = "spark-history"
+
+    def call(method, path, body=None, token=None, form=None):
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        if form is not None:
+            data = urllib.parse.urlencode(form).encode()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        elif body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        else:
+            data = None
+        req = urllib.request.Request(KEYCLOAK + path, data=data, method=method, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            text = r.read().decode()
+            return json.loads(text) if text else None
+
+    for i in range(90):
+        try:
+            token = call("POST", "/realms/master/protocol/openid-connect/token", form={
+                "grant_type": "password", "client_id": "admin-cli",
+                "username": os.environ["KEYCLOAK_ADMIN_USER"],
+                "password": os.environ["KEYCLOAK_ADMIN_PASSWORD"],
+            })["access_token"]
+            call("GET", f"/admin/realms/{REALM}", token=token)
+            break
+        except Exception as e:
+            print(f"Waiting for Keycloak and realm {REALM} ({i + 1}/90): {e}")
+            time.sleep(10)
+    else:
+        raise SystemExit("Keycloak not reachable")
+
+    if call("GET", f"/admin/realms/{REALM}/clients?clientId={CLIENT_ID}", token=token):
+        print(f"Client {CLIENT_ID} exists")
+        raise SystemExit(0)
+
+    call("POST", f"/admin/realms/{REALM}/clients", token=token, body={
+        "clientId": CLIENT_ID,
+        "name": "Spark History Server",
+        "enabled": True,
+        "publicClient": False,
+        "secret": "spark-history-secret",
+        "standardFlowEnabled": True,
+        "redirectUris": ["*"],
+        "webOrigins": ["+"],
+        "attributes": {"post.logout.redirect.uris": "*"},
+        "protocolMappers": [{
+            "name": "spark-history-audience",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-audience-mapper",
+            "config": {"included.client.audience": CLIENT_ID,
+                       "id.token.claim": "true", "access.token.claim": "true"},
+        }],
+    })
+    print(f"Created client {CLIENT_ID}")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-spark-history-oidc-v1
+  namespace: platform
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: python:3.12-slim # renovate: datasource=docker depName=python
+          command: ["python", "-u", "/scripts/configure.py"]
+          env:
+            - name: KEYCLOAK_ADMIN_USER
+              valueFrom:
+                secretKeyRef: { name: keycloak-bootstrap-admin, key: username }
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: keycloak-bootstrap-admin, key: password }
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: script
+          configMap:
+            name: configure-spark-history-oidc-script

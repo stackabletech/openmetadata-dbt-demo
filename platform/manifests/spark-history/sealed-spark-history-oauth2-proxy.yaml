@@ -1,0 +1,20 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  annotations:
+    sealedsecrets.bitnami.com/cluster-wide: "true"
+  creationTimestamp: null
+  name: spark-history-oauth2-proxy
+  namespace: platform
+spec:
+  encryptedData:
+    cookie-secret: AgBiSap4waFhgeVD5i9x/Gllh0XeSFolYVUOkAbnPFRrZfbKQBnFiS55ElybbJoG2tnXi99fn+tONJu9s8HOBGNHhpfmby2zRDU4sJHo9DyUTvUJDLUjAxvNn5NiaWR6MieIgnw5dIlOpx7O6Qqji9JOw0H0Bg33xPiyV0snDFEMQiJpoPqQCNIKi3WpDVyQVFlVTXVRgQx9K4+SEUEu/HU7uLFkitwBHwKTtu55QdrEN/ysb8mGgeQqkGXNgWiKH2jyYl4SEQuNLoV+GD7mprJbrnr3cdHkFi9/i+goqe1nBT0Po3bU2/zJfK4zOrjnXsJMg6P+UIS4OVCHLTv2JTXZnhYiPQ4hWLF58ZgzJ0Se1E7SGksvOCdra+Be2PfHaoXijeh3UF/lz3+a/7vviijh3y44nBQWx+Cky951PQho5QsRA+6YQeSaSpnierl67CKoHJOVMLjbE5H0MBKZgBMNd4Dd5MYf2aa9d5yn814kiD8yr0gALHLmoaLf9SsWdUpU6afWUnoVHst5bRmDzOL+aQv9bECDLbQTTrlVz0diiLgXE473Lg+kzpu83Fs9le9hEfHz8Lwj2HfcYekb191tpzcmxm+N8nzlsOVcqoKdnW8HMqzbESUIaZSBhubrpaC8gFAEtyxF6zuIQMIpWZZrJZjH4JluabmmkcicPFvn44q/wqyJDcqzeD/QvA1uU5sANJZTV9I2VHHh1RDMSq5N9mJXJwKj6OK3wcx6f7AD5cLKPTp/ySN3coJtLQ==
+  template:
+    metadata:
+      annotations:
+        sealedsecrets.bitnami.com/cluster-wide: "true"
+      creationTimestamp: null
+      name: spark-history-oauth2-proxy
+      namespace: platform
+    type: Opaque
