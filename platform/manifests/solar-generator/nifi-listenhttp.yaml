@@ -1,0 +1,20 @@
+---
+# In-cluster entry point for the solar generator: the ListenHTTP processor of the solar
+# ingest flow on the NiFi nodes. The NifiCluster CRD has no option for extra ports, so this
+# plain Service selects the NiFi node Pods directly. Plain HTTP, cluster-internal only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi-listenhttp
+  namespace: platform
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nifi
+    app.kubernetes.io/instance: nifi
+    app.kubernetes.io/component: node
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+      protocol: TCP
