@@ -44,13 +44,17 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-topics-v2
+  name: configure-solar-topics-v3
   namespace: platform
 spec:
   backoffLimit: 20
   template:
     spec:
       restartPolicy: OnFailure
+      # The Kafka image runs as user stackable (1000); without fsGroup it can't read the
+      # secret-operator volume.
+      securityContext:
+        fsGroup: 1000
       containers:
         - name: configure
           image: oci.stackable.tech/sdp/kafka:3.9.1-stackable26.3.0
