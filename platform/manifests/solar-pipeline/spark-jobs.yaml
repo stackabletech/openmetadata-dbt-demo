@@ -513,7 +513,7 @@ data:
            COMMENT 'Solar demo gold: per site and 15-minute slot, with the comparison against peers (same weather cell and orientation)'""",
         f"""CREATE TABLE IF NOT EXISTS {GOLD}.fleet_15min (
             plz STRING, slot TIMESTAMP,
-            kreis_ags STRING COMMENT 'Kreis of most of the postcode''s sites (a postcode can cross Kreis borders)',
+            kreis_ags STRING COMMENT 'Kreis of most sites in the postcode (a postcode can cross Kreis borders)',
             landkreis STRING, bundesland_ags STRING, bundesland STRING, sites INT, kwp_dc DOUBLE,
             power_kw DOUBLE, energy_kwh DOUBLE, expected_kwh DOUBLE, performance_ratio DOUBLE,
             underperforming_sites INT, updated_at TIMESTAMP)

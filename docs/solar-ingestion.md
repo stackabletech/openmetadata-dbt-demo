@@ -34,18 +34,24 @@ All tables live in the `data2day` catalog (Iceberg via Lakekeeper, data in Garag
 
 - **Bronze** (`bronze.py`, Structured Streaming, trigger 1 min): each Kafka message unchanged, plus
   its Kafka coordinates and the ingest time; append-only, partitioned by day.
-- **Master data** (`dims.py`, hourly): the generator publishes its active sites and the weather
-  station grid to Kafka at startup and every 24 h; the job keeps the latest record per ID in
-  `solar_silver.dim_site` and `dim_weather_station`.
+- **Master data** (`dims.py`, hourly): the generator publishes its active sites, the weather
+  station grid and all Kreise (code, name, simplified shape) to Kafka at startup and every 24 h;
+  the job keeps the latest record per ID in `solar_silver.dim_site`, `dim_weather_station` and
+  `dim_landkreis`.
+- **Regions are keyed by the Kreis code** (`kreis_ags`, the first five digits of the MaStR
+  Gemeindeschluessel), never by name: MaStR names a city and the Landkreis around it the same
+  (e.g. München, 09162 and 09184). `dim_site.kreis_ags` → `dim_landkreis.kreis_ags`; Landkreis
+  and Bundesland names in gold are labels looked up by code.
 - **Silver** (`silver.py`, every 10 min): incremental by Kafka offset. Checks with a reason per
   rejected row into `solar_silver.quarantine` (missing fields, unknown site, negative power,
   above capacity, output at night, duplicates), interval energy from the counter (resets and
   implausible jumps flagged), measured irradiance of the site's weather cell, expected output and
   performance ratio.
 - **Gold** (`gold.py`, DAG `solar_gold`, runs whenever silver has updated `inverter_readings`): `site_15min` with a comparison against peers (same weather
-  cell and orientation), `fleet_15min` per postcode, `site_daily`, `region_daily`,
-  `fault_events`, `dq_daily`, `cloud_cover`, `watermark`. Recomputes only the affected slots and
-  days, one `MERGE` per table.
+  cell and orientation), `fleet_15min` per postcode, `site_daily`, `region_daily` (per Kreis
+  code and day), `fault_events`, `dq_daily`, `cloud_cover`, `watermark`. Recomputes only the
+  affected slots and days, one `MERGE` per table. Tables from before the Kreis codes are
+  dropped and rebuilt from silver automatically.
 
 - **Maintenance** (`maintenance.py`, DAG `solar_maintenance`, hourly): retention (bronze 2 days,
   silver readings 7 days, gold kept), snapshot expiry, orphan file removal, and old metadata
@@ -105,3 +111,7 @@ queries as the local Superset `admin`, which maps to Trino `admin`.
 - Marktstammdatenregister – © Bundesnetzagentur für Elektrizität, Gas, Telekommunikation, Post und
   Eisenbahnen | dl-de/by-2-0
 - Postcode areas and map tiles © OpenStreetMap contributors, ODbL-1.0
+- Kreis shapes © BKG (2026) dl-de/by-2-0 (VG250, as of 2026-01-01), Datenquellen:
+  https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf; geometry
+  simplified and reprojected, coastal waters left out. On web pages, "BKG" links to
+  https://www.bkg.bund.de and "dl-de/by-2-0" to https://www.govdata.de/dl-de/by-2-0.
