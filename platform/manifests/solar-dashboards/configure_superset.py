@@ -30,6 +30,8 @@ VIEWER_ROLE = "Solar Viewer"
 BASE_MAP = "tile://https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 GERMANY = {"latitude": 51.2, "longitude": 10.4, "zoom": 5.2, "bearing": 0, "pitch": 0}
 NORTH = {"latitude": 54.2, "longitude": 10.0, "zoom": 7.5, "bearing": 0, "pitch": 0}
+# Tilted, so the Landkreis bars stand up
+NORTH_3D = {"latitude": 53.85, "longitude": 9.85, "zoom": 7.2, "bearing": -10, "pitch": 50}
 
 ATTRIBUTION = """
 <small>
@@ -144,6 +146,25 @@ DATASETS = {
         -- Ground-mounted parks >= 1 MW (jittered real positions)
         SELECT site_id, gemeinde, landkreis, bundesland, kwp_dc / 1000 AS mwp, lat, lon
         FROM solar_silver.dim_site WHERE site_id LIKE 'park-%'"""),
+    "solar_sh_landkreis_bars": ("solar_gold", "solar_sh_landkreis_bars", """
+        -- Energy of the last 7 days per Landkreis in Schleswig-Holstein, as a square of about
+        -- 5.5 km at the centroid of its (illustrative) site positions. rel_height: share of the
+        -- largest Landkreis, so the tallest bar has the same height whatever the totals are.
+        WITH centre AS (
+            SELECT landkreis, avg(lat) AS lat, avg(lon) AS lon, sum(kwp_dc) / 1000 AS mwp
+            FROM solar_silver.dim_site WHERE bundesland = 'Schleswig-Holstein' GROUP BY landkreis),
+        energy AS (
+            SELECT landkreis, sum(energy_kwh) / 1000 AS mwh
+            FROM solar_gold.region_daily
+            WHERE bundesland = 'Schleswig-Holstein' AND day > current_date - INTERVAL '7' DAY
+            GROUP BY landkreis)
+        SELECT e.landkreis AS name, e.mwh AS energy_mwh, c.mwp AS capacity_mwp,
+               e.mwh / max(e.mwh) OVER () AS rel_height,
+               format('[[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f]]',
+                      c.lon - 0.042, c.lat - 0.025, c.lon + 0.042, c.lat - 0.025,
+                      c.lon + 0.042, c.lat + 0.025, c.lon - 0.042, c.lat + 0.025,
+                      c.lon - 0.042, c.lat - 0.025) AS polygon
+        FROM energy e JOIN centre c ON c.landkreis = e.landkreis"""),
     "solar_fault_map": ("solar_gold", "solar_fault_map", """
         -- Fault events of the last 7 days at the (illustrative) site positions
         SELECT e.site_id, e.start_slot, e.end_slot, e.duration_minutes, e.lost_energy_kwh,
@@ -269,6 +290,18 @@ def charts(ds):
                         metric("SUM(sites)", "Sites")],
             "adhoc_filters": [time_filter("day", DAYS_7)], "row_limit": 1000,
             "order_desc": True, "table_timestamp_format": "%Y-%m-%d", "include_search": True}),
+        # 3D bars: deck.gl polygons, extruded by rel_height (multiplier = height of the tallest bar
+        # in metres), coloured by energy. `dimension` (not in the chart editor) adds the column
+        # `name` to the query, which the polygon tooltip shows.
+        "Map: energy per Landkreis, Schleswig-Holstein (last 7 days)": ("deck_polygon", "solar_sh_landkreis_bars", {
+            "line_column": "polygon", "line_type": "json", "dimension": "name",
+            "metric": metric("SUM(energy_mwh)", "Energy (MWh)"),
+            "point_radius_fixed": {"type": "metric", "value": metric("SUM(rel_height)", "Relative height")},
+            "multiplier": 40000, "extruded": True, "filled": True, "stroked": False,
+            "color_scheme_type": "linear_palette", "linear_color_scheme": ["#fde9b5", "#f08c00", "#a33a00"],
+            "opacity": 90, "fill_color_picker": color(240, 140, 0, 1), "stroke_color_picker": color(0, 0, 0, 0),
+            "line_width": 1, "line_width_unit": "pixels", "mapbox_style": BASE_MAP,
+            "viewport": NORTH_3D, "autozoom": False, "row_limit": 100, "adhoc_filters": []}),
         "Specific yield by Bundesland (kWh/kWp)": ("echarts_timeseries_line", "region_daily", {
             "x_axis": "day", "time_grain_sqla": "P1D",
             "metrics": [metric("SUM(energy_kwh) / SUM(kwp_dc)", "kWh/kWp")], "groupby": ["bundesland"],
@@ -389,6 +422,12 @@ DASHBOARDS = {
     "solar-yield": ("Solar fleet: regional yield", 0, [
         [md("## Regional yield\nEnergy, specific yield (kWh per kWp) and capacity factor per "
             "Landkreis and Bundesland, from `solar_gold.region_daily` and `site_daily`.", 12, 12)],
+        [ch("Map: energy per Landkreis, Schleswig-Holstein (last 7 days)", 8, 110),
+         md("### Schleswig-Holstein in 3D\nOne bar per Landkreis, height and colour by its energy "
+            "of the last 7 days; the tallest bar is always the same height. Bars stand at the centre "
+            "of the Landkreis's sites. Rooftop sites are simulated only for postcodes 24xxx, so "
+            "Landkreise in the south (and Lübeck) have only their parks ≥ 1 MW. Hover over a bar for "
+            "its name and energy; drag with the right mouse button to rotate.", 4, 110)],
         [ch("Specific yield by Bundesland (kWh/kWp)", 6, 55), ch("Energy per day by Bundesland (MWh)", 6, 55)],
         [ch("Yield per Landkreis", 12, 70)],
         [ch("Top sites today by specific yield", 12, 70)],
