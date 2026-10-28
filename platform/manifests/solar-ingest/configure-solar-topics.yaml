@@ -8,7 +8,8 @@
 #
 #   solar-inverter          3 h, at most 1.2 GB, 100 MB segments (so old data can be deleted)
 #   solar-weather, -clouds  24 h
-#   solar-sites, solar-weather_stations  7 d (small; republished by the generator every 24 h)
+#   solar-sites, solar-weather_stations, solar-landkreise  7 d (small; republished by the
+#                                        generator every 24 h)
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -40,11 +41,12 @@ data:
     topic solar-clouds retention.ms=86400000,segment.bytes=104857600
     topic solar-sites retention.ms=604800000
     topic solar-weather_stations retention.ms=604800000
+    topic solar-landkreise retention.ms=604800000
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-topics-v3
+  name: configure-solar-topics-v4
   namespace: platform
 spec:
   backoffLimit: 20

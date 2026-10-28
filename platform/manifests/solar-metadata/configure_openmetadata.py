@@ -33,7 +33,8 @@ KEYCLOAK_TOKEN_URL = ("http://keycloak-service.platform.svc.cluster.local:8080"
                       "/realms/stackable-demo/protocol/openid-connect/token")
 SUPERSET_URL = "https://simple-superset-node.platform.svc.cluster.local:8088"
 K8S_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
-TOPICS = ["solar-inverter", "solar-weather", "solar-clouds", "solar-sites", "solar-weather_stations"]
+TOPICS = ["solar-inverter", "solar-weather", "solar-clouds", "solar-sites", "solar-weather_stations",
+          "solar-landkreise"]
 NIFI_PIPELINE = "solar-ingest"
 
 

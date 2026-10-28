@@ -69,6 +69,7 @@ BRONZE = {f"solar_bronze.{stream}_raw": [f"topic:solar-{stream}"] for stream in 
 DIMS = {
     "solar_silver.dim_site": ["topic:solar-sites"],
     "solar_silver.dim_weather_station": ["topic:solar-weather_stations"],
+    "solar_silver.dim_landkreis": ["topic:solar-landkreise"],
 }
 SILVER = {
     "solar_silver.weather_readings": ["solar_bronze.weather_raw", "solar_silver.dim_weather_station"],
@@ -79,10 +80,11 @@ SILVER = {
                                 "solar_bronze.clouds_raw"],
 }
 GOLD = {
-    "solar_gold.site_15min": ["solar_silver.inverter_readings"],
-    "solar_gold.fleet_15min": ["solar_gold.site_15min"],
+    "solar_gold.site_15min": ["solar_silver.inverter_readings", "solar_silver.dim_site",
+                              "solar_silver.dim_landkreis"],
+    "solar_gold.fleet_15min": ["solar_gold.site_15min", "solar_silver.dim_landkreis"],
     "solar_gold.site_daily": ["solar_gold.site_15min"],
-    "solar_gold.region_daily": ["solar_gold.site_daily"],
+    "solar_gold.region_daily": ["solar_gold.site_daily", "solar_silver.dim_landkreis"],
     "solar_gold.fault_events": ["solar_gold.site_15min"],
     "solar_gold.dq_daily": ["solar_silver.quarantine"],
     "solar_gold.cloud_cover": ["solar_silver.cloud_polygons"],
@@ -122,7 +124,7 @@ def create_spark_app(api, script):
     return name
 
 
-def run_spark_job(script):
+def run_spark_job(script, timeout=TIMEOUT):
     """Run a batch job to completion; delete it after success or timeout, keep it after failure.
 
     A job still running at the timeout is deleted: otherwise the next run starts a second
@@ -130,7 +132,7 @@ def run_spark_job(script):
     """
     api = spark_api()
     name = create_spark_app(api, script)
-    deadline = datetime.now() + TIMEOUT
+    deadline = datetime.now() + timeout
     phase = None
     while datetime.now() < deadline:
         app = api.get_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL, name)
@@ -146,7 +148,7 @@ def run_spark_job(script):
                                f"(logs-*, cluster: {name}), kept for inspection")
         time.sleep(15)
     api.delete_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL, name)
-    raise TimeoutError(f"SparkApplication {name} not finished after {TIMEOUT}; deleted it, "
+    raise TimeoutError(f"SparkApplication {name} not finished after {timeout}; deleted it, "
                        f"driver log in OpenSearch (logs-*, cluster: {name})")
 
 
@@ -177,7 +179,7 @@ def ensure_bronze():
 
 with DAG(
     dag_id="solar_dims",
-    description="Solar demo: master data from Kafka into solar_silver.dim_site / dim_weather_station",
+    description="Solar demo: master data from Kafka into solar_silver.dim_site / dim_weather_station / dim_landkreis",
     start_date=datetime(2026, 10, 27),
     schedule="@hourly",
     catchup=False,
@@ -224,7 +226,9 @@ with DAG(
     PythonOperator(
         task_id="gold",
         python_callable=run_spark_job,
-        op_kwargs={"script": "gold"},
+        # Normally a few minutes; a rebuild from all of silver (gold.py drops tables that predate
+        # a schema change) takes longer.
+        op_kwargs={"script": "gold", "timeout": timedelta(minutes=90)},
         **lineage(GOLD),
     )
 

@@ -30,7 +30,7 @@ VIEWER_ROLE = "Solar Viewer"
 BASE_MAP = "tile://https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 GERMANY = {"latitude": 51.2, "longitude": 10.4, "zoom": 5.2, "bearing": 0, "pitch": 0}
 NORTH = {"latitude": 54.2, "longitude": 10.0, "zoom": 7.5, "bearing": 0, "pitch": 0}
-# Tilted, so the Landkreis bars stand up
+# Tilted, so the extruded Landkreise stand up
 NORTH_3D = {"latitude": 53.85, "longitude": 9.85, "zoom": 7.2, "bearing": -10, "pitch": 50}
 
 ATTRIBUTION = """
@@ -40,7 +40,10 @@ Marktstammdatenregister (© Bundesnetzagentur für Elektrizität, Gas, Telekommu
 Eisenbahnen | dl-de/by-2-0). All production values, weather, clouds and faults are simulated.
 Positions are illustrative, not real locations: small sites are placed randomly within their
 postcode area (postcode areas © OpenStreetMap contributors, ODbL-1.0). Map tiles ©
-OpenStreetMap contributors.
+OpenStreetMap contributors. Kreis shapes © [BKG](https://www.bkg.bund.de) (2026)
+[dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0), Datenquellen:
+https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf; geometry
+simplified, coastal waters left out.
 </small>
 """
 
@@ -143,9 +146,12 @@ DATASETS = {
           ON c.plz = f.plz
         WHERE f.slot = {LATEST_SLOT}"""),
     "solar_parks": ("solar_gold", "solar_parks", """
-        -- Ground-mounted parks >= 1 MW (jittered real positions)
-        SELECT site_id, gemeinde, landkreis, bundesland, kwp_dc / 1000 AS mwp, lat, lon
-        FROM solar_silver.dim_site WHERE site_id LIKE 'park-%'"""),
+        -- Ground-mounted parks >= 1 MW (jittered real positions); Kreis names by code
+        SELECT s.site_id, s.gemeinde, s.kreis_ags, k.name AS landkreis, k.bundesland,
+               s.kwp_dc / 1000 AS mwp, s.lat, s.lon
+        FROM solar_silver.dim_site s
+        LEFT JOIN solar_silver.dim_landkreis k ON k.kreis_ags = s.kreis_ags
+        WHERE s.site_id LIKE 'park-%'"""),
     "solar_cloud_trail": ("solar_gold", "solar_cloud_trail", """
         -- Simulated cloud cover every 15 minutes over the last 6 hours (age_min = 0: the latest
         -- snapshot), as GeoJSON Features: Superset's GeoJSON chart draws only Features, the
@@ -170,24 +176,26 @@ DATASETS = {
                || IF(age_min = 0, ' (latest)', format(' (%d min earlier)', age_min)) || '"}}' AS feature
         FROM snap"""),
     "solar_sh_landkreis_bars": ("solar_gold", "solar_sh_landkreis_bars", """
-        -- Energy of the last 7 days per Landkreis in Schleswig-Holstein, as a square of about
-        -- 5.5 km at the centroid of its (illustrative) site positions. rel_height: share of the
-        -- largest Landkreis, so the tallest bar has the same height whatever the totals are.
-        WITH centre AS (
-            SELECT landkreis, avg(lat) AS lat, avg(lon) AS lon, sum(kwp_dc) / 1000 AS mwp
-            FROM solar_silver.dim_site WHERE bundesland = 'Schleswig-Holstein' GROUP BY landkreis),
-        energy AS (
-            SELECT landkreis, sum(energy_kwh) / 1000 AS mwh
+        -- Energy of the last 7 days per Kreis in Schleswig-Holstein (Land code 01), with the Kreis
+        -- shape, joined on the Kreis code. One row per part of the shape (islands): Superset's
+        -- polygon chart draws one outer ring per row (holes are left out). rel_height: share of
+        -- the largest Kreis, so the tallest one has the same height whatever the totals are.
+        WITH energy AS (
+            SELECT kreis_ags, sum(energy_kwh) / 1000 AS mwh
             FROM solar_gold.region_daily
-            WHERE bundesland = 'Schleswig-Holstein' AND day > current_date - INTERVAL '7' DAY
-            GROUP BY landkreis)
-        SELECT e.landkreis AS name, e.mwh AS energy_mwh, c.mwp AS capacity_mwp,
-               e.mwh / max(e.mwh) OVER () AS rel_height,
-               format('[[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f]]',
-                      c.lon - 0.042, c.lat - 0.025, c.lon + 0.042, c.lat - 0.025,
-                      c.lon + 0.042, c.lat + 0.025, c.lon - 0.042, c.lat + 0.025,
-                      c.lon - 0.042, c.lat - 0.025) AS shape
-        FROM energy e JOIN centre c ON c.landkreis = e.landkreis"""),
+            WHERE bundesland_ags = '01' AND day > current_date - INTERVAL '7' DAY
+            GROUP BY kreis_ags),
+        kreise AS (
+            SELECT kreis_ags, name,
+                   IF(json_extract_scalar(geojson, '$.type') = 'Polygon',
+                      ARRAY[CAST(json_extract(geojson, '$.coordinates') AS ARRAY(ARRAY(ARRAY(DOUBLE))))],
+                      CAST(json_extract(geojson, '$.coordinates') AS ARRAY(ARRAY(ARRAY(ARRAY(DOUBLE)))))) AS parts
+            FROM solar_silver.dim_landkreis WHERE bundesland_ags = '01')
+        SELECT k.kreis_ags, k.name, e.mwh AS energy_mwh, e.mwh / max(e.mwh) OVER () AS rel_height,
+               json_format(CAST(part[1] AS JSON)) AS shape
+        FROM kreise k
+        JOIN energy e ON e.kreis_ags = k.kreis_ags
+        CROSS JOIN UNNEST(k.parts) AS p(part)"""),
     "solar_fault_map": ("solar_gold", "solar_fault_map", """
         -- Fault events of the last 7 days at the (illustrative) site positions
         SELECT e.site_id, e.start_slot, e.end_slot, e.duration_minutes, e.lost_energy_kwh,
@@ -312,7 +320,7 @@ def charts(ds):
             "viewport": GERMANY, "autozoom": False, "row_limit": 2000, "adhoc_filters": []}),
         # Regional yield
         "Yield per Landkreis": ("table", "region_daily", {
-            "query_mode": "aggregate", "groupby": ["day", "bundesland", "landkreis"],
+            "query_mode": "aggregate", "groupby": ["day", "kreis_ags", "landkreis", "bundesland"],
             "metrics": [metric("SUM(energy_kwh) / 1000", "Energy (MWh)"),
                         metric("SUM(kwp_dc) / 1000", "Capacity (MWp)"),
                         metric("SUM(energy_kwh) / SUM(kwp_dc)", "Specific yield (kWh/kWp)"),
@@ -320,20 +328,20 @@ def charts(ds):
                         metric("SUM(sites)", "Sites")],
             "adhoc_filters": [time_filter("day", DAYS_7)], "row_limit": 1000,
             "order_desc": True, "table_timestamp_format": "%Y-%m-%d", "include_search": True}),
-        # 3D bars: deck.gl polygons, extruded by rel_height (multiplier = height of the tallest bar
-        # in metres), coloured by energy. js_columns ("Extra data for JS") adds the column `name`
-        # to every bar, which the tooltip shows; Superset returns metrics only as numbers. The
+        # 3D Kreise: deck.gl polygons, extruded by rel_height (multiplier = height of the tallest
+        # Kreis in metres), coloured by energy. js_columns ("Extra data for JS") adds the column
+        # `name` to every part, which the tooltip shows; Superset returns metrics only as numbers. The
         # shape column must not be called `polygon`: Superset stores the parsed shape under that
         # key, then deletes the column.
         "Map: energy per Landkreis, Schleswig-Holstein (last 7 days)": ("deck_polygon", "solar_sh_landkreis_bars", {
             "line_column": "shape", "line_type": "json", "js_columns": ["name"],
             "metric": metric("ROUND(SUM(energy_mwh), 2)", "Energy (MWh)"),
             "point_radius_fixed": {"type": "metric", "value": metric("SUM(rel_height)", "Relative height")},
-            "multiplier": 40000, "extruded": True, "filled": True, "stroked": False,
+            "multiplier": 25000, "extruded": True, "filled": True, "stroked": False,
             "color_scheme_type": "linear_palette", "linear_color_scheme": ["#fde9b5", "#f08c00", "#a33a00"],
             "opacity": 90, "fill_color_picker": color(240, 140, 0, 1), "stroke_color_picker": color(0, 0, 0, 0),
             "line_width": 1, "line_width_unit": "pixels", "mapbox_style": BASE_MAP,
-            "viewport": NORTH_3D, "autozoom": False, "row_limit": 100, "adhoc_filters": []}),
+            "viewport": NORTH_3D, "autozoom": False, "row_limit": 1000, "adhoc_filters": []}),
         "Specific yield by Bundesland (kWh/kWp)": ("echarts_timeseries_line", "region_daily", {
             "x_axis": "day", "time_grain_sqla": "P1D",
             "metrics": [metric("SUM(energy_kwh) / SUM(kwp_dc)", "kWh/kWp")], "groupby": ["bundesland"],
@@ -369,7 +377,10 @@ def charts(ds):
             "adhoc_filters": [time_filter("start_slot", LAST_7_DAYS)], "row_limit": 500,
             "include_search": True}),
         "Faults per Landkreis": ("echarts_timeseries_bar", "fault_events", {
-            "x_axis": "landkreis", "metrics": [metric("COUNT(*)", "Events")], "groupby": [],
+            # Grouped by the Kreis code (names repeat: city and Landkreis Muenchen), labelled by name
+            "x_axis": {"expressionType": "SQL", "label": "Landkreis",
+                       "sqlExpression": "concat(coalesce(landkreis, '?'), ' (', kreis_ags, ')')"},
+            "metrics": [metric("COUNT(*)", "Events")], "groupby": [],
             "adhoc_filters": [time_filter("start_slot", LAST_7_DAYS)], "row_limit": 50,
             "orientation": "horizontal", "show_legend": False, "y_axis_format": ",d",
             "x_axis_sort": "Events", "x_axis_sort_asc": False}),
@@ -460,11 +471,12 @@ DASHBOARDS = {
         [md("## Regional yield\nEnergy, specific yield (kWh per kWp) and capacity factor per "
             "Landkreis and Bundesland, from `solar_gold.region_daily` and `site_daily`.", 12, 12)],
         [ch("Map: energy per Landkreis, Schleswig-Holstein (last 7 days)", 8, 110),
-         md("### Schleswig-Holstein in 3D\nOne bar per Landkreis, height and colour by its energy "
-            "of the last 7 days; the tallest bar is always the same height. Bars stand at the centre "
-            "of the Landkreis's sites. Rooftop sites are simulated only for postcodes 24xxx, so "
-            "Landkreise in the south (and Lübeck) have only their parks ≥ 1 MW. Hover over a bar for "
-            "its name and energy; drag with the right mouse button to rotate.", 4, 110)],
+         md("### Schleswig-Holstein in 3D\nEach Kreis extruded by its energy of the last 7 days, "
+            "coloured by it too; the tallest is always the same height. Kreise are matched to the "
+            "sites by their official code (AGS), not by name. Rooftop sites are simulated only for "
+            "postcodes 24xxx, so Kreise in the south have only their parks ≥ 1 MW; a Kreis without "
+            "any (Lübeck) isn't drawn. Hover for name and energy; drag with the right mouse button "
+            "to rotate. Kreis shapes © BKG, see below.", 4, 110)],
         [ch("Specific yield by Bundesland (kWh/kWp)", 6, 55), ch("Energy per day by Bundesland (MWh)", 6, 55)],
         [ch("Yield per Landkreis", 12, 70)],
         [ch("Top sites today by specific yield", 12, 70)],

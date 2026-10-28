@@ -3,8 +3,8 @@
 # SparkAppTemplate solar-spark. Airflow (dags/solar_pipeline.py) runs them as SparkApplications.
 #
 #   bronze.py: Kafka -> bronze, continuous streaming (kept running by DAG solar_bronze_watchdog)
-#   dims.py:   master data from Kafka (solar-sites, solar-weather_stations) into
-#              data2day.solar_silver.dim_site / dim_weather_station
+#   dims.py:   master data from Kafka (solar-sites, solar-weather_stations, solar-landkreise) into
+#              data2day.solar_silver.dim_site / dim_weather_station / dim_landkreis
 #   silver.py: bronze -> silver (checks, quarantine, dedup, energy, performance ratio)
 #   gold.py:   silver -> gold (site/fleet 15-min, daily, regions, fault events, data quality)
 #   maintenance.py: retention, snapshot expiry and orphan file removal for all solar tables
@@ -31,6 +31,11 @@ data:
         "Telekommunikation, Post und Eisenbahnen | dl-de/by-2-0; postcode areas (c) OpenStreetMap "
         "contributors, ODbL-1.0. Site IDs are synthetic; positions of non-park sites are random "
         "points within their postcode area, not real locations."
+    )
+    LANDKREISE_ATTRIBUTION = (
+        "Kreis shapes (c) BKG (2026) dl-de/by-2-0, Datenquellen: "
+        "https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf; "
+        "geometry simplified and reprojected, coastal waters left out."
     )
 
 
@@ -101,10 +106,14 @@ data:
   dims.py: |
     """Master data from Kafka into dimension tables (full refresh, latest record per ID).
 
-    The generator publishes its active sites and the weather station grid to solar-sites and
-    solar-weather_stations at startup and every 24 h. This job reads both topics completely,
-    keeps the latest record per ID and replaces the tables atomically. An empty topic (e.g.
-    after retention) leaves the table untouched.
+    The generator publishes its active sites, the weather station grid and the Kreise (code, name,
+    shape) to solar-sites, solar-weather_stations and solar-landkreise at startup and every 24 h.
+    This job reads the topics completely, keeps the latest record per ID and replaces the tables
+    atomically. An empty topic (e.g. after retention) leaves the table untouched.
+
+    Regions are keyed by the Kreis code (kreis_ags), never by name: MaStR names a city and the
+    Landkreis around it the same. A site's code is taken from its latest record that has one
+    (generators before 0.1.3 don't send it; a site's code doesn't change).
     """
 
     import sys
@@ -112,22 +121,29 @@ data:
     sys.path.insert(0, "/stackable/spark/jobs")
 
     from pyspark.sql import Window
-    from pyspark.sql.functions import col, current_timestamp, from_json, row_number, to_date, to_timestamp
+    from pyspark.sql.functions import (col, current_timestamp, first, from_json, row_number, to_date,
+                                       to_timestamp)
     from pyspark.sql.types import BooleanType, DoubleType, StringType, StructField, StructType
 
-    from solar_common import CATALOG, SITES_ATTRIBUTION, kafka_options, log, run, session
+    from solar_common import CATALOG, LANDKREISE_ATTRIBUTION, SITES_ATTRIBUTION, kafka_options, log, run, session
 
     SCHEMA = f"{CATALOG}.solar_silver"
 
     SITE = StructType([StructField(name, kind) for name, kind in [
         ("published_at", StringType()), ("site_id", StringType()), ("kind", StringType()),
-        ("bundesland", StringType()), ("landkreis", StringType()), ("gemeinde", StringType()),
-        ("plz", StringType()), ("kwp_dc", DoubleType()), ("kw_ac", DoubleType()),
+        ("bundesland", StringType()), ("landkreis", StringType()), ("kreis_ags", StringType()),
+        ("gemeinde", StringType()), ("plz", StringType()), ("kwp_dc", DoubleType()), ("kw_ac", DoubleType()),
         ("feedin_limit", DoubleType()), ("commissioned", StringType()),
         ("orientation", StringType()), ("azimuth_deg", DoubleType()), ("tilt_deg", DoubleType()),
         ("orientation_imputed", BooleanType()), ("has_storage", BooleanType()),
         ("lat", DoubleType()), ("lon", DoubleType()), ("placement", StringType()),
         ("weather_station_id", StringType()),
+    ]])
+
+    LANDKREIS = StructType([StructField(name, kind) for name, kind in [
+        ("published_at", StringType()), ("kreis_ags", StringType()), ("name", StringType()),
+        ("bez", StringType()), ("bundesland_ags", StringType()), ("bundesland", StringType()),
+        ("area_km2", DoubleType()), ("geojson", StringType()),
     ]])
 
     STATION = StructType([StructField(name, kind) for name, kind in [
@@ -138,14 +154,20 @@ data:
     ]])
 
 
-    def latest(spark, topic, schema, key):
+    def latest(spark, topic, schema, key, sticky=()):
+        """Latest record per key; columns in `sticky` from the latest record where they're set."""
         raw = spark.read.format("kafka").options(**kafka_options(topic)).load()
         parsed = raw.select(from_json(col("value").cast("string"), schema).alias("r"), col("offset"))
         newest = Window.partitionBy(f"r.{key}").orderBy(col("r.published_at").desc(), col("offset").desc())
-        return (parsed.where(col(f"r.{key}").isNotNull())
-                .withColumn("n", row_number().over(newest)).where("n = 1")
-                .select("r.*")
-                .withColumn("published_at", to_timestamp("published_at"))
+        every = newest.rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
+        df = parsed.where(col(f"r.{key}").isNotNull())
+        for c in sticky:
+            df = df.withColumn(f"_{c}", first(col(f"r.{c}"), ignorenulls=True).over(every))
+        df = (df.withColumn("n", row_number().over(newest)).where("n = 1")
+              .select("r.*", *[f"_{c}" for c in sticky]))
+        for c in sticky:
+            df = df.withColumn(c, col(f"_{c}")).drop(f"_{c}")
+        return (df.withColumn("published_at", to_timestamp("published_at"))
                 .withColumn("loaded_at", current_timestamp()))
 
 
@@ -162,7 +184,8 @@ data:
     def main():
         spark = session("solar-dims")
         spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {SCHEMA}")
-        sites = latest(spark, "solar-sites", SITE, "site_id").withColumn("commissioned", to_date("commissioned"))
+        sites = (latest(spark, "solar-sites", SITE, "site_id", sticky=["kreis_ags"])
+                 .withColumn("commissioned", to_date("commissioned")))
         replace(spark, sites, "dim_site",
                 "Solar demo: active PV sites (latest record per site_id from Kafka topic solar-sites). "
                 + SITES_ATTRIBUTION)
@@ -170,6 +193,11 @@ data:
         replace(spark, stations, "dim_weather_station",
                 "Solar demo: simulated weather stations, one per ~28 x 26 km grid cell (latest record per "
                 "station_id from Kafka topic solar-weather_stations). Synthetic data.")
+        kreise = latest(spark, "solar-landkreise", LANDKREIS, "kreis_ags")
+        replace(spark, kreise, "dim_landkreis",
+                "Solar demo: Kreise with code (kreis_ags, AGS), name, Bundesland and simplified shape "
+                "(GeoJSON, WGS84), latest record per kreis_ags from Kafka topic solar-landkreise. "
+                "Join regions on kreis_ags, not on names. " + LANDKREISE_ATTRIBUTION)
 
 
     if __name__ == "__main__":
@@ -449,6 +477,11 @@ data:
     there: site_15min from silver, then fleet_15min, site_daily, region_daily, fault_events and
     dq_daily for the affected slots and days. Tables are updated with one MERGE each, which
     also deletes rows in the window that no longer exist (one commit per table).
+
+    Regions are keyed by the Kreis code (kreis_ags, from dim_site by site_id); the Landkreis and
+    Bundesland names are labels from dim_landkreis, looked up by code. Never join or group on
+    names: MaStR names a city and the Landkreis around it the same (e.g. Muenchen).
+    Tables from before the codes (no kreis_ags column) are dropped and rebuilt from silver.
     """
 
     import sys
@@ -469,8 +502,8 @@ data:
 
     DDL = [
         f"""CREATE TABLE IF NOT EXISTS {GOLD}.site_15min (
-            site_id STRING, slot TIMESTAMP, plz STRING, landkreis STRING, bundesland STRING,
-            weather_station_id STRING, orientation STRING, kwp_dc DOUBLE, readings INT,
+            site_id STRING, slot TIMESTAMP, plz STRING, kreis_ags STRING, landkreis STRING,
+            bundesland_ags STRING, bundesland STRING, weather_station_id STRING, orientation STRING, kwp_dc DOUBLE, readings INT,
             avg_ac_kw DOUBLE, energy_kwh DOUBLE, expected_kwh DOUBLE, performance_ratio DOUBLE,
             fault_readings INT COMMENT 'Readings with inverter status FAULT',
             peer_sites INT, peer_pr DOUBLE COMMENT 'Median performance ratio of the peer group',
@@ -479,25 +512,28 @@ data:
            USING iceberg PARTITIONED BY (days(slot))
            COMMENT 'Solar demo gold: per site and 15-minute slot, with the comparison against peers (same weather cell and orientation)'""",
         f"""CREATE TABLE IF NOT EXISTS {GOLD}.fleet_15min (
-            plz STRING, slot TIMESTAMP, landkreis STRING, bundesland STRING, sites INT, kwp_dc DOUBLE,
+            plz STRING, slot TIMESTAMP,
+            kreis_ags STRING COMMENT 'Kreis of most of the postcode''s sites (a postcode can cross Kreis borders)',
+            landkreis STRING, bundesland_ags STRING, bundesland STRING, sites INT, kwp_dc DOUBLE,
             power_kw DOUBLE, energy_kwh DOUBLE, expected_kwh DOUBLE, performance_ratio DOUBLE,
             underperforming_sites INT, updated_at TIMESTAMP)
            USING iceberg PARTITIONED BY (days(slot))
            COMMENT 'Solar demo gold: per postcode and 15-minute slot (the market interval)'""",
         f"""CREATE TABLE IF NOT EXISTS {GOLD}.site_daily (
-            site_id STRING, day DATE, plz STRING, landkreis STRING, bundesland STRING, kwp_dc DOUBLE,
-            energy_kwh DOUBLE, expected_kwh DOUBLE, performance_ratio DOUBLE, specific_yield_kwh_kwp DOUBLE,
+            site_id STRING, day DATE, plz STRING, kreis_ags STRING, landkreis STRING,
+            bundesland_ags STRING, bundesland STRING, kwp_dc DOUBLE, energy_kwh DOUBLE, expected_kwh DOUBLE, performance_ratio DOUBLE, specific_yield_kwh_kwp DOUBLE,
             underperforming_slots INT, fault_slots INT, updated_at TIMESTAMP)
            USING iceberg PARTITIONED BY (day)
            COMMENT 'Solar demo gold: per site and day'""",
         f"""CREATE TABLE IF NOT EXISTS {GOLD}.region_daily (
-            day DATE, bundesland STRING, landkreis STRING, sites INT, kwp_dc DOUBLE, energy_kwh DOUBLE,
-            specific_yield_kwh_kwp DOUBLE, capacity_factor DOUBLE, updated_at TIMESTAMP)
+            day DATE, kreis_ags STRING COMMENT 'Kreis code (AGS), the key; names are labels',
+            landkreis STRING, bundesland_ags STRING, bundesland STRING, sites INT, kwp_dc DOUBLE,
+            energy_kwh DOUBLE, specific_yield_kwh_kwp DOUBLE, capacity_factor DOUBLE, updated_at TIMESTAMP)
            USING iceberg PARTITIONED BY (day)
-           COMMENT 'Solar demo gold: per Landkreis and day (sum over Landkreise = Bundesland)'""",
+           COMMENT 'Solar demo gold: per Kreis (kreis_ags) and day (sum over Kreise = Bundesland)'""",
         f"""CREATE TABLE IF NOT EXISTS {GOLD}.fault_events (
             site_id STRING, start_slot TIMESTAMP, end_slot TIMESTAMP, slots INT, duration_minutes INT,
-            plz STRING, landkreis STRING, weather_station_id STRING, kwp_dc DOUBLE,
+            plz STRING, kreis_ags STRING, landkreis STRING, weather_station_id STRING, kwp_dc DOUBLE,
             min_peer_ratio DOUBLE, lost_energy_kwh DOUBLE COMMENT 'sum of (peer_pr x expected - actual)',
             inverter_fault_reported BOOLEAN, updated_at TIMESTAMP)
            USING iceberg PARTITIONED BY (days(start_slot))
@@ -514,6 +550,23 @@ data:
             name STRING, value TIMESTAMP)
            USING iceberg COMMENT 'Solar demo gold: last silver processed_at seen'""",
     ]
+
+
+    # Built per Kreis code; older versions of these tables grouped by name and are rebuilt.
+    KEYED_BY_CODE = ["site_15min", "fleet_15min", "site_daily", "region_daily", "fault_events"]
+
+
+    def rebuild_tables_without_codes(spark, logger):
+        """Drop the gold tables that predate kreis_ags, and the state, so this run rebuilds them."""
+        existing = {r.tableName for r in spark.sql(f"SHOW TABLES IN {GOLD}").collect()}
+        old = [t for t in KEYED_BY_CODE
+               if t in existing and "kreis_ags" not in spark.table(f"{GOLD}.{t}").columns]
+        if not old:
+            return
+        for t in old:
+            spark.sql(f"DROP TABLE {GOLD}.{t} PURGE")
+        spark.sql(f"DELETE FROM {GOLD}.processing_state")
+        logger.info(f"Dropped {', '.join(old)} (no kreis_ags); rebuilding gold from silver")
 
 
     def slot(col):
@@ -536,6 +589,11 @@ data:
         spark = session("solar-gold")
         logger = log(spark, "solar_gold")
         spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {GOLD}")
+        if not spark.catalog.tableExists(f"{SILVER}.dim_landkreis"):
+            raise RuntimeError(f"{SILVER}.dim_landkreis missing: run solar_dims first (needs the "
+                               "generator's solar-landkreise stream)")
+        spark.sql(DDL[-1])  # processing_state
+        rebuild_tables_without_codes(spark, logger)
         for ddl in DDL:
             spark.sql(ddl)
         now = spark.sql("SELECT current_timestamp()").first()[0]
@@ -552,11 +610,19 @@ data:
         first_day = start.date()
         logger.info(f"Recomputing slots from {start}")
 
+        # Kreis code per site (by site_id) and the labels for it (by code)
+        kreise = spark.table(f"{SILVER}.dim_landkreis").select(
+            "kreis_ags", F.col("name").alias("landkreis"), "bundesland_ags", "bundesland")
+        regions = (spark.table(f"{SILVER}.dim_site").select("site_id", "kreis_ags")
+                   .join(kreise, "kreis_ags", "left"))
+        unknown = regions.where(F.col("kreis_ags").isNull() | F.col("landkreis").isNull()).count()
+        if unknown:
+            logger.warn(f"{unknown} sites without a Kreis code or with a code not in dim_landkreis")
+
         # site_15min with the peer comparison
         per_site = (readings.where(F.col("ts") >= start)
                     .groupBy("site_id", slot("ts").alias("slot"))
-                    .agg(F.first("plz").alias("plz"), F.first("landkreis").alias("landkreis"),
-                         F.first("bundesland").alias("bundesland"),
+                    .agg(F.first("plz").alias("plz"),
                          F.first("weather_station_id").alias("weather_station_id"),
                          F.first("orientation").alias("orientation"), F.first("kwp_dc").alias("kwp_dc"),
                          F.count("*").cast("int").alias("readings"),
@@ -566,10 +632,14 @@ data:
                          # Daylight only, as in silver: at night the sensor noise gives tiny expected values.
                          F.when(F.avg("expected_kw") > 0.05 * F.first("kwp_dc"),
                                 F.avg("ac_kw") / F.avg("expected_kw")).alias("performance_ratio"),
-                         F.sum(F.when(F.col("status") == "FAULT", 1).otherwise(0)).cast("int").alias("fault_readings")))
+                         F.sum(F.when(F.col("status") == "FAULT", 1).otherwise(0)).cast("int").alias("fault_readings"))
+                    .join(F.broadcast(regions), "site_id", "left"))
         per_site.createOrReplaceTempView("per_site")
         site_15min = spark.sql(f"""
-            SELECT p.*, g.peer_sites, g.peer_pr, p.performance_ratio / g.peer_pr AS peer_ratio,
+            SELECT p.site_id, p.slot, p.plz, p.kreis_ags, p.landkreis, p.bundesland_ags, p.bundesland,
+                   p.weather_station_id, p.orientation, p.kwp_dc, p.readings, p.avg_ac_kw, p.energy_kwh,
+                   p.expected_kwh, p.performance_ratio, p.fault_readings,
+                   g.peer_sites, g.peer_pr, p.performance_ratio / g.peer_pr AS peer_ratio,
                    coalesce(g.peer_sites >= {MIN_PEERS} AND g.peer_pr >= {MIN_PEER_PR}
                             AND p.performance_ratio / g.peer_pr < {UNDERPERFORMING}, false) AS underperforming,
                    current_timestamp() AS updated_at
@@ -587,19 +657,25 @@ data:
         s15 = spark.table(f"{GOLD}.site_15min")
         fleet = (s15.where(F.col("slot") >= start)
                  .groupBy("plz", "slot")
-                 .agg(F.first("landkreis").alias("landkreis"), F.first("bundesland").alias("bundesland"),
+                 .agg(F.mode("kreis_ags").alias("kreis_ags"),
                       F.count("*").cast("int").alias("sites"), F.sum("kwp_dc").alias("kwp_dc"),
                       F.sum("avg_ac_kw").alias("power_kw"), F.sum("energy_kwh").alias("energy_kwh"),
                       F.sum("expected_kwh").alias("expected_kwh"),
                       F.when(F.sum("expected_kwh") > 0.05 * F.sum("kwp_dc") * SLOT_SECONDS / 3600,
                              F.sum("avg_ac_kw") * SLOT_SECONDS / 3600 / F.sum("expected_kwh")).alias("performance_ratio"),
                       F.sum(F.col("underperforming").cast("int")).cast("int").alias("underperforming_sites"))
-                 .withColumn("updated_at", F.current_timestamp()))
+                 .join(F.broadcast(kreise), "kreis_ags", "left")
+                 .withColumn("updated_at", F.current_timestamp())
+                 .select("plz", "slot", "kreis_ags", "landkreis", "bundesland_ags", "bundesland", "sites",
+                         "kwp_dc", "power_kw", "energy_kwh", "expected_kwh", "performance_ratio",
+                         "underperforming_sites", "updated_at"))
         replace_window(spark, fleet, f"{GOLD}.fleet_15min", ["plz", "slot"], f"t.slot >= TIMESTAMP '{start}'")
 
         days = s15.where(F.to_date("slot") >= F.lit(first_day))
         site_daily = (days.groupBy("site_id", F.to_date("slot").alias("day"))
-                      .agg(F.first("plz").alias("plz"), F.first("landkreis").alias("landkreis"),
+                      .agg(F.first("plz").alias("plz"), F.first("kreis_ags").alias("kreis_ags"),
+                           F.first("landkreis").alias("landkreis"),
+                           F.first("bundesland_ags").alias("bundesland_ags"),
                            F.first("bundesland").alias("bundesland"), F.first("kwp_dc").alias("kwp_dc"),
                            F.sum("energy_kwh").alias("energy_kwh"), F.sum("expected_kwh").alias("expected_kwh"),
                            F.sum(F.col("underperforming").cast("int")).cast("int").alias("underperforming_slots"),
@@ -607,19 +683,25 @@ data:
                       .withColumn("performance_ratio", F.col("energy_kwh") / F.col("expected_kwh"))
                       .withColumn("specific_yield_kwh_kwp", F.col("energy_kwh") / F.col("kwp_dc"))
                       .withColumn("updated_at", F.current_timestamp())
-                      .select("site_id", "day", "plz", "landkreis", "bundesland", "kwp_dc", "energy_kwh",
+                      .select("site_id", "day", "plz", "kreis_ags", "landkreis", "bundesland_ags", "bundesland",
+                              "kwp_dc", "energy_kwh",
                               "expected_kwh", "performance_ratio", "specific_yield_kwh_kwp",
                               "underperforming_slots", "fault_slots", "updated_at")
                       .cache())
         replace_window(spark, site_daily, f"{GOLD}.site_daily", ["site_id", "day"], f"t.day >= DATE '{first_day}'")
 
-        region = (site_daily.groupBy("day", "bundesland", "landkreis")
+        # Sites without a code stay out of the regions (a null key would never match in the MERGE).
+        region = (site_daily.where(F.col("kreis_ags").isNotNull())
+                  .groupBy("day", "kreis_ags")
                   .agg(F.count("*").cast("int").alias("sites"), F.sum("kwp_dc").alias("kwp_dc"),
                        F.sum("energy_kwh").alias("energy_kwh"))
+                  .join(F.broadcast(kreise), "kreis_ags", "left")
                   .withColumn("specific_yield_kwh_kwp", F.col("energy_kwh") / F.col("kwp_dc"))
                   .withColumn("capacity_factor", F.col("energy_kwh") / (F.col("kwp_dc") * 24))
-                  .withColumn("updated_at", F.current_timestamp()))
-        replace_window(spark, region, f"{GOLD}.region_daily", ["day", "bundesland", "landkreis"],
+                  .withColumn("updated_at", F.current_timestamp())
+                  .select("day", "kreis_ags", "landkreis", "bundesland_ags", "bundesland", "sites", "kwp_dc",
+                          "energy_kwh", "specific_yield_kwh_kwp", "capacity_factor", "updated_at"))
+        replace_window(spark, region, f"{GOLD}.region_daily", ["day", "kreis_ags"],
                        f"t.day >= DATE '{first_day}'")
 
         # Fault events: islands of consecutive underperforming slots per site, in the affected days.
@@ -632,7 +714,7 @@ data:
             )
             SELECT site_id, min(slot) AS start_slot, max(slot) AS end_slot,
                    CAST(count(*) AS INT) AS slots, CAST(count(*) * {SLOT_SECONDS // 60} AS INT) AS duration_minutes,
-                   first(plz) AS plz, first(landkreis) AS landkreis,
+                   first(plz) AS plz, first(kreis_ags) AS kreis_ags, first(landkreis) AS landkreis,
                    first(weather_station_id) AS weather_station_id, first(kwp_dc) AS kwp_dc,
                    min(peer_ratio) AS min_peer_ratio,
                    sum(greatest(peer_pr * expected_kwh - coalesce(energy_kwh, 0), 0)) AS lost_energy_kwh,
