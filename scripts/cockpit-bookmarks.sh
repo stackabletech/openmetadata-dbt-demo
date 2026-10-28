@@ -6,7 +6,7 @@
 #   - Trino editor tabs with the demo queries (keys `trino_tabs_index`, `trino_tab_<id>`).
 #
 # The URLs are read from the current cluster (kubectl context), because the node IP
-# and several NodePorts (Trino, Superset, Airflow, HDFS) change with every deploy.
+# and several NodePorts (Trino, Superset, Airflow, NiFi, HDFS) change with every deploy.
 #
 # Usage:
 #   ./scripts/cockpit-bookmarks.sh            # print the snippet
@@ -32,6 +32,8 @@ bookmarks=$(cat <<EOF
 trino|Trino|https://${node_ip}:$(nodeport platform trino-coordinator)/ui/|true
 superset|Superset|https://${node_ip}:$(nodeport platform simple-superset-node)|true
 airflow|Airflow|http://${node_ip}:$(nodeport platform airflow-webserver)|true
+nifi|NiFi|https://${node_ip}:$(nodeport platform nifi-node)/nifi/|true
+custom|Spark History Server|http://${node_ip}:30188|false
 custom|OpenMetadata|http://${node_ip}:$(nodeport platform openmetadata-nodeport)|true
 custom|Grafana|http://${node_ip}:$(nodeport platform prometheus-grafana)|true
 custom|Entropy Data|http://${node_ip}:$(nodeport platform entropy-data-nodeport)/myorga|true
