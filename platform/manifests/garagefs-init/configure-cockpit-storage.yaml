@@ -1,0 +1,71 @@
+---
+# S3 access for Cockpit's storage browser in the demo: Garage key `cockpit-demo` with
+#   - read on iceberg-warehouse (the lakehouse files of bronze, silver and gold),
+#   - read/write on the bucket demo-files (upload, rename, edit, delete without risk).
+# The credentials go to Secret platform/cockpit-demo-s3; scripts/cockpit-bookmarks.sh reads it
+# and its snippet adds the connection for the logged-in Cockpit user.
+#
+# Separate from configure-garagefs.yaml on purpose: re-running that shared init Job has
+# overwritten Secrets before. Uses its ServiceAccount (exec into garage-0, write Secrets in
+# shared and platform). Idempotent; bump the Job name to run it again.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configure-cockpit-storage-script
+  namespace: shared
+data:
+  configure.sh: |
+    #!/bin/sh
+    set -e
+    GARAGE="kubectl exec garage-0 -- /garage"
+
+    # Existing key: --show-secret, otherwise Garage prints "(redacted)" (see configure-garagefs.yaml)
+    output=$($GARAGE key info --show-secret cockpit-demo 2>&1) || output=$($GARAGE key create cockpit-demo 2>&1)
+    KEY_ID=$(echo "$output" | grep "Key ID:" | awk '{print $NF}')
+    KEY_SECRET=$(echo "$output" | grep "Secret key:" | awk '{print $NF}')
+    if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ] || [ "$KEY_SECRET" = "(redacted)" ]; then
+      echo "ERROR: no credentials for key cockpit-demo (is Garage up and its layout applied?)"
+      exit 1
+    fi
+    echo "Key cockpit-demo: $KEY_ID"
+
+    $GARAGE bucket create demo-files 2>/dev/null || true
+    $GARAGE bucket allow --read --write demo-files --key cockpit-demo
+    $GARAGE bucket allow --read iceberg-warehouse --key cockpit-demo
+    echo "cockpit-demo: read/write on demo-files, read on iceberg-warehouse"
+
+    kubectl create secret generic cockpit-demo-s3 -n platform \
+      --from-literal=accessKeyId="$KEY_ID" --from-literal=secretAccessKey="$KEY_SECRET" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "Secret platform/cockpit-demo-s3 written"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-cockpit-storage-v1
+  namespace: shared
+spec:
+  # Retries until Garage is up and the main init Job has created iceberg-warehouse
+  backoffLimit: 50
+  template:
+    spec:
+      serviceAccountName: garagefs-init
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: alpine/kubectl:1.35.2 # renovate: datasource=docker depName=alpine/kubectl
+          command: ["/bin/sh", "/scripts/configure.sh"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: configure-cockpit-storage-script
+            defaultMode: 0755

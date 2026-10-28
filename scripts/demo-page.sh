@@ -131,8 +131,9 @@ body = f"""
   <h2>Setup</h2>
   <ol>
     <li>Open {link(cockpit, "Cockpit")} (HTTPS with the demo CA: accept the browser warning once), log in as <code>demo-user</code>, press F12 → Console, type
-      <code>allow pasting</code> once, then paste this snippet and press Enter. It adds bookmarks to all UIs and the editor tabs
-      <i>Demo A</i> and <i>Demo B</i> with the queries below:
+      <code>allow pasting</code> once, then paste this snippet and press Enter. It adds bookmarks to all UIs, the editor tabs
+      <i>Demo A</i> and <i>Demo B</i> with the queries below, and an S3 connection to Garage for the storage browser
+      (read the lakehouse in <code>iceberg-warehouse</code>, play in <code>demo-files</code>):
       {snippet("bookmarks", os.environ["BOOKMARKS"], "Copy setup snippet")}</li>
     <li>Second user (<code>demo-admin</code>) in a private window; logins at the top.</li>
   </ol>

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Prints a JavaScript snippet that prepares Stackable Cockpit for the demo, all in the
-# browser's localStorage:
-#   - bookmarks to the demo UIs in the dashboard (key `dashboard_bookmarks`; needs a
-#     Cockpit build with the bookmark feature, e.g. branch feat/app-bookmark-dialog),
-#   - Trino editor tabs with the demo queries (keys `trino_tabs_index`, `trino_tab_<id>`).
+# Prints a JavaScript snippet that prepares Stackable Cockpit for the demo:
+#   - bookmarks to the demo UIs in the dashboard (localStorage key `dashboard_bookmarks`),
+#   - Trino editor tabs with the demo queries (keys `trino_tabs_index`, `trino_tab_<id>`),
+#   - an S3 connection to Garage for the storage browser, saved in Cockpit's database for the
+#     logged-in user (once; key `cockpit-demo` from Secret platform/cockpit-demo-s3: read on
+#     iceberg-warehouse, read/write on demo-files). It goes through Cockpit's own connect
+#     form, which tests the connection before saving it. The snippet contains that key.
 #
 # The URLs are read from the current cluster (kubectl context), because the node IP
 # and several NodePorts (Trino, Superset, Airflow, NiFi, HDFS) change with every deploy.
@@ -27,6 +29,11 @@ nodeport() { # <namespace> <service>
   kubectl -n "$1" get svc "$2" -o jsonpath='{.spec.ports[0].nodePort}'
 }
 
+# S3 key for the storage browser (platform/manifests/garagefs-init/configure-cockpit-storage.yaml)
+s3_key=$(kubectl -n platform get secret cockpit-demo-s3 -o jsonpath='{.data.accessKeyId}' 2>/dev/null | base64 -d || true)
+s3_secret=$(kubectl -n platform get secret cockpit-demo-s3 -o jsonpath='{.data.secretAccessKey}' 2>/dev/null | base64 -d || true)
+[ -n "$s3_key" ] || echo "No Secret platform/cockpit-demo-s3: the snippet adds no storage connection" >&2
+
 # productId | name | url | pinned (shown in the sidebar)
 bookmarks=$(cat <<EOF
 trino|Trino|https://${node_ip}:$(nodeport platform trino-coordinator)/ui/|true
@@ -47,9 +54,41 @@ custom|Demo landing page|http://${node_ip}:$(nodeport deployment demo-landing)|f
 EOF
 )
 
-BOOKMARKS="$bookmarks" python3 - <<'PY'
+BOOKMARKS="$bookmarks" S3_KEY="$s3_key" S3_SECRET="$s3_secret" python3 - <<'PY'
 import json, os, uuid
 from datetime import datetime, timezone
+
+
+def devalue(value):
+    """devalue.stringify for JSON-like data: the format of sveltekit-superforms' __superform_json."""
+    out, seen = [], {}
+
+    def flat(v):
+        key = (type(v).__name__, json.dumps(v, sort_keys=True))
+        if key in seen:
+            return seen[key]
+        i = len(out)
+        seen[key] = i
+        out.append(None)
+        if isinstance(v, dict):
+            out[i] = {k: flat(x) for k, x in v.items()}
+        elif isinstance(v, list):
+            out[i] = [flat(x) for x in v]
+        else:
+            out[i] = v
+        return i
+
+    flat(value)
+    return json.dumps(out, separators=(",", ":"))
+
+
+GARAGE_HOST, GARAGE_PORT = "garage.shared.svc.cluster.local", 3900
+connection = None
+if os.environ.get("S3_KEY"):
+    # Fields of Cockpit's storage connect form (StorageConnectionSchema); no tls = plain HTTP
+    connection = devalue({"type": "s3", "host": GARAGE_HOST, "port": GARAGE_PORT, "accessStyle": "Path",
+                          "region": {"name": "garage"},
+                          "credentials": {"accessKey": os.environ["S3_KEY"], "secretKey": os.environ["S3_SECRET"]}})
 
 now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 items = []
@@ -89,7 +128,7 @@ tabs = [
     },
 ]
 
-print(f"""(() => {{
+print(f"""(async () => {{
   // Dashboard bookmarks.
   const KEY = 'dashboard_bookmarks';
   const demo = {json.dumps(items, indent=2)};
@@ -113,7 +152,28 @@ print(f"""(() => {{
   const allTabs = [...demoTabs.map(({{ sql, ...meta }}) => meta), ...others];
   localStorage.setItem(INDEX, JSON.stringify({{ tabs: allTabs, activeTabId: demoTabs[0].id }}));
 
-  console.log(`Stored ${{demo.length}} bookmarks and ${{demoTabs.length}} editor tabs (kept ${{kept.length}} bookmarks, ${{others.length}} tabs), reloading ...`);
+  console.log(`Stored ${{demo.length}} bookmarks and ${{demoTabs.length}} editor tabs (kept ${{kept.length}} bookmarks, ${{others.length}} tabs)`);
+
+  // S3 connection to Garage for the storage browser, once per user (saved server-side).
+  const connection = {json.dumps(connection)};
+  if (connection) {{
+    try {{
+      const saved = await fetch('/api/storage/connections').then((r) => (r.ok ? r.json() : []));
+      if (saved.some((c) => c.endpoint === '{GARAGE_HOST}:{GARAGE_PORT}')) {{
+        console.log('Garage S3 connection already saved');
+      }} else {{
+        const body = new FormData();
+        body.append('__superform_json', connection);
+        const result = await fetch('/storage?/connect', {{ method: 'POST', body, headers: {{ 'x-sveltekit-action': 'true' }} }})
+          .then((r) => r.json());
+        console.log(result.type === 'redirect' ? 'Added the Garage S3 connection (storage browser)'
+                                               : 'Garage S3 connection failed: ' + JSON.stringify(result).slice(0, 400));
+      }}
+    }} catch (e) {{
+      console.warn('Garage S3 connection not added:', e);
+    }}
+  }}
+  console.log('Reloading ...');
   location.reload();
 }})();""")
 PY
