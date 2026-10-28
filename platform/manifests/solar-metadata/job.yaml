@@ -37,7 +37,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-metadata-v1
+  name: configure-solar-metadata-v2
   namespace: platform
 spec:
   backoffLimit: 10

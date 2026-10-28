@@ -6,6 +6,8 @@
    Trino tables (service `trino`) to Superset datasets and dashboards.
 3. One run of the existing Trino metadata ingestion, so new solar tables appear right away
    (it also runs every 6 hours on its own).
+4. OpenLineage settings: process COMPLETE events (the stored eventTypeFilter was an empty list,
+   which drops every event) and don't auto-create tables for datasets that can't be resolved.
 
 Authenticates like configure-openmetadata (platform/manifests/openmetadata-init/): a Keycloak
 password grant for demo-admin through the `openmetadata` client.
@@ -120,6 +122,14 @@ def ensure_superset(token):
     return pipeline
 
 
+def ensure_openlineage_settings(token):
+    om("PUT", "/system/settings", token=token, body={
+        "config_type": "openLineageSettings",
+        "config_value": {"enabled": True, "autoCreateEntities": False, "eventTypeFilter": ["COMPLETE"],
+                         "defaultPipelineService": "openlineage"}})
+    print("OpenLineage settings: COMPLETE events, no auto-created tables")
+
+
 def trigger(token, pipeline_fqn):
     pipeline = om("GET", f"/services/ingestionPipelines/name/{pipeline_fqn}", token=token)
     result = om("POST", f"/services/ingestionPipelines/trigger/{pipeline['id']}", token=token)
@@ -128,6 +138,7 @@ def trigger(token, pipeline_fqn):
 
 def main():
     token = login()
+    ensure_openlineage_settings(token)
     store_secret(ensure_lineage_bot(token))
     # Tables first, so the Superset lineage finds them.
     trigger(token, "trino.trino_metadata_ingestion")
