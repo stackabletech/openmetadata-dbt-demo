@@ -17,12 +17,13 @@ spec:
       releaseName: garage
       valuesObject:
         # Data volumes: the chart default (100Mi, 1Gi on Azure disks) filled up with the solar
-        # lakehouse and Spark event logs, and Garage lost blocks. Volume claim templates are
-        # immutable: on an existing cluster, expand the PVCs and recreate the StatefulSet with
-        # --cascade=orphan.
+        # lakehouse and Spark event logs, and Garage lost blocks. 50Gi: all of Schleswig-Holstein
+        # (~2,700 records/s) needs ~47 GB at steady state (silver 7 days, bronze 2 days), twice
+        # with replicationFactor 2. Volume claim templates are immutable: on an existing cluster,
+        # expand the PVCs and recreate the StatefulSet with --cascade=orphan.
         persistence:
           data:
-            size: 10Gi
+            size: 50Gi
         garage:
           replicationFactor: 2
           rpcSecret: "5799da09045e5b2ad62bdd658aac3f4c1311bd2c92af32a4e8825ec810920063"
