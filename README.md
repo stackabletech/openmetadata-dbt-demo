@@ -171,11 +171,17 @@ The Airflow DAG (`tpch_dbt_dag`) orchestrated by Cosmos runs daily:
 
 Since ArgoCD manages the cluster, all changes should be committed to Git:
 
-1. Push changes to the in-cluster Forgejo repository (automatically mirrored from GitHub)
+1. Push changes to the in-cluster Forgejo repository (cloned once from GitHub at bootstrap, not mirrored: later GitHub commits don't reach the cluster on their own)
 2. ArgoCD detects changes and syncs
 3. Manual `kubectl apply` commands are reverted by ArgoCD's self-heal
 
 To add a new component, see the patterns documented in [CLAUDE.md](CLAUDE.md).
+
+### Solar ingestion demo
+
+Synthetic PV telemetry through NiFi, Kafka and a Spark-built Iceberg lakehouse (bronze, silver,
+gold) into Superset dashboards, with lineage in OpenMetadata and a Spark History Server. See
+[docs/solar-ingestion.md](docs/solar-ingestion.md).
 
 ### Portability
 
