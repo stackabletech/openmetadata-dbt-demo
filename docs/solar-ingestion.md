@@ -84,12 +84,13 @@ must be kept in line with the Spark scripts: the jobs don't report lineage thems
 
 ## Access
 
-Superset connects to Trino as the service user `superset` and impersonates the logged-in user,
-so the Trino OPA policies (`rego-trino-policies.yaml`) apply per user: `solar_silver` and
-`solar_gold` are readable by everyone, `solar_bronze` only by admins. Keycloak users with the
-`viewer` role get the Superset role `Solar Viewer` (access to the database connection) in
-addition to Gamma. The setup Job queries as the local Superset `admin`, which maps to Trino
-`admin`.
+Superset is served over HTTPS (certificate of the secret-operator SecretClass `tls`, set up in
+`superset.yaml` through gunicorn; browsers warn about the demo CA). It connects to Trino as the
+service user `superset` and impersonates the logged-in user, so the Trino OPA policies
+(`rego-trino-policies.yaml`) apply per user: `solar_silver` and `solar_gold` are readable by
+everyone, `solar_bronze` only by admins. Keycloak users with the `viewer` role get the Superset
+role `Solar Viewer` (access to the database connection) in addition to Gamma. The setup Job
+queries as the local Superset `admin`, which maps to Trino `admin`.
 
 ## Known limitations
 

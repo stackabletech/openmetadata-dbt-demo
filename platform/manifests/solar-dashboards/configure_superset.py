@@ -5,18 +5,22 @@ solar_silver, the charts and four dashboards, and the role that lets viewers ope
 updated in place, so edits made here win over edits made in the UI.
 
 Runs as a Job (solar-dashboards Application); for development it also runs locally against a
-port-forward: SUPERSET_URL=http://127.0.0.1:18088 python configure_superset.py
+port-forward: SUPERSET_URL=https://127.0.0.1:18088 SUPERSET_CA= python configure_superset.py
+(an empty SUPERSET_CA skips certificate checks: the certificate doesn't cover 127.0.0.1).
 """
 
 import http.cookiejar
 import json
 import os
+import ssl
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
-SUPERSET = os.environ.get("SUPERSET_URL", "http://simple-superset-node.platform.svc.cluster.local:8088")
+SUPERSET = os.environ.get("SUPERSET_URL", "https://simple-superset-node.platform.svc.cluster.local:8088")
+# CA of the secret-operator SecretClass `tls`, which signs Superset's certificate
+SUPERSET_CA = os.environ.get("SUPERSET_CA", "/stackable/tls/ca.crt")
 DATABASE = "Trino data2day"
 # Superset connects as the Trino service user `superset` and impersonates the logged-in user
 # (impersonate_user), so the Trino OPA policies decide per user what a chart may read.
@@ -41,7 +45,9 @@ OpenStreetMap contributors.
 # --- Superset REST client ----------------------------------------------------------------
 
 _jar = http.cookiejar.CookieJar()
-_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_jar))
+_tls = ssl.create_default_context(cafile=SUPERSET_CA) if SUPERSET_CA else ssl._create_unverified_context()
+_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_jar),
+                                      urllib.request.HTTPSHandler(context=_tls))
 _auth = {}
 
 

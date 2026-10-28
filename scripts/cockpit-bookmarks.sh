@@ -30,7 +30,7 @@ nodeport() { # <namespace> <service>
 # productId | name | url | pinned (shown in the sidebar)
 bookmarks=$(cat <<EOF
 trino|Trino|https://${node_ip}:$(nodeport platform trino-coordinator)/ui/|true
-superset|Superset|http://${node_ip}:$(nodeport platform simple-superset-node)|true
+superset|Superset|https://${node_ip}:$(nodeport platform simple-superset-node)|true
 airflow|Airflow|http://${node_ip}:$(nodeport platform airflow-webserver)|true
 custom|OpenMetadata|http://${node_ip}:$(nodeport platform openmetadata-nodeport)|true
 custom|Grafana|http://${node_ip}:$(nodeport platform prometheus-grafana)|true

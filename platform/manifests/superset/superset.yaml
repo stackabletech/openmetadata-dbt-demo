@@ -30,6 +30,13 @@ spec:
           min: 100m
         memory:
           limit: 1Gi
+    # HTTPS: the operator has no TLS setting for Superset, so gunicorn (started by the operator)
+    # gets a certificate of the secret-operator SecretClass `tls` through GUNICORN_CMD_ARGS. The
+    # certificate covers the Service name and the node address of the listener; browsers warn
+    # about the demo CA like for Trino and NiFi. Certificates live 15 days at most, the
+    # secret-operator restarts the pod before that.
+    envOverrides:
+      GUNICORN_CMD_ARGS: --certfile=/stackable/tls/tls.crt --keyfile=/stackable/tls/tls.key
     roleGroups:
       default:
         config:
@@ -47,6 +54,19 @@ spec:
     podOverrides:
       spec:
         containers:
+          - name: superset
+            volumeMounts:
+              - name: tls
+                mountPath: /stackable/tls
+            startupProbe:
+              httpGet:
+                scheme: HTTPS
+            readinessProbe:
+              httpGet:
+                scheme: HTTPS
+            livenessProbe:
+              httpGet:
+                scheme: HTTPS
           - name: vector
             resources:
               requests:
@@ -56,3 +76,19 @@ spec:
             resources:
               requests:
                 cpu: 10m
+        volumes:
+          - name: tls
+            ephemeral:
+              volumeClaimTemplate:
+                metadata:
+                  annotations:
+                    secrets.stackable.tech/class: tls
+                    secrets.stackable.tech/format: tls-pem
+                    secrets.stackable.tech/scope: service=simple-superset-node,listener-volume=listener
+                spec:
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: "1"
+                  storageClassName: secrets.stackable.tech
+                  volumeMode: Filesystem

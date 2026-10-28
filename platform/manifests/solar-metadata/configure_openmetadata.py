@@ -31,7 +31,7 @@ import urllib.request
 OM = "http://openmetadata.platform.svc.cluster.local:8585/api/v1"
 KEYCLOAK_TOKEN_URL = ("http://keycloak-service.platform.svc.cluster.local:8080"
                       "/realms/stackable-demo/protocol/openid-connect/token")
-SUPERSET_URL = "http://simple-superset-node.platform.svc.cluster.local:8088"
+SUPERSET_URL = "https://simple-superset-node.platform.svc.cluster.local:8088"
 K8S_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
 TOPICS = ["solar-inverter", "solar-weather", "solar-clouds", "solar-sites", "solar-weather_stations"]
 NIFI_PIPELINE = "solar-ingest"
@@ -136,7 +136,9 @@ def ensure_superset(token):
         "description": "Apache Superset of the demo",
         "connection": {"config": {"type": "Superset", "hostPort": SUPERSET_URL, "connection": {
             "provider": "db", "username": os.environ["SUPERSET_USER"],
-            "password": os.environ["SUPERSET_PASSWORD"]}}}})
+            "password": os.environ["SUPERSET_PASSWORD"],
+            # The ingestion pods don't have the secret-operator CA; in-cluster traffic only.
+            "verifySSL": "ignore"}}}})
     pipeline = om("PUT", "/services/ingestionPipelines", token=token, body={
         "name": "superset_metadata_ingestion", "pipelineType": "metadata",
         "service": {"id": svc["id"], "type": "dashboardService"},

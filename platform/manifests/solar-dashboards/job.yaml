@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-dashboards-v2
+  name: configure-solar-dashboards-v3
   namespace: platform
 spec:
   backoffLimit: 10
@@ -26,6 +26,8 @@ spec:
           volumeMounts:
             - name: script
               mountPath: /scripts
+            - name: tls
+              mountPath: /stackable/tls
           resources:
             requests:
               cpu: 50m
@@ -36,3 +38,19 @@ spec:
         - name: script
           configMap:
             name: configure-solar-dashboards-script
+        # Only for ca.crt, to check Superset's certificate
+        - name: tls
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/format: tls-pem
+                  secrets.stackable.tech/scope: pod
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem
