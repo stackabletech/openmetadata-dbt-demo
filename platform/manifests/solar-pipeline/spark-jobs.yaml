@@ -564,7 +564,9 @@ data:
         if not old:
             return
         for t in old:
-            spark.sql(f"DROP TABLE {GOLD}.{t} PURGE")
+            # No PURGE: Spark would then delete every file the table ever referenced and fails on
+            # the metadata files maintenance already removed. Lakekeeper cleans up dropped tables.
+            spark.sql(f"DROP TABLE {GOLD}.{t}")
         spark.sql(f"DELETE FROM {GOLD}.processing_state")
         logger.info(f"Dropped {', '.join(old)} (no kreis_ags); rebuilding gold from silver")
 
