@@ -36,29 +36,62 @@ data:
     OPENMETADATA = "http://openmetadata.platform.svc.cluster.local:8585"
 
 
-    def openlineage(builder):
-        """Send OpenLineage events to OpenMetadata, which turns them into table-level lineage
-        (Kafka topics are not mapped). Set here and not in the SparkApplicationTemplate because
-        the bot token comes from a Secret: in PySpark cluster mode the SparkContext is only
-        created by getOrCreate(), so these settings still reach the listener."""
+    def report_lineage(job, edges):
+        """Record table-level lineage in OpenMetadata: edges = {output: [inputs]}.
+
+        Names are schema.table (data2day catalog, OpenMetadata service `trino`) or topic:<name>
+        (messaging service `kafka`). Each edge references the pipeline solar-spark.<job>, which
+        the solar-metadata Job creates. Uses the lineage API with the solar-lineage-bot token;
+        idempotent, and never fails the job.
+
+        Not the OpenLineage Spark listener: it names Iceberg tables by storage location, which
+        Lakekeeper makes s3://iceberg-warehouse/data2day/<uuid>/<uuid>, and OpenMetadata 1.12.1
+        could not map even schema.table names from OpenLineage events to the trino tables.
+        """
         token = os.environ.get("OPENLINEAGE_API_KEY")
         if not token:
-            return builder
-        return (builder
-                .config("spark.extraListeners", "io.openlineage.spark.agent.OpenLineageSparkListener")
-                .config("spark.openlineage.namespace", "solar-demo")
-                .config("spark.openlineage.transport.type", "http")
-                .config("spark.openlineage.transport.url", OPENMETADATA)
-                .config("spark.openlineage.transport.endpoint", "/api/v1/openlineage/lineage")
-                .config("spark.openlineage.transport.auth.type", "api_key")
-                .config("spark.openlineage.transport.auth.apiKey", token))
+            return
+        import json, urllib.parse, urllib.request
+
+        def call(method, path, body=None):
+            req = urllib.request.Request(f"{OPENMETADATA}/api/v1{path}", method=method,
+                                         data=json.dumps(body).encode() if body is not None else None,
+                                         headers={"Content-Type": "application/json",
+                                                  "Authorization": f"Bearer {token}"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                text = r.read().decode()
+                return json.loads(text) if text else {}
+
+        def ref(name):
+            if name.startswith("topic:"):
+                kind, fqn = "topic", "kafka." + name[len("topic:"):]
+            else:
+                kind, fqn = "table", "trino.data2day." + name
+            path = "/topics/name/" if kind == "topic" else "/tables/name/"
+            return {"id": call("GET", path + urllib.parse.quote(fqn, safe=""))["id"], "type": kind}
+
+        try:
+            pipeline = {"id": call("GET", f"/pipelines/name/solar-spark.{job}")["id"], "type": "pipeline"}
+        except Exception:
+            pipeline = None
+        for output, inputs in edges.items():
+            for source in inputs:
+                try:
+                    details = {"source": "SparkLineage", "description": f"Spark job {job}"}
+                    if pipeline:
+                        details["pipeline"] = pipeline
+                    call("PUT", "/lineage", {"edge": {"fromEntity": ref(source), "toEntity": ref(output),
+                                                      "lineageDetails": details}})
+                except Exception as e:
+                    print(f"lineage {source} -> {output} not recorded: {e}")
+        print(f"lineage recorded for {job}: {sum(len(i) for i in edges.values())} edges")
 
 
     def session(app_name):
-        """SparkSession with the data2day catalog configured like Trino's, plus OpenLineage."""
+        """SparkSession with the data2day catalog configured like Trino's."""
         c = f"spark.sql.catalog.{CATALOG}"
         spark = (
-            openlineage(SparkSession.builder.appName(app_name))
+            SparkSession.builder.appName(app_name)
             .config(c, "org.apache.iceberg.spark.SparkCatalog")
             .config(f"{c}.type", "rest")
             .config(f"{c}.uri", "http://lakekeeper:8181/catalog")
@@ -135,7 +168,7 @@ data:
     from pyspark.sql.functions import col, current_timestamp, from_json, row_number, to_date, to_timestamp
     from pyspark.sql.types import BooleanType, DoubleType, StringType, StructField, StructType
 
-    from solar_common import CATALOG, SITES_ATTRIBUTION, kafka_options, log, run, session
+    from solar_common import CATALOG, SITES_ATTRIBUTION, kafka_options, log, report_lineage, run, session
 
     SCHEMA = f"{CATALOG}.solar_silver"
 
@@ -190,6 +223,8 @@ data:
         replace(spark, stations, "dim_weather_station",
                 "Solar demo: simulated weather stations, one per ~28 x 26 km grid cell (latest record per "
                 "station_id from Kafka topic solar-weather_stations). Synthetic data.")
+        report_lineage("solar_dims", {"solar_silver.dim_site": ["topic:solar-sites"],
+                                      "solar_silver.dim_weather_station": ["topic:solar-weather_stations"]})
 
 
     if __name__ == "__main__":
@@ -217,7 +252,7 @@ data:
     from pyspark.sql import functions as F
     from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType
 
-    from solar_common import CATALOG, log, run, session
+    from solar_common import CATALOG, log, report_lineage, run, session
 
     BRONZE = f"{CATALOG}.solar_bronze"
     SILVER = f"{CATALOG}.solar_silver"
@@ -456,6 +491,14 @@ data:
             advance(spark, stream, batch)
             logger.info(f"{stream}: processed {count} bronze rows")
             batch.unpersist()
+        report_lineage("solar_silver", {
+            "solar_silver.weather_readings": ["solar_bronze.weather_raw", "solar_silver.dim_weather_station"],
+            "solar_silver.inverter_readings": ["solar_bronze.inverter_raw", "solar_silver.dim_site",
+                                               "solar_silver.weather_readings"],
+            "solar_silver.cloud_polygons": ["solar_bronze.clouds_raw"],
+            "solar_silver.quarantine": ["solar_bronze.weather_raw", "solar_bronze.inverter_raw",
+                                        "solar_bronze.clouds_raw"],
+        })
 
 
     if __name__ == "__main__":
@@ -478,7 +521,7 @@ data:
 
     from pyspark.sql import functions as F
 
-    from solar_common import CATALOG, log, run, session
+    from solar_common import CATALOG, log, report_lineage, run, session
 
     SILVER = f"{CATALOG}.solar_silver"
     GOLD = f"{CATALOG}.solar_gold"
@@ -686,6 +729,16 @@ data:
         spark.createDataFrame([("silver_processed_at", seen_until)], "name string, value timestamp") \
             .writeTo(f"{GOLD}.processing_state").overwrite(F.lit(True))
         logger.info(f"Gold updated from slot {start}, fleet_15min complete until {until}")
+        report_lineage("solar_gold", {
+            "solar_gold.site_15min": ["solar_silver.inverter_readings"],
+            "solar_gold.fleet_15min": ["solar_gold.site_15min"],
+            "solar_gold.site_daily": ["solar_gold.site_15min"],
+            "solar_gold.region_daily": ["solar_gold.site_daily"],
+            "solar_gold.fault_events": ["solar_gold.site_15min"],
+            "solar_gold.dq_daily": ["solar_silver.quarantine"],
+            "solar_gold.cloud_cover": ["solar_silver.cloud_polygons"],
+            "solar_gold.watermark": ["solar_silver.inverter_readings"],
+        })
 
 
     if __name__ == "__main__":
@@ -710,7 +763,7 @@ data:
 
     from pyspark.sql.functions import col, current_timestamp
 
-    from solar_common import CATALOG, KAFKA_TLS, run, session
+    from solar_common import CATALOG, KAFKA_TLS, report_lineage, run, session
 
     SCHEMA = f"{CATALOG}.solar_bronze"
     STREAMS = ["inverter", "weather", "clouds"]
@@ -758,6 +811,7 @@ data:
                 .queryName(f"bronze-{stream}")
                 .toTable(f"{SCHEMA}.{stream}_raw")
             )
+        report_lineage("solar_bronze", {f"solar_bronze.{st}_raw": [f"topic:solar-{st}"] for st in STREAMS})
         spark.streams.awaitAnyTermination()
 
 

@@ -8,6 +8,9 @@
    (it also runs every 6 hours on its own).
 4. OpenLineage settings: process COMPLETE events (the stored eventTypeFilter was an empty list,
    which drops every event) and don't auto-create tables for datasets that can't be resolved.
+5. Pipeline service solar-spark with one pipeline per Spark job and messaging service kafka with
+   the solar topics. The jobs record their lineage against these (solar_common.report_lineage):
+   Kafka topics -> bronze -> silver -> gold, and the Superset pipeline adds gold -> dashboards.
 
 Authenticates like configure-openmetadata (platform/manifests/openmetadata-init/): a Keycloak
 password grant for demo-admin through the `openmetadata` client.
@@ -130,6 +133,39 @@ def ensure_openlineage_settings(token):
     print("OpenLineage settings: COMPLETE events, no auto-created tables")
 
 
+SPARK_JOBS = {
+    "solar_bronze": "Spark Structured Streaming: Kafka topics -> solar_bronze.*_raw (Iceberg), "
+                    "kept running by the Airflow DAG solar_bronze_watchdog.",
+    "solar_dims": "Spark batch, Airflow DAG solar_dims (hourly): master data topics -> "
+                  "solar_silver.dim_site / dim_weather_station.",
+    "solar_silver": "Spark batch, Airflow DAG solar_silver (every 10 min): bronze -> silver with checks, "
+                    "quarantine, deduplication, interval energy and performance ratio.",
+    "solar_gold": "Spark batch, after solar_silver: silver -> gold aggregates (15-minute, daily, regions, "
+                  "fault events, data quality).",
+}
+TOPICS = ["solar-inverter", "solar-weather", "solar-clouds", "solar-sites", "solar-weather_stations"]
+
+
+def ensure_lineage_entities(token):
+    history = f"http://{os.environ['NODE_IP']}:30188/" if os.environ.get("NODE_IP") else None
+    om("PUT", "/services/pipelineServices", token=token, body={
+        "name": "solar-spark", "serviceType": "Spark", "connection": {"config": {"type": "Spark"}},
+        "description": "Spark jobs of the solar demo (SparkApplications started by Airflow)."})
+    for name, description in SPARK_JOBS.items():
+        body = {"name": name, "service": "solar-spark", "description": description}
+        if history:
+            body["sourceUrl"] = history
+        om("PUT", "/pipelines", token=token, body=body)
+    om("PUT", "/services/messagingServices", token=token, body={
+        "name": "kafka", "serviceType": "Kafka",
+        "description": "Apache Kafka of the demo (solar topics; fed by the NiFi flow solar ingest).",
+        "connection": {"config": {"type": "Kafka", "bootstrapServers": os.environ.get(
+            "KAFKA", "kafka-broker-default-bootstrap.platform.svc.cluster.local:9093")}}})
+    for topic in TOPICS:
+        om("PUT", "/topics", token=token, body={"name": topic, "service": "kafka", "partitions": 1})
+    print(f"Pipeline service solar-spark ({len(SPARK_JOBS)} pipelines), messaging service kafka ({len(TOPICS)} topics)")
+
+
 def trigger(token, pipeline_fqn):
     pipeline = om("GET", f"/services/ingestionPipelines/name/{pipeline_fqn}", token=token)
     result = om("POST", f"/services/ingestionPipelines/trigger/{pipeline['id']}", token=token)
@@ -140,6 +176,7 @@ def main():
     token = login()
     ensure_openlineage_settings(token)
     store_secret(ensure_lineage_bot(token))
+    ensure_lineage_entities(token)
     # Tables first, so the Superset lineage finds them.
     trigger(token, "trino.trino_metadata_ingestion")
     superset = ensure_superset(token)

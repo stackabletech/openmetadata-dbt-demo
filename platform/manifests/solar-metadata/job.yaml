@@ -37,7 +37,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-metadata-v2
+  name: configure-solar-metadata-v3
   namespace: platform
 spec:
   backoffLimit: 10
@@ -59,6 +59,12 @@ spec:
             - name: SUPERSET_PASSWORD
               valueFrom:
                 secretKeyRef: { name: simple-superset-credentials, key: adminUser.password }
+            - name: NODE_IP
+              valueFrom:
+                configMapKeyRef: { name: oidc-endpoints, key: node-ip }
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef: { name: kafka, key: KAFKA }
           volumeMounts:
             - name: script
               mountPath: /scripts
