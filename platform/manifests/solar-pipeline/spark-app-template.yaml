@@ -26,6 +26,12 @@ spec:
     # The operator's region for the event log bucket is ignored by Hadoop 3.4
     # (see platform/manifests/spark-history/spark-history.yaml).
     spark.hadoop.fs.s3a.bucket.spark-logs.endpoint.region: garage
+    # Event logs: the bronze streaming job runs for days, and its single event log filled the
+    # small Garage volumes once. Rolling files let the History Server compact and drop old parts
+    # (spark.history.fs.* in spark-history.yaml).
+    spark.eventLog.rolling.enabled: "true"
+    spark.eventLog.rolling.maxFileSize: 32m
+    spark.eventLog.compress: "true"
     # MERGE INTO in the gold job; a static setting, so it must be set at submit time.
     spark.sql.extensions: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
   deps:

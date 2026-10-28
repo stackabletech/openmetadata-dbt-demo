@@ -123,7 +123,11 @@ def create_spark_app(api, script):
 
 
 def run_spark_job(script):
-    """Run a batch job to completion; delete it after success, keep it after failure."""
+    """Run a batch job to completion; delete it after success or timeout, keep it after failure.
+
+    A job still running at the timeout is deleted: otherwise the next run starts a second
+    driver on the same tables (it happened while Garage was full and writes hung).
+    """
     api = spark_api()
     name = create_spark_app(api, script)
     deadline = datetime.now() + TIMEOUT
@@ -141,7 +145,9 @@ def run_spark_job(script):
             raise RuntimeError(f"SparkApplication {name} failed; driver log in OpenSearch "
                                f"(logs-*, cluster: {name}), kept for inspection")
         time.sleep(15)
-    raise TimeoutError(f"SparkApplication {name} not finished after {TIMEOUT}")
+    api.delete_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL, name)
+    raise TimeoutError(f"SparkApplication {name} not finished after {TIMEOUT}; deleted it, "
+                       f"driver log in OpenSearch (logs-*, cluster: {name})")
 
 
 def ensure_bronze():
@@ -235,3 +241,16 @@ with DAG(
 ) as dag:
     # The streaming job writes bronze, not this task: no asset events every 5 minutes.
     PythonOperator(task_id="ensure_bronze", python_callable=ensure_bronze, **lineage(BRONZE, emit=False))
+
+
+with DAG(
+    dag_id="solar_maintenance",
+    description="Solar demo: retention, snapshot expiry and orphan file removal for all solar tables",
+    start_date=datetime(2026, 10, 27),
+    schedule="30 * * * *",
+    catchup=False,
+    max_active_runs=1,
+    is_paused_upon_creation=False,
+    tags=["solar"],
+) as dag:
+    PythonOperator(task_id="maintenance", python_callable=run_spark_job, op_kwargs={"script": "maintenance"})

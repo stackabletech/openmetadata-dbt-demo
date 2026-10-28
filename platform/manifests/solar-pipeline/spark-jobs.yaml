@@ -7,6 +7,7 @@
 #              data2day.solar_silver.dim_site / dim_weather_station
 #   silver.py: bronze -> silver (checks, quarantine, dedup, energy, performance ratio)
 #   gold.py:   silver -> gold (site/fleet 15-min, daily, regions, fault events, data quality)
+#   maintenance.py: retention, snapshot expiry and orphan file removal for all solar tables
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -669,6 +670,68 @@ data:
 
     if __name__ == "__main__":
         run("solar_gold", main)
+
+  maintenance.py: |
+    """Housekeeping for the solar tables (hourly): keeps the lakehouse within the small Garage volumes.
+
+    Once filled up by 1-minute bronze commits that nobody cleaned up, Garage lost blocks of
+    committed files. Per table in solar_bronze, solar_silver and solar_gold:
+      - old metadata files are deleted on commit (keep the last 20),
+      - retention: bronze 2 days (Kafka holds less, silver has everything), silver readings
+        7 days; gold, the dimensions and the state tables are kept,
+      - snapshots older than an hour expire (the last 10 are kept),
+      - files no snapshot references and older than a day are removed (failed writes).
+    Retention deletes whole day partitions, so they only touch metadata.
+    """
+
+    import sys
+    from datetime import datetime, timedelta, timezone
+
+    sys.path.insert(0, "/stackable/spark/jobs")
+
+    from solar_common import CATALOG, log, run, session
+
+    # table -> (timestamp column partitioned by day, days to keep)
+    RETENTION = {
+        "solar_bronze.inverter_raw": ("kafka_timestamp", 2),
+        "solar_bronze.weather_raw": ("kafka_timestamp", 2),
+        "solar_bronze.clouds_raw": ("kafka_timestamp", 2),
+        "solar_silver.inverter_readings": ("ts", 7),
+        "solar_silver.weather_readings": ("ts", 7),
+        "solar_silver.cloud_polygons": ("ts", 7),
+        "solar_silver.quarantine": ("quarantined_at", 7),
+    }
+
+
+    def main():
+        spark = session("solar-maintenance")
+        logger = log(spark, "solar_maintenance")
+        now = datetime.now(timezone.utc)
+        snapshots_before = (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        orphans_before = (now - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+        tables = [f"{schema}.{row.tableName}"
+                  for schema in ("solar_bronze", "solar_silver", "solar_gold")
+                  for row in spark.sql(f"SHOW TABLES IN {CATALOG}.{schema}").collect()]
+        for table in tables:
+            name = f"{CATALOG}.{table}"
+            spark.sql(f"""ALTER TABLE {name} SET TBLPROPERTIES (
+                'write.metadata.delete-after-commit.enabled' = 'true',
+                'write.metadata.previous-versions-max' = '20')""")
+            if table in RETENTION:
+                column, days = RETENTION[table]
+                cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+                spark.sql(f"DELETE FROM {name} WHERE {column} < TIMESTAMP '{cutoff} 00:00:00'")
+            expired = spark.sql(f"""CALL {CATALOG}.system.expire_snapshots(
+                table => '{table}', older_than => TIMESTAMP '{snapshots_before}', retain_last => 10)""").first()
+            orphans = spark.sql(f"""CALL {CATALOG}.system.remove_orphan_files(
+                table => '{table}', older_than => TIMESTAMP '{orphans_before}',
+                equal_schemes => map('s3a', 's3'))""").count()
+            logger.info(f"{table}: expired {expired.deleted_data_files_count} data and "
+                        f"{expired.deleted_manifest_files_count} manifest files, removed {orphans} orphan files")
+
+
+    if __name__ == "__main__":
+        run("solar_maintenance", main)
 
   bronze.py: |
     """Bronze: Kafka -> Iceberg, continuously (Spark Structured Streaming).

@@ -56,6 +56,12 @@ spec:
     # The operator writes the S3Connection region as fs.s3a.bucket.<b>.region, which Hadoop 3.4
     # ignores (it reads endpoint.region); without it Garage rejects requests signed for us-east-1.
     spark.hadoop.fs.s3a.bucket.spark-logs.endpoint.region: garage
+    # Keep the event log bucket small: delete logs older than two days, and compact the rolling
+    # logs of long-running applications (bronze streaming) to their last two files.
+    spark.history.fs.cleaner.enabled: "true"
+    spark.history.fs.cleaner.interval: 1h
+    spark.history.fs.cleaner.maxAge: 2d
+    spark.history.fs.eventLog.rolling.maxFilesToRetain: "2"
   logFileDirectory:
     s3:
       prefix: eventlogs/

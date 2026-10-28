@@ -22,7 +22,7 @@ solar-generator ──HTTP──> NiFi "solar ingest" ──> Kafka solar-* ─�
 |---|---|
 | `solar-generator` | Generator Deployment (one replica; image `oci.stackable.tech/sandbox/solar-generator`, site catalogue baked in), Service `nifi-listenhttp` (port 8090 on the NiFi pods) |
 | `solar-ingest` | Job that builds the NiFi process group `solar ingest` (ListenHTTP -> PublishKafka, one message per reading), Job that creates the Kafka topics with bounded retention |
-| `solar-pipeline` | `SparkApplicationTemplate solar-spark`, ConfigMap `solar-spark-jobs` (`bronze.py`, `dims.py`, `silver.py`, `gold.py`, `solar_common.py`), Role for Airflow to manage SparkApplications. The DAGs, with the lineage of each job, are in `dags/solar_pipeline.py` |
+| `solar-pipeline` | `SparkApplicationTemplate solar-spark`, ConfigMap `solar-spark-jobs` (`bronze.py`, `dims.py`, `silver.py`, `gold.py`, `maintenance.py`, `solar_common.py`), Role for Airflow to manage SparkApplications. The DAGs, with the lineage of each job, are in `dags/solar_pipeline.py` |
 | `spark-history` | Spark History Server behind an oauth2-proxy (Keycloak login), UI on NodePort 30188; event logs in Garage bucket `spark-logs` |
 | `solar-dashboards` | Job that creates the Superset database connection, datasets, charts and four dashboards (`configure_superset.py`) |
 | `solar-metadata` | Job that sets up OpenMetadata: messaging service `kafka`, pipeline service `nifi` (flow `solar-ingest` -> topics), pipeline service `airflow` (Airflow connector, solar DAGs and their lineage), dashboard service `superset` with lineage to the `trino` service |
@@ -47,11 +47,19 @@ All tables live in the `data2day` catalog (Iceberg via Lakekeeper, data in Garag
   `fault_events`, `dq_daily`, `cloud_cover`, `watermark`. Recomputes only the affected slots and
   days, one `MERGE` per table.
 
+- **Maintenance** (`maintenance.py`, DAG `solar_maintenance`, hourly): retention (bronze 2 days,
+  silver readings 7 days, gold kept), snapshot expiry, orphan file removal, and old metadata
+  files deleted on commit. Spark event logs roll; the History Server deletes logs older than
+  2 days.
+
 ## Operations
 
 - **Bronze** is started and restarted by the Airflow DAG `solar_bronze_watchdog` (every 5 min).
   To restart it, delete the running `solar-bronze-*` SparkApplication; the next one resumes from
   its checkpoints. Never run two at once (the watchdog makes sure of that).
+- **Storage:** Garage has 3 x 10 GiB data volumes (replication 2). `garage stats -a` in a
+  `garage-*` pod shows the free space. If it runs full, writes hang in S3 retries and Garage
+  can lose blocks of objects it has already acknowledged.
 - **Batch job failures:** a failed SparkApplication is kept; its driver log is in OpenSearch
   (`logs-*`, field `cluster` = application name), Python tracebacks included. Airflow task logs
   are in S3 (`s3://airflow-logs/`).
