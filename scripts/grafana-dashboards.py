@@ -5,6 +5,8 @@ Grafana dashboard sidecar). The YAML files are committed; run this after changin
   - grafana-dashboards-trino-queries.yaml  "Trino queries" (list) and "Trino query detail"
   - grafana-dashboards-nifi.yaml           "NiFi authorization" (panel shapes from the Airflow dashboard)
   - grafana-dashboards-overview.yaml       "Stackable Data Platform", the home dashboard
+  - grafana-dashboards-kafka.yaml          "Kafka topic" and "Kafka broker", plus the topic and broker
+                                           lists on the vendored "Kafka" dashboard
   - the common header (Stackable logo + navigation) on these and on the Airflow, OPA and logs
     dashboards, which are otherwise edited by hand
 
@@ -487,7 +489,451 @@ data:
     print("Headers, Stackable Data Platform overview")
 
 
+def kafka():
+    """Kafka: topic and broker lists on the "Kafka" dashboard (vendored, grafana-dashboards-stackable.yaml),
+    with drill-down to "Kafka topic" and "Kafka broker" (grafana-dashboards-kafka.yaml).
+
+    Only the brokers' and controllers' JMX metrics (Prometheus): Kafka has no per-consumer-group metrics
+    there, so consumer groups appear as cluster-wide counts. Series are reduced with max by (...) because a
+    restarted pod leaves its old series behind for a while.
+    """
+    PROM = {"type": "prometheus", "uid": "prometheus"}
+    S = 'namespace=~"$namespace",app_kubernetes_io_instance=~"$cluster"'
+    B = S + ',app_kubernetes_io_component="broker"'
+    T = B + ',topic="$topic"'
+    P = S + ',pod="$broker"'
+    POD_RE = 'namespace=~"$namespace",pod=~"${cluster}-(broker|controller)-.*"'
+    VARS = "var-namespace=${namespace}&var-cluster=${cluster}&${__url_time_range}"
+    TOPIC_URL = "/d/kafka-topic/kafka-topic?var-topic=${__data.fields.topic}&" + VARS
+    BROKER_URL = "/d/kafka-broker/kafka-broker?var-broker=${__data.fields.pod}&" + VARS
+    BROKER_STATE = [{"type": "value", "options": {
+        "0": {"text": "Not running", "color": "red", "index": 0}, "1": {"text": "Starting", "color": "orange", "index": 1},
+        "2": {"text": "Recovery", "color": "orange", "index": 2}, "3": {"text": "Running", "color": "green", "index": 3},
+        "6": {"text": "Pending shutdown", "color": "orange", "index": 4}, "7": {"text": "Shutting down", "color": "red", "index": 5},
+        "127": {"text": "Unknown", "color": "red", "index": 6}}}]
+    ZERO_GOOD = {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}
+
+    def target(ref, expr, legend=None, instant=False):
+        t = {"refId": ref, "datasource": PROM, "expr": expr, "range": not instant, "instant": instant}
+        if instant: t["format"] = "table"
+        if legend: t["legendFormat"] = legend
+        return t
+
+    def by(name, *props):
+        return {"matcher": {"id": "byName", "options": name}, "properties": list(props)}
+
+    def row(pid, title, y, collapsed=False):
+        return {"id": pid, "type": "row", "title": title, "collapsed": collapsed, "panels": [],
+                "gridPos": {"x": 0, "y": y, "w": 24, "h": 1}}
+
+    def stat(pid, title, desc, expr, grid, unit="short", color="blue", thresholds=None, mappings=None,
+             spark=False, text_mode="value", legend=None, decimals=None):
+        d = {"unit": unit, "color": {"mode": "thresholds" if thresholds else "fixed", "fixedColor": color},
+             "mappings": mappings or [], "noValue": "-"}
+        if thresholds: d["thresholds"] = thresholds
+        if decimals is not None: d["decimals"] = decimals
+        return {"id": pid, "type": "stat", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
+                "targets": [target("A", expr, legend)],
+                "fieldConfig": {"defaults": d, "overrides": []},
+                "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                            "colorMode": "background" if (thresholds or mappings) else "value",
+                            "graphMode": "area" if spark else "none", "textMode": text_mode,
+                            "justifyMode": "center", "wideLayout": True}}
+
+    def ts(pid, title, desc, targets, grid, unit="short", stack=False, negative=None, draw="line", fill=15, extra=None):
+        custom = {"drawStyle": draw, "lineWidth": 1 if draw == "line" else 0, "fillOpacity": fill,
+                  "gradientMode": "opacity", "showPoints": "never", "spanNulls": True,
+                  "stacking": {"mode": "normal" if stack else "none"}}
+        overrides = []
+        if negative:
+            overrides.append({"matcher": {"id": "byRegexp", "options": negative},
+                              "properties": [{"id": "custom.transform", "value": "negative-Y"}]})
+        p = {"id": pid, "type": "timeseries", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
+             "targets": targets, "fieldConfig": {"defaults": {"unit": unit, "custom": custom, "min": None if negative else 0},
+                                                 "overrides": overrides},
+             "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+                         "tooltip": {"mode": "multi", "sort": "desc"}}}
+        if extra: p["fieldConfig"]["defaults"].update(extra)
+        return p
+
+    def table(pid, title, desc, queries, columns, grid, link=None, overrides=(), sort=None):
+        """queries: [(refId, expr, column name)], merged on their common labels; columns: label renames,
+        in display order, before the value columns."""
+        names = dict(columns)
+        names.update({f"Value #{r}": n for r, _, n in queries})
+        order = [c for c, _ in columns] + [f"Value #{r}" for r, _, _ in queries]
+        p = {"id": pid, "type": "table", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
+             "targets": [target(r, e, instant=True) for r, e, _ in queries],
+             "transformations": [{"id": "merge", "options": {}},
+                                 {"id": "organize", "options": {
+                                     "excludeByName": {"Time": True},
+                                     "indexByName": {c: i for i, c in enumerate(order)},
+                                     "renameByName": names}}],
+             "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False},
+                                          "noValue": "-"},
+                             "overrides": list(overrides)},
+             "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False},
+                         "sortBy": [{"displayName": sort, "desc": True}] if sort else []}}
+        if link: p["fieldConfig"]["defaults"]["links"] = [{"title": link[0], "url": link[1]}]
+        return p
+
+    def gauge_cell(name, unit, color="blue"):
+        return by(name, {"id": "unit", "value": unit},
+                  {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "lcd", "valueDisplayMode": "text"}},
+                  {"id": "color", "value": {"mode": "continuous-BlYlRd" if color == "heat" else "fixed", "fixedColor": color}},
+                  {"id": "min", "value": 0})
+
+    def alarm_cell(name):
+        return by(name, {"id": "thresholds", "value": ZERO_GOOD}, {"id": "color", "value": {"mode": "thresholds"}},
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                  {"id": "custom.width", "value": 130})
+
+    def hidden(name):
+        return by(name, {"id": "custom.hidden", "value": True})
+
+    def per_partition(metric, sel, keys="topic, partition"):
+        return f"max by ({keys}) ({metric}{{{sel}}})"
+
+    # ------------------------------------------------------------------ "Kafka": topic and broker lists
+    SRC = M + "grafana-dashboards-stackable.yaml"
+    text = open(SRC).read()
+    start = text.index("  kafka.json: |\n")
+    end = text.index("\n  hdfs.json: |\n", start) + 1
+    k = json.loads(yaml.safe_load(text[start:end].replace("  kafka.json: |\n", "kafka.json: |\n", 1))["kafka.json"])
+    OWNED, OFFSET = 100, 18
+    vendored = [p for p in k["panels"] if p["id"] < OWNED]
+    if len(vendored) == len(k["panels"]):
+        for p in vendored: p["gridPos"]["y"] += OFFSET
+    TOPIC_SEL = B + ',topic!~"__.*"'
+    topics = table(101, "Topics",
+        "All topics with their partitions, retained messages (high minus low watermark), size, write and read rates "
+        "(read: bytes fetched by consumers, without replication) and under-replicated partitions. Click a topic for its details.",
+        [("A", f"count by (topic) ({per_partition('kafka_log_log_logendoffset', TOPIC_SEL)})", "Partitions"),
+         ("B", f"sum by (topic) ({per_partition('kafka_log_log_logendoffset', TOPIC_SEL)} - {per_partition('kafka_log_log_logstartoffset', TOPIC_SEL)})", "Retained messages"),
+         ("C", f"sum by (topic) ({per_partition('kafka_log_log_size', TOPIC_SEL)})", "Size"),
+         ("D", f"sum by (topic) (rate(kafka_server_brokertopicmetrics_messagesin_total{{{TOPIC_SEL}}}[5m]))", "Messages in"),
+         ("E", f"sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesin_total{{{TOPIC_SEL}}}[5m]))", "Written"),
+         ("F", f"sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesout_total{{{TOPIC_SEL}}}[5m]))", "Read by consumers"),
+         ("G", f"sum by (topic) ({per_partition('kafka_cluster_partition_underreplicated', TOPIC_SEL)})", "Under-replicated")],
+        [("topic", "Topic")], {"x": 0, "y": 1, "w": 24, "h": 9},
+        link=("Topic details: partitions, watermarks, consumers", TOPIC_URL), sort="Size",
+        overrides=[by("Topic", {"id": "custom.width", "value": 240}),
+                   by("Partitions", {"id": "custom.width", "value": 100}),
+                   by("Retained messages", {"id": "unit", "value": "short"}),
+                   gauge_cell("Size", "bytes", "purple"),
+                   gauge_cell("Messages in", "short", "green"),
+                   by("Messages in", {"id": "unit", "value": "suffix: msg/s"}),
+                   gauge_cell("Written", "Bps", "green"), gauge_cell("Read by consumers", "Bps", "blue"),
+                   alarm_cell("Under-replicated")])
+    brokers = table(102, "Brokers and controllers",
+        "Every Kafka process: brokers hold the partitions, the KRaft controllers the cluster metadata (one of them is the "
+        "leader). Click a row for its details: assigned partitions, requests, replication, resources.",
+        [("A", f"max by (pod, app_kubernetes_io_component) (up{{{S}}})", "Up"),
+         ("B", f"max by (pod, state) (kafka_server_raft_metrics_current_state{{{S}}}) == 1", "_raft"),
+         ("C", f"max by (pod) (kafka_server_kafkaserver_brokerstate{{{S}}})", "Broker state"),
+         ("D", f"max by (pod) (kafka_server_replicamanager_partitioncount{{{S}}})", "Partitions"),
+         ("E", f"max by (pod) (kafka_server_replicamanager_leadercount{{{S}}})", "Leaders"),
+         ("F", f"max by (pod) (kafka_server_replicamanager_underreplicatedpartitions{{{S}}})", "Under-replicated"),
+         ("G", f"sum by (pod) (rate(kafka_server_brokertopicmetrics_bytesin_total{{{S}}}[5m]))", "In"),
+         ("H", f"sum by (pod) (rate(kafka_server_brokertopicmetrics_bytesout_total{{{S}}}[5m]))", "Out"),
+         ("I", f"max by (pod) (kafka_server_kafkarequesthandlerpool_requesthandleravgidle_percent{{{S}}})", "Request handlers idle"),
+         ("J", f'sum by (pod) (rate(container_cpu_usage_seconds_total{{{POD_RE},container="kafka"}}[5m]))', "CPU"),
+         ("K", f'sum by (pod) (container_memory_working_set_bytes{{{POD_RE},container="kafka"}})', "Memory"),
+         ("L", f"time() - max by (pod) (kafka_server_app_info_start_time_ms{{{S}}}) / 1000", "Uptime")],
+        [("pod", "Pod"), ("app_kubernetes_io_component", "Role"), ("state", "KRaft")],
+        {"x": 0, "y": 10, "w": 24, "h": 7}, link=("Broker details", BROKER_URL),
+        overrides=[by("Pod", {"id": "custom.width", "value": 230}), by("Role", {"id": "custom.width", "value": 100}),
+                   by("KRaft", {"id": "custom.width", "value": 90},
+                      {"id": "mappings", "value": [{"type": "value", "options": {"leader": {"color": "purple", "index": 0}}}]},
+                      {"id": "custom.cellOptions", "value": {"type": "color-text"}}),
+                   hidden("_raft"),
+                   by("Up", {"id": "mappings", "value": [{"type": "value", "options": {
+                       "1": {"text": "up", "color": "green", "index": 0}, "0": {"text": "down", "color": "red", "index": 1}}}]},
+                      {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                      {"id": "custom.width", "value": 70}),
+                   by("Broker state", {"id": "mappings", "value": BROKER_STATE},
+                      {"id": "custom.cellOptions", "value": {"type": "color-text"}}),
+                   alarm_cell("Under-replicated"),
+                   gauge_cell("In", "Bps", "green"), gauge_cell("Out", "Bps", "blue"),
+                   by("Request handlers idle", {"id": "unit", "value": "percentunit"}, {"id": "min", "value": 0}, {"id": "max", "value": 1},
+                      {"id": "thresholds", "value": {"mode": "absolute", "steps": [
+                          {"color": "red", "value": None}, {"color": "orange", "value": 0.3}, {"color": "green", "value": 0.6}]}},
+                      {"id": "color", "value": {"mode": "thresholds"}},
+                      {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "basic", "valueDisplayMode": "text"}}),
+                   by("CPU", {"id": "unit", "value": "none"}, {"id": "decimals", "value": 2}, {"id": "custom.width", "value": 80}),
+                   by("Memory", {"id": "unit", "value": "bytes"}, {"id": "custom.width", "value": 100}),
+                   by("Uptime", {"id": "unit", "value": "dtdurations"}, {"id": "decimals", "value": 0})])
+    k["panels"] = [row(100, "Topics and brokers (click a row for details)", 0), topics, brokers,
+                   row(103, "Cluster resources and throughput", 17)] + vendored
+    k["links"] = [{"title": "Kafka topic", "type": "link", "url": "/d/kafka-topic/kafka-topic", "icon": "dashboard", "keepTime": True},
+                  {"title": "Kafka broker", "type": "link", "url": "/d/kafka-broker/kafka-broker", "icon": "dashboard", "keepTime": True}]
+    k["description"] = "Kafka cluster: topics and brokers with drill-down (Kafka topic, Kafka broker), resources and throughput."
+    out = "\n".join("    " + l for l in json.dumps(k, indent=2, ensure_ascii=True).splitlines()) + "\n"
+    open(SRC, "w").write(text[:start] + "  kafka.json: |\n" + out + text[end:])
+
+    var = {v["name"]: v for v in k["templating"]["list"]}
+    common_vars = [copy.deepcopy(var["namespace"]), copy.deepcopy(var["cluster"])]
+    for v in common_vars: v["hide"] = 2
+    back = {"title": "Kafka", "type": "link", "url": "/d/C_8qIX04k", "icon": "arrow-left", "keepTime": True}
+
+    # ------------------------------------------------------------------ "Kafka topic"
+    tvar = {"name": "topic", "label": "Topic", "type": "query", "datasource": PROM, "refresh": 2, "sort": 1,
+            "query": {"query": f'label_values(kafka_log_log_logendoffset{{{B},topic!~"__.*"}}, topic)', "refId": "topic"},
+            "definition": f'label_values(kafka_log_log_logendoffset{{{B},topic!~"__.*"}}, topic)',
+            "current": {}, "includeAll": False, "multi": False}
+    END, START = per_partition("kafka_log_log_logendoffset", T), per_partition("kafka_log_log_logstartoffset", T)
+    tp = [
+        stat(1, "Partitions", "Partitions of the topic.", f"count({END})", {"x": 0, "y": 0, "w": 3, "h": 4}),
+        stat(2, "Retained messages", "Messages currently stored: high minus low watermark, summed over the partitions.",
+             f"sum({END} - {START})", {"x": 3, "y": 0, "w": 3, "h": 4}, spark=True),
+        stat(3, "Size", "Bytes on disk (one replica).", f"sum({per_partition('kafka_log_log_size', T)})",
+             {"x": 6, "y": 0, "w": 3, "h": 4}, unit="bytes", color="purple", spark=True),
+        stat(4, "Segments", "Log segment files over all partitions; old segments are deleted as a whole when retention expires.",
+             f"sum({per_partition('kafka_log_log_numlogsegments', T)})", {"x": 9, "y": 0, "w": 3, "h": 4}, color="purple"),
+        stat(5, "Messages in", "Messages written per second.",
+             f"sum(rate(kafka_server_brokertopicmetrics_messagesin_total{{{T}}}[$__rate_interval]))",
+             {"x": 12, "y": 0, "w": 3, "h": 4}, unit="suffix: msg/s", color="green", spark=True, decimals=1),
+        stat(6, "Written", "Bytes written per second by producers.",
+             f"sum(rate(kafka_server_brokertopicmetrics_bytesin_total{{{T}}}[$__rate_interval]))",
+             {"x": 15, "y": 0, "w": 3, "h": 4}, unit="Bps", color="green", spark=True),
+        stat(7, "Read by consumers", "Bytes fetched per second by consumers (replication not included).",
+             f"sum(rate(kafka_server_brokertopicmetrics_bytesout_total{{{T}}}[$__rate_interval]))",
+             {"x": 18, "y": 0, "w": 3, "h": 4}, unit="Bps", color="blue", spark=True),
+        stat(8, "Under-replicated", "Partitions with fewer in-sync replicas than replicas. Should be 0.",
+             f"sum({per_partition('kafka_cluster_partition_underreplicated', T)})", {"x": 21, "y": 0, "w": 3, "h": 4},
+             thresholds=ZERO_GOOD),
+        row(9, "Partitions", 4),
+        table(10, "Partitions and watermarks",
+              "One row per partition replica. Low watermark: first offset still stored (retention moves it up); high watermark: "
+              "next offset to be written. Replicas and ISR come from the partition's leader. Click a row for its broker.",
+              [("A", per_partition("kafka_log_log_logstartoffset", T, "partition, pod"), "Low watermark"),
+               ("B", per_partition("kafka_log_log_logendoffset", T, "partition, pod"), "High watermark"),
+               ("C", f'{per_partition("kafka_log_log_logendoffset", T, "partition, pod")} - {per_partition("kafka_log_log_logstartoffset", T, "partition, pod")}', "Retained messages"),
+               ("D", per_partition("kafka_log_log_size", T, "partition, pod"), "Size"),
+               ("E", per_partition("kafka_log_log_numlogsegments", T, "partition, pod"), "Segments"),
+               ("F", f'{per_partition("kafka_cluster_partition_replicascount", T, "partition, pod")} * 0 + 1', "Role"),
+               ("G", per_partition("kafka_cluster_partition_replicascount", T, "partition, pod"), "Replicas"),
+               ("H", per_partition("kafka_cluster_partition_insyncreplicascount", T, "partition, pod"), "In sync"),
+               ("I", per_partition("kafka_cluster_partition_underreplicated", T, "partition, pod"), "Under-replicated"),
+               ("J", per_partition("kafka_cluster_partition_underminisr", T, "partition, pod"), "Under min ISR"),
+               ("K", per_partition("kafka_cluster_partition_laststableoffsetlag", T, "partition, pod"), "Open transactions lag")],
+              [("partition", "Partition"), ("pod", "Broker")], {"x": 0, "y": 5, "w": 24, "h": 7},
+              link=("Broker details", BROKER_URL), sort=None,
+              overrides=[by("Partition", {"id": "custom.width", "value": 90}), by("Broker", {"id": "custom.width", "value": 210}),
+                         by("Low watermark", {"id": "unit", "value": "none"}), by("High watermark", {"id": "unit", "value": "none"}),
+                         gauge_cell("Retained messages", "short", "purple"), gauge_cell("Size", "bytes", "purple"),
+                         by("Role", {"id": "mappings", "value": [
+                             {"type": "value", "options": {"1": {"text": "leader", "color": "green", "index": 0}}},
+                             {"type": "special", "options": {"match": "null", "result": {"text": "follower", "index": 1}}}]},
+                            {"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "custom.width", "value": 90}),
+                         alarm_cell("Under-replicated"), alarm_cell("Under min ISR")]),
+        ts(11, "Watermarks per partition", "Low and high watermark over time: the gap is what the topic retains, the slope of the "
+           "high watermark is the write rate, steps of the low watermark are deleted segments.",
+           [target("A", per_partition("kafka_log_log_logendoffset", T, "partition"), "high, partition {{partition}}"),
+            target("B", per_partition("kafka_log_log_logstartoffset", T, "partition"), "low, partition {{partition}}")],
+           {"x": 0, "y": 12, "w": 12, "h": 8}, unit="none", fill=0),
+        ts(12, "Partition health", "Under-replicated and under-min-ISR partitions over time (0 = healthy).",
+           [target("A", f"sum({per_partition('kafka_cluster_partition_underreplicated', T)})", "under-replicated"),
+            target("B", f"sum({per_partition('kafka_cluster_partition_underminisr', T)})", "under min ISR"),
+            target("C", f"sum({per_partition('kafka_cluster_partition_atminisr', T)})", "at min ISR")],
+           {"x": 12, "y": 12, "w": 12, "h": 8}, draw="bars", fill=80,
+           extra={"thresholds": ZERO_GOOD, "color": {"mode": "palette-classic"}}),
+        row(13, "Throughput", 20),
+        ts(14, "Messages in", "Messages written per second.",
+           [target("A", f"sum(rate(kafka_server_brokertopicmetrics_messagesin_total{{{T}}}[$__rate_interval]))", "messages in")],
+           {"x": 0, "y": 21, "w": 8, "h": 8}, unit="suffix: msg/s", fill=30),
+        ts(15, "Written and read", "Bytes per second: written by producers (up), read by consumers (down).",
+           [target("A", f"sum(rate(kafka_server_brokertopicmetrics_bytesin_total{{{T}}}[$__rate_interval]))", "written"),
+            target("B", f"sum(rate(kafka_server_brokertopicmetrics_bytesout_total{{{T}}}[$__rate_interval]))", "read by consumers")],
+           {"x": 8, "y": 21, "w": 8, "h": 8}, unit="Bps", negative="read.*", fill=30),
+        ts(16, "Produce and fetch requests", "Requests per second for this topic; fetches include those of follower replicas.",
+           [target("A", f"sum(rate(kafka_server_brokertopicmetrics_totalproducerequests_total{{{T}}}[$__rate_interval]))", "produce"),
+            target("B", f"sum(rate(kafka_server_brokertopicmetrics_totalfetchrequests_total{{{T}}}[$__rate_interval]))", "fetch"),
+            target("C", f"sum(rate(kafka_server_brokertopicmetrics_failedproducerequests_total{{{T}}}[$__rate_interval]))", "failed produce"),
+            target("D", f"sum(rate(kafka_server_brokertopicmetrics_failedfetchrequests_total{{{T}}}[$__rate_interval]))", "failed fetch")],
+           {"x": 16, "y": 21, "w": 8, "h": 8}, unit="reqps"),
+        ts(17, "Size and retained messages", "Bytes on disk and messages retained over time.",
+           [target("A", f"sum({per_partition('kafka_log_log_size', T)})", "size"),
+            target("B", f"sum({END} - {START})", "retained messages")],
+           {"x": 0, "y": 29, "w": 24, "h": 7}, unit="bytes",
+           extra={}),
+        row(18, "Consumers", 36),
+        {"id": 19, "type": "text", "title": "", "transparent": True, "gridPos": {"x": 0, "y": 37, "w": 24, "h": 2},
+         "options": {"mode": "markdown", "content":
+             "Kafka's own metrics have **no per-group data**: the panels below are cluster-wide. Consumer groups only "
+             "appear when consumers commit offsets to Kafka. The demo's Spark jobs keep their offsets in their "
+             "checkpoints, so 0 groups is expected; what they read shows as *Read by consumers*."}},
+        stat(20, "Consumer groups", "Groups the group coordinators know, all topics.",
+             f"sum(max by (pod) (kafka_coordinator_group_groupmetadatamanager_numgroups{{{S}}}))", {"x": 0, "y": 39, "w": 4, "h": 5}),
+        {**stat(21, "Groups by state", "Consumer groups per state, all topics.", "", {"x": 4, "y": 39, "w": 10, "h": 5}),
+         "targets": [target(r, f"sum(max by (pod) (kafka_coordinator_group_groupmetadatamanager_numgroups{st}{{{S}}}))", lbl)
+                     for r, st, lbl in [("A", "stable", "stable"), ("B", "empty", "empty"),
+                                        ("C", "preparingrebalance", "preparing rebalance"),
+                                        ("D", "completingrebalance", "completing rebalance"), ("E", "dead", "dead")]]},
+        stat(22, "Committed offsets", "Committed offsets stored, all groups and partitions.",
+             f"sum(max by (pod) (kafka_coordinator_group_groupmetadatamanager_numoffsets{{{S}}}))", {"x": 14, "y": 39, "w": 5, "h": 5}),
+        stat(23, "Offset commits", "Offset commits per second, all groups.",
+             f"sum(max by (pod) (kafka_server_group_coordinator_metrics_offset_commit_rate{{{S}}}))", {"x": 19, "y": 39, "w": 5, "h": 5},
+             unit="suffix: /s", spark=True, decimals=2),
+    ]
+    panel = {p["id"]: p for p in tp}
+    panel[17]["fieldConfig"]["overrides"] = [by("retained messages", {"id": "unit", "value": "short"},
+                                                {"id": "custom.axisPlacement", "value": "right"})]
+    panel[21]["options"]["textMode"] = "value_and_name"
+    topic = {"uid": "kafka-topic", "title": "Kafka topic", "tags": ["kafka"], "editable": True, "schemaVersion": 41,
+             "description": "One Kafka topic: partitions with watermarks, throughput, consumers. Opened from 'Kafka'.",
+             "time": {"from": "now-6h", "to": "now"}, "refresh": "1m",
+             "templating": {"list": common_vars + [tvar]}, "links": [back], "panels": tp}
+
+    # ------------------------------------------------------------------ "Kafka broker"
+    bvar = {"name": "broker", "label": "Broker", "type": "query", "datasource": PROM, "refresh": 2, "sort": 1,
+            "query": {"query": f"label_values(up{{{S},app_kubernetes_io_name=\"kafka\"}}, pod)", "refId": "broker"},
+            "definition": f"label_values(up{{{S},app_kubernetes_io_name=\"kafka\"}}, pod)",
+            "current": {}, "includeAll": False, "multi": False}
+    PB = S + ',pod="$broker"'
+    PBT = PB + ',topic!~"__.*"'
+    POD = 'namespace=~"$namespace",pod="$broker"'
+    bp = [
+        stat(1, "Role", "Broker (holds partitions) or KRaft controller (holds the cluster metadata).",
+             f"max by (app_kubernetes_io_component) (up{{{PB}}})", {"x": 0, "y": 0, "w": 3, "h": 4},
+             text_mode="name", legend="{{app_kubernetes_io_component}}", color="purple"),
+        stat(2, "KRaft", "Role in the metadata quorum: leader (the active controller), follower (other controllers), observer (brokers).",
+             f"max by (state) (kafka_server_raft_metrics_current_state{{{PB}}}) == 1", {"x": 3, "y": 0, "w": 3, "h": 4},
+             text_mode="name", legend="{{state}}", color="purple"),
+        stat(3, "Broker state", "Brokers only.", f"max(kafka_server_kafkaserver_brokerstate{{{PB}}})",
+             {"x": 6, "y": 0, "w": 3, "h": 4}, mappings=BROKER_STATE),
+        stat(4, "Uptime", "Since the Kafka process started.", f"time() - max(kafka_server_app_info_start_time_ms{{{PB}}}) / 1000",
+             {"x": 9, "y": 0, "w": 3, "h": 4}, unit="dtdurations", decimals=0),
+        stat(5, "Partitions", "Partition replicas on this broker.", f"max(kafka_server_replicamanager_partitioncount{{{PB}}})",
+             {"x": 12, "y": 0, "w": 3, "h": 4}),
+        stat(6, "Leaders", "Partitions this broker leads (serves reads and writes for).",
+             f"max(kafka_server_replicamanager_leadercount{{{PB}}})", {"x": 15, "y": 0, "w": 3, "h": 4}),
+        stat(7, "Under-replicated", "Partitions led here with replicas out of sync. Should be 0.",
+             f"max(kafka_server_replicamanager_underreplicatedpartitions{{{PB}}})", {"x": 18, "y": 0, "w": 3, "h": 4}, thresholds=ZERO_GOOD),
+        stat(8, "Offline replicas", "Replicas on this broker that are offline (e.g. failed log directory). Should be 0.",
+             f"max(kafka_server_replicamanager_offlinereplicacount{{{PB}}})", {"x": 21, "y": 0, "w": 3, "h": 4}, thresholds=ZERO_GOOD),
+        row(9, "Assigned partitions", 4),
+        table(10, "Partitions on this broker",
+              "Every partition replica stored here, with its watermarks. Click a row for the topic.",
+              [("A", per_partition("kafka_log_log_logstartoffset", PBT), "Low watermark"),
+               ("B", per_partition("kafka_log_log_logendoffset", PBT), "High watermark"),
+               ("C", per_partition("kafka_log_log_logendoffset", PBT) + " - " + per_partition("kafka_log_log_logstartoffset", PBT), "Retained messages"),
+               ("D", per_partition("kafka_log_log_size", PBT), "Size"),
+               ("E", per_partition("kafka_log_log_numlogsegments", PBT), "Segments"),
+               ("F", f'{per_partition("kafka_cluster_partition_replicascount", PB)} * 0 + 1', "Role"),
+               ("G", per_partition("kafka_cluster_partition_replicascount", PB), "Replicas"),
+               ("H", per_partition("kafka_cluster_partition_insyncreplicascount", PB), "In sync"),
+               ("I", per_partition("kafka_cluster_partition_underreplicated", PB), "Under-replicated")],
+              [("topic", "Topic"), ("partition", "Partition")], {"x": 0, "y": 5, "w": 24, "h": 8},
+              link=("Topic details", TOPIC_URL), sort="Size",
+              overrides=[by("Topic", {"id": "custom.width", "value": 240}), by("Partition", {"id": "custom.width", "value": 90}),
+                         by("Low watermark", {"id": "unit", "value": "none"}), by("High watermark", {"id": "unit", "value": "none"}),
+                         gauge_cell("Retained messages", "short", "purple"), gauge_cell("Size", "bytes", "purple"),
+                         by("Role", {"id": "mappings", "value": [
+                             {"type": "value", "options": {"1": {"text": "leader", "color": "green", "index": 0}}},
+                             {"type": "special", "options": {"match": "null", "result": {"text": "follower", "index": 1}}}]},
+                            {"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "custom.width", "value": 90}),
+                         alarm_cell("Under-replicated")]),
+        row(11, "Throughput", 13),
+        ts(12, "Bytes per topic", "Written (up) and read by consumers (down) per topic.",
+           [target("A", f"sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesin_total{{{PB}}}[$__rate_interval]))", "{{topic}} written"),
+            target("B", f"sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesout_total{{{PB}}}[$__rate_interval]))", "{{topic}} read")],
+           {"x": 0, "y": 14, "w": 12, "h": 8}, unit="Bps", negative=".* read", stack=True, fill=40),
+        ts(13, "Messages in per topic", "Messages written per second, per topic.",
+           [target("A", f"sum by (topic) (rate(kafka_server_brokertopicmetrics_messagesin_total{{{PB}}}[$__rate_interval]))", "{{topic}}")],
+           {"x": 12, "y": 14, "w": 12, "h": 8}, unit="suffix: msg/s", stack=True, fill=40),
+        row(14, "Requests", 22),
+        ts(15, "Requests per type", "Requests per second by API (top 8).",
+           [target("A", f"topk(8, sum by (request) (rate(kafka_network_requestmetrics_requests_total{{{PB}}}[$__rate_interval])))", "{{request}}")],
+           {"x": 0, "y": 23, "w": 8, "h": 8}, unit="reqps", stack=True, fill=40),
+        ts(16, "Request latency (p99)", "99th percentile of the total request time for the main APIs. Fetch includes the time a consumer waits for new data (long poll, up to 500 ms by default).",
+           [target("A", f'max by (request) (kafka_network_requestmetrics_totaltimems{{{PB},quantile="0.99",request=~"Produce|FetchConsumer|FetchFollower|Fetch|Metadata|OffsetCommit|BrokerHeartbeat|Vote|BeginQuorumEpoch"}})', "{{request}}")],
+           {"x": 8, "y": 23, "w": 8, "h": 8}, unit="ms", fill=0),
+        ts(17, "Thread pools idle", "Share of time the request handler and network threads are idle; below ~30 % the broker is saturated.",
+           [target("A", f"max(kafka_server_kafkarequesthandlerpool_requesthandleravgidle_percent{{{PB}}})", "request handlers"),
+            target("B", f"avg(kafka_network_processor_idlepercent{{{PB}}})", "network processors")],
+           {"x": 16, "y": 23, "w": 8, "h": 8}, unit="percentunit", fill=10,
+           extra={"max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": None}, {"color": "transparent", "value": 0.3}]},
+                  "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never", "spanNulls": True,
+                             "gradientMode": "opacity", "stacking": {"mode": "none"}, "thresholdsStyle": {"mode": "area"}}}),
+        row(18, "Replication", 31),
+        ts(19, "ISR changes", "Replicas leaving (shrinks) and rejoining (expands) the in-sync set per second.",
+           [target("A", f"sum(rate(kafka_server_replicamanager_isrshrinks_total{{{PB}}}[$__rate_interval]))", "shrinks"),
+            target("B", f"sum(rate(kafka_server_replicamanager_isrexpands_total{{{PB}}}[$__rate_interval]))", "expands")],
+           {"x": 0, "y": 32, "w": 12, "h": 7}, unit="suffix: /s", draw="bars", fill=80),
+        ts(20, "Replica fetcher lag", "Largest lag (messages) of this broker's follower replicas behind their leaders.",
+           [target("A", f"max(kafka_server_replicafetchermanager_maxlag{{{PB}}})", "max lag")],
+           {"x": 12, "y": 32, "w": 12, "h": 7}, unit="short"),
+        row(21, "Resources", 39),
+        ts(22, "CPU", "CPU of the kafka container (cores).",
+           [target("A", f'sum(rate(container_cpu_usage_seconds_total{{{POD},container="kafka"}}[$__rate_interval]))', "used"),
+            target("B", f'max(kube_pod_container_resource_limits{{{POD},container="kafka",resource="cpu"}})', "limit")],
+           {"x": 0, "y": 40, "w": 6, "h": 7}, unit="none", fill=20),
+        ts(23, "Memory", "Working set of the kafka container.",
+           [target("A", f'sum(container_memory_working_set_bytes{{{POD},container="kafka"}})', "used"),
+            target("B", f'max(kube_pod_container_resource_limits{{{POD},container="kafka",resource="memory"}})', "limit")],
+           {"x": 6, "y": 40, "w": 6, "h": 7}, unit="bytes", fill=20),
+        ts(24, "Log volume", "Used and total space of the log directory volume.",
+           [target("A", 'max(kubelet_volume_stats_used_bytes{namespace=~"$namespace",persistentvolumeclaim="log-dirs-$broker"})', "used"),
+            target("B", 'max(kubelet_volume_stats_capacity_bytes{namespace=~"$namespace",persistentvolumeclaim="log-dirs-$broker"})', "capacity")],
+           {"x": 12, "y": 40, "w": 6, "h": 7}, unit="bytes", fill=20),
+        ts(25, "Disk I/O", "Bytes read (up) and written (down) per second by the Kafka process.",
+           [target("A", f'sum(rate({{__name__=~"kafka_server_(kafkaserver|controllerserver)_linux_disk_read_bytes",{PB}}}[$__rate_interval]))', "read"),
+            target("B", f'sum(rate({{__name__=~"kafka_server_(kafkaserver|controllerserver)_linux_disk_write_bytes",{PB}}}[$__rate_interval]))', "write")],
+           {"x": 18, "y": 40, "w": 6, "h": 7}, unit="Bps", negative="write", fill=30),
+        row(26, "KRaft metadata quorum", 47),
+        {"id": 27, "type": "state-timeline", "title": "Quorum role", "description": "This process's role in the KRaft quorum over time.",
+         "datasource": PROM, "gridPos": {"x": 0, "y": 48, "w": 12, "h": 4},
+         "targets": [target("A", f'sum(max by (state) (kafka_server_raft_metrics_current_state{{{PB}}} == 1) * on (state) group_left() '
+                                 '(label_replace(vector(1), "state", "leader", "", "") or label_replace(vector(2), "state", "follower", "", "") '
+                                 'or label_replace(vector(3), "state", "observer", "", "") or label_replace(vector(4), "state", "candidate", "", "") '
+                                 'or label_replace(vector(5), "state", "voted", "", "") or label_replace(vector(6), "state", "unattached", "", "")))', "role")],
+         "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {
+             "1": {"text": "leader", "color": "purple", "index": 0}, "2": {"text": "follower", "color": "blue", "index": 1},
+             "3": {"text": "observer", "color": "green", "index": 2}, "4": {"text": "candidate", "color": "orange", "index": 3},
+             "5": {"text": "voted", "color": "orange", "index": 4}, "6": {"text": "unattached", "color": "red", "index": 5}}}],
+             "color": {"mode": "thresholds"}, "custom": {"fillOpacity": 80, "lineWidth": 0}}, "overrides": []},
+         "options": {"showValue": "auto", "mergeValues": True, "rowHeight": 0.8, "legend": {"showLegend": False}}},
+        stat(28, "Epoch", "Current leader epoch of the quorum (increases with every election).",
+             f"max(kafka_server_raft_metrics_current_epoch{{{PB}}})", {"x": 12, "y": 48, "w": 4, "h": 4}, color="purple", spark=True),
+        stat(29, "Metadata lag", "How far behind this process's metadata is (ms since the last applied record was written).",
+             f"max(kafka_server_broker_metadata_metrics_last_applied_record_lag_ms{{{PB}}} or kafka_controller_kafkacontroller_lastappliedrecordlagms{{{PB}}})",
+             {"x": 16, "y": 48, "w": 4, "h": 4}, unit="ms", spark=True),
+        stat(30, "Metadata offset", "High watermark of the metadata log.",
+             f"max(kafka_server_raft_metrics_high_watermark{{{PB}}})", {"x": 20, "y": 48, "w": 4, "h": 4}, unit="none", spark=True),
+        ts(31, "Commit latency", "Time for the quorum to commit metadata records (leader).",
+           [target("A", f"max(kafka_server_raft_metrics_commit_latency_avg{{{PB}}})", "avg"),
+            target("B", f"max(kafka_server_raft_metrics_commit_latency_max{{{PB}}})", "max")],
+           {"x": 0, "y": 52, "w": 12, "h": 7}, unit="ms", fill=0),
+        ts(32, "Metadata records", "Records appended (leader) and fetched (followers, observers) per second.",
+           [target("A", f"max(kafka_server_raft_metrics_append_records_rate{{{PB}}})", "appended"),
+            target("B", f"max(kafka_server_raft_metrics_fetch_records_rate{{{PB}}})", "fetched")],
+           {"x": 12, "y": 52, "w": 12, "h": 7}, unit="suffix: /s", fill=10),
+    ]
+    broker = {"uid": "kafka-broker", "title": "Kafka broker", "tags": ["kafka"], "editable": True, "schemaVersion": 41,
+              "description": "One Kafka broker or KRaft controller: assigned partitions, throughput, requests, replication, resources, quorum. Opened from 'Kafka'.",
+              "time": {"from": "now-6h", "to": "now"}, "refresh": "1m",
+              "templating": {"list": common_vars + [bvar]}, "links": [back], "panels": bp}
+    open(M + "grafana-dashboards-kafka.yaml", "w").write("""---
+# Grafana dashboards "Kafka topic" and "Kafka broker": drill-down from the topic and broker lists on the
+# "Kafka" dashboard (grafana-dashboards-stackable.yaml). Prometheus only (the brokers' and controllers'
+# JMX metrics); Kafka has no per-consumer-group metrics there. Generated by scripts/grafana-dashboards.py.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-kafka
+  namespace: platform
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: Stackable Data Platform
+data:
+""" + block("kafka-topic.json", topic) + block("kafka-broker.json", broker))
+    print("Kafka, Kafka topic, Kafka broker")
+
+
 if __name__ == "__main__":
     trino_queries()
     nifi_authorization()
     branding_and_overview()
+    kafka()
