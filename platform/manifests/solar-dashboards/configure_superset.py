@@ -163,7 +163,7 @@ DATASETS = {
                format('[[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f],[%.4f,%.4f]]',
                       c.lon - 0.042, c.lat - 0.025, c.lon + 0.042, c.lat - 0.025,
                       c.lon + 0.042, c.lat + 0.025, c.lon - 0.042, c.lat + 0.025,
-                      c.lon - 0.042, c.lat - 0.025) AS polygon
+                      c.lon - 0.042, c.lat - 0.025) AS shape
         FROM energy e JOIN centre c ON c.landkreis = e.landkreis"""),
     "solar_fault_map": ("solar_gold", "solar_fault_map", """
         -- Fault events of the last 7 days at the (illustrative) site positions
@@ -292,9 +292,10 @@ def charts(ds):
             "order_desc": True, "table_timestamp_format": "%Y-%m-%d", "include_search": True}),
         # 3D bars: deck.gl polygons, extruded by rel_height (multiplier = height of the tallest bar
         # in metres), coloured by energy. `dimension` (not in the chart editor) adds the column
-        # `name` to the query, which the polygon tooltip shows.
+        # `name` to the query, which the polygon tooltip shows. The shape column must not be
+        # called `polygon`: Superset stores the parsed shape under that key, then deletes the column.
         "Map: energy per Landkreis, Schleswig-Holstein (last 7 days)": ("deck_polygon", "solar_sh_landkreis_bars", {
-            "line_column": "polygon", "line_type": "json", "dimension": "name",
+            "line_column": "shape", "line_type": "json", "dimension": "name",
             "metric": metric("SUM(energy_mwh)", "Energy (MWh)"),
             "point_radius_fixed": {"type": "metric", "value": metric("SUM(rel_height)", "Relative height")},
             "multiplier": 40000, "extruded": True, "filled": True, "stroked": False,

@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-dashboards-v4
+  name: configure-solar-dashboards-v5
   namespace: platform
 spec:
   backoffLimit: 10
