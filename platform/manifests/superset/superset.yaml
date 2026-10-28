@@ -54,18 +54,25 @@ spec:
     podOverrides:
       spec:
         containers:
+          # The operator replaces httpGet as a whole, so path and port must be repeated here.
           - name: superset
             volumeMounts:
               - name: tls
                 mountPath: /stackable/tls
             startupProbe:
               httpGet:
+                path: /health
+                port: 8088
                 scheme: HTTPS
             readinessProbe:
               httpGet:
+                path: /health
+                port: 8088
                 scheme: HTTPS
             livenessProbe:
               httpGet:
+                path: /health
+                port: 8088
                 scheme: HTTPS
           - name: vector
             resources:
