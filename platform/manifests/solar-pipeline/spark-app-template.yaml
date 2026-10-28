@@ -32,7 +32,13 @@ spec:
     packages:
       - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.12.0
       - org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.8
+      - io.openlineage:openlineage-spark_2.12:1.54.0
   env:
+    # JWT of the OpenMetadata bot solar-lineage-bot, written by the solar-metadata Job; optional,
+    # so the jobs run without lineage if it doesn't exist yet.
+    - name: OPENLINEAGE_API_KEY
+      valueFrom:
+        secretKeyRef: { name: solar-openlineage-token, key: token, optional: true }
     - name: KAFKA
       valueFrom:
         configMapKeyRef: { name: kafka, key: KAFKA }

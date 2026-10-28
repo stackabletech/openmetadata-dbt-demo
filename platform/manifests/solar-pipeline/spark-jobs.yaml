@@ -33,11 +33,32 @@ data:
     )
 
 
+    OPENMETADATA = "http://openmetadata.platform.svc.cluster.local:8585"
+
+
+    def openlineage(builder):
+        """Send OpenLineage events to OpenMetadata, which turns them into table-level lineage
+        (Kafka topics are not mapped). Set here and not in the SparkApplicationTemplate because
+        the bot token comes from a Secret: in PySpark cluster mode the SparkContext is only
+        created by getOrCreate(), so these settings still reach the listener."""
+        token = os.environ.get("OPENLINEAGE_API_KEY")
+        if not token:
+            return builder
+        return (builder
+                .config("spark.extraListeners", "io.openlineage.spark.agent.OpenLineageSparkListener")
+                .config("spark.openlineage.namespace", "solar-demo")
+                .config("spark.openlineage.transport.type", "http")
+                .config("spark.openlineage.transport.url", OPENMETADATA)
+                .config("spark.openlineage.transport.endpoint", "/api/v1/openlineage/lineage")
+                .config("spark.openlineage.transport.auth.type", "api_key")
+                .config("spark.openlineage.transport.auth.apiKey", token))
+
+
     def session(app_name):
-        """SparkSession with the data2day catalog configured like Trino's (see solar-bronze)."""
+        """SparkSession with the data2day catalog configured like Trino's, plus OpenLineage."""
         c = f"spark.sql.catalog.{CATALOG}"
         spark = (
-            SparkSession.builder.appName(app_name)
+            openlineage(SparkSession.builder.appName(app_name))
             .config(c, "org.apache.iceberg.spark.SparkCatalog")
             .config(f"{c}.type", "rest")
             .config(f"{c}.uri", "http://lakekeeper:8181/catalog")
