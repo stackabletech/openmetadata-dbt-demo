@@ -11,7 +11,7 @@
 # Usage:
 #   ./scripts/cockpit-bookmarks.sh            # print the snippet
 #   ./scripts/cockpit-bookmarks.sh | wl-copy  # or pbcopy / xclip -sel clip
-# Then open Cockpit (http://<node-ip>:30300) in the browser you present with, open
+# Then open Cockpit (https://<node-ip>:30300) in the browser you present with, open
 # the developer console (F12 -> Console), paste and press Enter. Firefox asks you to
 # type "allow pasting" once before it accepts pasted code.
 #
@@ -33,7 +33,7 @@ trino|Trino|https://${node_ip}:$(nodeport platform trino-coordinator)/ui/|true
 superset|Superset|https://${node_ip}:$(nodeport platform simple-superset-node)|true
 airflow|Airflow|http://${node_ip}:$(nodeport platform airflow-webserver)|true
 nifi|NiFi|https://${node_ip}:$(nodeport platform nifi-node)/nifi/|true
-custom|Spark History Server|http://${node_ip}:30188|false
+spark|Spark History Server|http://${node_ip}:30188|false
 custom|OpenMetadata|http://${node_ip}:$(nodeport platform openmetadata-nodeport)|true
 custom|Grafana|http://${node_ip}:$(nodeport platform prometheus-grafana)|true
 custom|Entropy Data|http://${node_ip}:$(nodeport platform entropy-data-nodeport)/myorga|true

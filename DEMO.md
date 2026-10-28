@@ -54,22 +54,20 @@ The node IP changes with every deploy:
 kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}'
 ```
 
-- **Cockpit needs a secure context.** It runs on plain HTTP, so allow its origin once:
-  `about:config` → `dom.securecontext.allowlist` = `<node-ip>` (Firefox), or
-  `chrome://flags/#unsafely-treat-insecure-origin-as-secure` = `http://<node-ip>:30300` (Chrome).
-  Without it, Cockpit shows a 500 page.
+- **Cockpit runs on HTTPS** (`https://<node-ip>:30300`) with a certificate of the demo CA: accept
+  the browser warning once, like for Trino and NiFi.
 - **Bookmarks to all UIs and the demo queries** in Cockpit (dashboard bookmarks plus the
   editor tabs "Demo A: hardcoded masks" and "Demo B: owner + tag"):
   ```bash
   just cockpit-bookmarks | wl-copy    # or pbcopy / xclip -sel clip
   ```
-  Open Cockpit (`http://<node-ip>:30300`), press F12 → Console, paste, press Enter. Firefox wants
+  Open Cockpit (`https://<node-ip>:30300`), press F12 → Console, paste, press Enter. Firefox wants
   `allow pasting` typed once first. Rerun after every redeploy, it replaces its own bookmarks
   and tabs and keeps yours (Cockpit allows 8 tabs; the leftmost of yours are dropped if needed).
 
 | UI | Port |
 |---|---|
-| Cockpit | 30300 |
+| Cockpit (HTTPS) | 30300 |
 | OpenMetadata | 30585 |
 | Entropy Data (organization `myorga`) | 30808 |
 | Grafana (metrics, OPA decisions) | 30301 |

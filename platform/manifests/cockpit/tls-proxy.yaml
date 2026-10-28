@@ -1,0 +1,121 @@
+---
+# HTTPS for Cockpit: Cockpit's server (SvelteKit, Node adapter) only speaks HTTP and the chart
+# offers TLS only through an Ingress, so this nginx terminates TLS in front of it and the
+# NodePort 30300 (nodeport.yaml) points here. The certificate comes from the secret-operator
+# SecretClass `tls` (the demo CA, so browsers warn once like for Trino and NiFi); it names the
+# node the proxy runs on and the NodePort Service. The secret-operator restarts the pod before
+# the certificate expires. Plain HTTP on the port is redirected to HTTPS (old bookmarks).
+#
+# HTTPS also gives Cockpit the browser's secure context, which it needs: on plain HTTP the
+# demo needed a browser flag (dom.securecontext.allowlist).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cockpit-tls-proxy
+  namespace: platform
+data:
+  default.conf: |
+    map $http_upgrade $connection_upgrade {
+      default upgrade;
+      ''      close;
+    }
+
+    server {
+      listen 8443 ssl;
+      http2 on;
+      ssl_certificate     /stackable/tls/tls.crt;
+      ssl_certificate_key /stackable/tls/tls.key;
+      ssl_protocols       TLSv1.2 TLSv1.3;
+
+      # Plain HTTP sent to this port: redirect to HTTPS
+      error_page 497 =301 https://$http_host$request_uri;
+
+      # Uploads in the storage browser; Cockpit enforces its own limit (BODY_SIZE_LIMIT)
+      client_max_body_size 0;
+
+      location / {
+        proxy_pass http://cockpit.platform.svc.cluster.local:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # Streamed responses (query results, downloads) go out as they come
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cockpit-tls-proxy
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: cockpit-tls-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cockpit-tls-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cockpit-tls-proxy
+      annotations:
+        # Restart when the nginx config changes
+        checksum/config: v1
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.31.7-alpine # renovate: datasource=docker depName=nginxinc/nginx-unprivileged
+          ports:
+            - name: https
+              containerPort: 8443
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d
+            - name: tls
+              mountPath: /stackable/tls
+      volumes:
+        - name: config
+          configMap:
+            name: cockpit-tls-proxy
+        - name: tls
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/format: tls-pem
+                  secrets.stackable.tech/scope: node,service=cockpit-nodeport
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem

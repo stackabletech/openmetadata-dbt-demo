@@ -1,6 +1,7 @@
 ---
 # External access to Cockpit, matching the demo's NodePort convention
-# (30080 ArgoCD, 30088 landing, 30585 OpenMetadata, 30900 Keycloak).
+# (30080 ArgoCD, 30088 landing, 30585 OpenMetadata, 30900 Keycloak). HTTPS: the port leads to
+# the TLS proxy in front of Cockpit (tls-proxy.yaml).
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,12 +10,10 @@ metadata:
 spec:
   type: NodePort
   selector:
-    app.kubernetes.io/name: cockpit
-    app.kubernetes.io/instance: cockpit
-    app.kubernetes.io/component: ui
+    app.kubernetes.io/name: cockpit-tls-proxy
   ports:
-    - name: http
-      port: 3000
-      targetPort: 3000
+    - name: https
+      port: 8443
+      targetPort: 8443
       nodePort: 30300
       protocol: TCP

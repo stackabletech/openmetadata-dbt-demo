@@ -38,7 +38,7 @@ import html, os
 from datetime import datetime, timezone
 
 ip, ctx, out = os.environ["NODE_IP"], os.environ["CONTEXT"], os.environ["OUT"]
-cockpit, om, keycloak = f"http://{ip}:30300", f"http://{ip}:30585", f"http://{ip}:30900"
+cockpit, om, keycloak = f"https://{ip}:30300", f"http://{ip}:30585", f"http://{ip}:30900"
 entropy = f"http://{ip}:30808/myorga"
 grafana = f"http://{ip}:30301/d/opa-decisions"
 grafana_queries = f"http://{ip}:30301/d/trino-queries"
@@ -130,11 +130,7 @@ body = f"""
 <section>
   <h2>Setup</h2>
   <ol>
-    <li>Firefox: <code>about:config</code> → <code>dom.securecontext.allowlist</code>, value:
-      {snippet("allowlist", ip)}
-      (Chrome: <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> = <code>{cockpit}</code>.)
-      Without it Cockpit shows a 500 page.</li>
-    <li>Open {link(cockpit, "Cockpit")}, log in as <code>demo-user</code>, press F12 → Console, type
+    <li>Open {link(cockpit, "Cockpit")} (HTTPS with the demo CA: accept the browser warning once), log in as <code>demo-user</code>, press F12 → Console, type
       <code>allow pasting</code> once, then paste this snippet and press Enter. It adds bookmarks to all UIs and the editor tabs
       <i>Demo A</i> and <i>Demo B</i> with the queries below:
       {snippet("bookmarks", os.environ["BOOKMARKS"], "Copy setup snippet")}</li>

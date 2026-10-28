@@ -70,7 +70,8 @@ spec:
                 exit 1
               fi
 
-              BASE_URL="http://${NODE_IP}:30300"
+              # HTTPS through the TLS proxy (tls-proxy.yaml)
+              BASE_URL="https://${NODE_IP}:30300"
               DISCOVERY_URL="http://${NODE_IP}:30900/realms/stackable-demo/.well-known/openid-configuration"
               echo "Cockpit base/origin: ${BASE_URL}; discovery: ${DISCOVERY_URL}"
 

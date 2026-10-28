@@ -23,6 +23,9 @@ spec:
           # State of the SQLMesh project (dags/sqlmesh/tpch_demo), Trino can't hold it
           - component: sqlmesh
             extendedConfiguration: ""
+          # Cockpit: sessions, users, saved storage connections
+          - component: cockpit
+            extendedConfiguration: ""
   template:
     metadata:
       name: "{{component}}-postgres"
