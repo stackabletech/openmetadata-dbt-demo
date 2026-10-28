@@ -291,15 +291,16 @@ def charts(ds):
             "adhoc_filters": [time_filter("day", DAYS_7)], "row_limit": 1000,
             "order_desc": True, "table_timestamp_format": "%Y-%m-%d", "include_search": True}),
         # 3D bars: deck.gl polygons, extruded by rel_height (multiplier = height of the tallest bar
-        # in metres), coloured by energy. `dimension` (not in the chart editor) adds the column
-        # `name` to the query, which the polygon tooltip shows. The shape column must not be
-        # called `polygon`: Superset stores the parsed shape under that key, then deletes the column.
+        # in metres). The tooltip shows only the metric, so the metric is the text "<Landkreis>,
+        # <energy> MWh"; a text metric can't drive a colour scale, hence one fixed colour. The
+        # shape column must not be called `polygon`: Superset stores the parsed shape under that
+        # key, then deletes the column.
         "Map: energy per Landkreis, Schleswig-Holstein (last 7 days)": ("deck_polygon", "solar_sh_landkreis_bars", {
-            "line_column": "shape", "line_type": "json", "dimension": "name",
-            "metric": metric("SUM(energy_mwh)", "Energy (MWh)"),
+            "line_column": "shape", "line_type": "json",
+            "metric": metric("max(name) || ', ' || format('%.2f MWh', SUM(energy_mwh))", "Landkreis"),
             "point_radius_fixed": {"type": "metric", "value": metric("SUM(rel_height)", "Relative height")},
             "multiplier": 40000, "extruded": True, "filled": True, "stroked": False,
-            "color_scheme_type": "linear_palette", "linear_color_scheme": ["#fde9b5", "#f08c00", "#a33a00"],
+            "color_scheme_type": "fixed_color",
             "opacity": 90, "fill_color_picker": color(240, 140, 0, 1), "stroke_color_picker": color(0, 0, 0, 0),
             "line_width": 1, "line_width_unit": "pixels", "mapbox_style": BASE_MAP,
             "viewport": NORTH_3D, "autozoom": False, "row_limit": 100, "adhoc_filters": []}),
@@ -424,7 +425,7 @@ DASHBOARDS = {
         [md("## Regional yield\nEnergy, specific yield (kWh per kWp) and capacity factor per "
             "Landkreis and Bundesland, from `solar_gold.region_daily` and `site_daily`.", 12, 12)],
         [ch("Map: energy per Landkreis, Schleswig-Holstein (last 7 days)", 8, 110),
-         md("### Schleswig-Holstein in 3D\nOne bar per Landkreis, height and colour by its energy "
+         md("### Schleswig-Holstein in 3D\nOne bar per Landkreis, its height by the energy "
             "of the last 7 days; the tallest bar is always the same height. Bars stand at the centre "
             "of the Landkreis's sites. Rooftop sites are simulated only for postcodes 24xxx, so "
             "Landkreise in the south (and Lübeck) have only their parks ≥ 1 MW. Hover over a bar for "
