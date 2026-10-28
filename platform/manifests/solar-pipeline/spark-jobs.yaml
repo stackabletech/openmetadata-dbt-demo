@@ -67,7 +67,11 @@ data:
             .config(f"{c}.credential", os.environ["LAKEKEEPER_CREDENTIAL"])
             .config(f"{c}.oauth2-server-uri", os.environ["KEYCLOAK_TOKEN_URL"])
             .config(f"{c}.scope", "openid")
-            .config(f"{c}.token-refresh-enabled", "false")
+            # Keycloak issues 5-minute tokens without refresh token and doesn't allow the token
+            # exchange Iceberg refreshes with by default. Refresh with a new client-credentials
+            # grant instead; with refresh disabled the streaming job died after ~8 minutes.
+            .config(f"{c}.token-refresh-enabled", "true")
+            .config(f"{c}.token-exchange-enabled", "false")
             # s3a with the Garage keys; Iceberg's S3FileIO would need Lakekeeper remote signing,
             # which fails here.
             .config(f"{c}.io-impl", "org.apache.iceberg.hadoop.HadoopFileIO")
