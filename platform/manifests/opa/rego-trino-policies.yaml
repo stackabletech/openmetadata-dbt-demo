@@ -111,6 +111,9 @@ data:
         # subject to the OpenMetadata-driven rules at the end of this file.
         {"catalog": "data2day", "schema": "(demo|demo_sqlmesh)", "privileges": ["SELECT"]},
 
+        # --- Solar demo: silver and gold readable by everyone, bronze only by the admins ---
+        {"catalog": "data2day", "schema": "solar_(silver|gold)", "privileges": ["SELECT"]},
+
         # Read-only access to the sample/source catalogs for exploration.
         {"catalog": "tpch", "privileges": ["SELECT"]},
         {"catalog": "tpcds", "privileges": ["SELECT"]},
@@ -128,6 +131,11 @@ data:
         # impersonates the logged-in end user (X-Trino-User) so that these very
         # policies apply per-user through the Cockpit UI.
         {"original_user": "cockpit", "new_user": ".*", "allow": true},
+        # Superset does the same as the static `superset` user (impersonate_user on its database
+        # connection). `admin` is included: the local Superset admin, used by the setup Job
+        # (solar-dashboards), queries as Trino `admin`. Only `cockpit` is off limits.
+        {"original_user": "superset", "new_user": "cockpit", "allow": false},
+        {"original_user": "superset", "new_user": ".*", "allow": true},
       ],
       "authorization": [],
       "system_session_properties": [

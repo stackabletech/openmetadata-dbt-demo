@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: configure-solar-dashboards-v1
+  name: configure-solar-dashboards-v2
   namespace: platform
 spec:
   backoffLimit: 10
@@ -22,7 +22,7 @@ spec:
                 secretKeyRef: { name: simple-superset-credentials, key: adminUser.password }
             - name: TRINO_PASSWORD
               valueFrom:
-                secretKeyRef: { name: trino-users, key: admin }
+                secretKeyRef: { name: trino-users, key: superset }
           volumeMounts:
             - name: script
               mountPath: /scripts

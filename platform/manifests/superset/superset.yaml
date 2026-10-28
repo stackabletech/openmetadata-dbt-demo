@@ -37,7 +37,9 @@ spec:
           webserverTimeout: 300
         configOverrides:
           superset_config.py:
-            AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Gamma"]}'
+            # "Solar Viewer" grants access to the solar demo's database connection (created by the
+            # solar-dashboards Job); Trino decides per user what is readable (impersonation).
+            AUTH_ROLES_MAPPING: '{"admin": ["Admin"], "viewer": ["Gamma", "Solar Viewer"]}'
             AUTH_ROLES_SYNC_AT_LOGIN: "true"
             # Base map for the deck.gl charts (solar demo) without a Mapbox key; the default CSP
             # already allows tile.openstreetmap.org. OSM tiles need visible attribution.

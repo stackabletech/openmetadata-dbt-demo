@@ -1,7 +1,7 @@
 """Solar demo dashboards in Superset, as code.
 
 Creates (or updates) the Trino database connection, the datasets on data2day.solar_gold /
-solar_silver, the charts and four dashboards. Idempotent: objects are matched by name and
+solar_silver, the charts and four dashboards, and the role that lets viewers open them. Idempotent: objects are matched by name and
 updated in place, so edits made here win over edits made in the UI.
 
 Runs as a Job (solar-dashboards Application); for development it also runs locally against a
@@ -18,8 +18,11 @@ import urllib.request
 
 SUPERSET = os.environ.get("SUPERSET_URL", "http://simple-superset-node.platform.svc.cluster.local:8088")
 DATABASE = "Trino data2day"
-TRINO_URI = ("trino://admin:" + urllib.parse.quote(os.environ["TRINO_PASSWORD"], safe="")
+# Superset connects as the Trino service user `superset` and impersonates the logged-in user
+# (impersonate_user), so the Trino OPA policies decide per user what a chart may read.
+TRINO_URI = ("trino://superset:" + urllib.parse.quote(os.environ["TRINO_PASSWORD"], safe="")
              + "@trino-coordinator.platform.svc.cluster.local:8443/data2day")
+VIEWER_ROLE = "Solar Viewer"
 BASE_MAP = "tile://https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 GERMANY = {"latitude": 51.2, "longitude": 10.4, "zoom": 5.2, "bearing": 0, "pitch": 0}
 NORTH = {"latitude": 54.2, "longitude": 10.0, "zoom": 7.5, "bearing": 0, "pitch": 0}
@@ -149,12 +152,37 @@ def ensure_database():
     extra = json.dumps({"engine_params": {"connect_args": {"http_scheme": "https", "verify": False}},
                         "allows_virtual_table_explore": True})
     body = {"database_name": DATABASE, "sqlalchemy_uri": TRINO_URI, "extra": extra,
-            "expose_in_sqllab": True, "allow_run_async": False}
+            "expose_in_sqllab": True, "allow_run_async": False, "impersonate_user": True}
     db = find("database", database_name=DATABASE)
     if db:
         call("PUT", f"/api/v1/database/{db['id']}", body)
         return db["id"]
     return call("POST", "/api/v1/database/", body)["id"]
+
+
+def ensure_viewer_role(db_id):
+    """Role VIEWER_ROLE with access to the database; which tables a user may read is up to Trino.
+
+    The builtin Gamma role can't carry it: `superset init` resets builtin roles on every start.
+    superset.yaml maps the Keycloak role `viewer` to Gamma plus this role.
+    """
+    roles = call("GET", "/api/v1/security/roles/search/?q=" + urllib.parse.quote(json.dumps({"page_size": 100})))
+    role = next((r for r in roles["result"] if r["name"] == VIEWER_ROLE), None)
+    role_id = role["id"] if role else call("POST", "/api/v1/security/roles/", {"name": VIEWER_ROLE})["id"]
+    view_menu = f"[{DATABASE}].(id:{db_id})"
+    pvm_ids, page = [], 0
+    while True:
+        q = urllib.parse.quote(json.dumps({"page": page, "page_size": 100}))
+        result = call("GET", f"/api/v1/security/permissions-resources/?q={q}")["result"]
+        pvm_ids += [p["id"] for p in result
+                    if p["permission"]["name"] == "database_access" and p["view_menu"]["name"] == view_menu]
+        if len(result) < 100:
+            break
+        page += 1
+    if not pvm_ids:
+        raise RuntimeError(f"No permission database_access on {view_menu}")
+    call("POST", f"/api/v1/security/roles/{role_id}/permissions", {"permission_view_menu_ids": pvm_ids})
+    print(f"Role {VIEWER_ROLE}: database_access on {view_menu}")
 
 
 def ensure_datasets(db_id):
@@ -412,6 +440,7 @@ def main():
     login()
     db_id = ensure_database()
     print(f"Database {DATABASE}: {db_id}")
+    ensure_viewer_role(db_id)
     ds_ids = ensure_datasets(db_id)
 
     # Dashboards first (charts reference them), then charts, then the layout.

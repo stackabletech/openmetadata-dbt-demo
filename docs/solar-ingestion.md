@@ -64,12 +64,20 @@ All tables live in the `data2day` catalog (Iceberg via Lakekeeper, data in Garag
 - **Order of changes:** Airflow pulls DAGs from Forgejo immediately, ArgoCD syncs every few
   minutes. Push manifests a DAG depends on (RBAC, ConfigMaps, templates) before the DAG change.
 
+## Access
+
+Superset connects to Trino as the service user `superset` and impersonates the logged-in user,
+so the Trino OPA policies (`rego-trino-policies.yaml`) apply per user: `solar_silver` and
+`solar_gold` are readable by everyone, `solar_bronze` only by admins. Keycloak users with the
+`viewer` role get the Superset role `Solar Viewer` (access to the database connection) in
+addition to Gamma. The setup Job queries as the local Superset `admin`, which maps to Trino
+`admin`.
+
 ## Known limitations
 
 - Lineage is table-level only. It is recorded by the jobs through the OpenMetadata lineage API:
   OpenMetadata 1.12.1 did not resolve OpenLineage events to the Trino tables, and the OpenLineage
   Spark listener names Lakekeeper tables by storage location.
-- Superset queries Trino as `admin`, bypassing the table-owner rule of the OPA policy.
 - Positions of small sites are random points within their postcode area: illustrative, not real
   locations.
 
