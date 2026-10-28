@@ -3,7 +3,8 @@
 # (github.com/stackabletech/demos, stacks/monitoring/grafana-dashboards.yaml, commit 45ad661,
 # Apache-2.0); only the products deployed here. Loaded by Grafana's dashboard sidecar.
 # The Kafka dashboard's topic and broker lists (panel ids 100-103, drill-down to grafana-dashboards-kafka.yaml)
-# are added by scripts/grafana-dashboards.py; edit them there.
+# are added by scripts/grafana-dashboards.py; edit them there. Same for the NiFi dashboard's process group list
+# (drill-down to grafana-dashboards-nifi-flow.yaml).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6729,8 +6730,493 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
       "id": 5,
-      "links": [],
+      "links": [
+        {
+          "title": "NiFi process group",
+          "type": "link",
+          "url": "/d/nifi-process-group/nifi-process-group",
+          "icon": "dashboard",
+          "keepTime": true
+        },
+        {
+          "title": "NiFi processor",
+          "type": "link",
+          "url": "/d/nifi-processor/nifi-processor",
+          "icon": "dashboard",
+          "keepTime": true
+        }
+      ],
       "panels": [
+        {
+          "id": 100,
+          "type": "row",
+          "title": "Process groups (click a row for its processors and queues)",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 101,
+          "type": "table",
+          "title": "Process groups",
+          "description": "All process groups (NiFi Flow is the root canvas). Received / sent: FlowFiles and data that enter or leave NiFi in the group (e.g. ListenHTTP, PublishKafka); per second, averaged over NiFi's last 5 minutes. Task time: busy time of the group's processors, in cores. Click a group for its processors and queues.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 1,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id) (label_replace(count by (parent_id) (max by (parent_id, component_id) (nifi_amount_items_input{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=\"Processor\"})), \"component_id\", \"$1\", \"parent_id\", \"(.*)\"))",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_amount_flowfiles_received{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"}) / 300",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_amount_flowfiles_sent{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"}) / 300",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_amount_bytes_received{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"}) / 300",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "E",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_amount_bytes_sent{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"}) / 300",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "F",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_amount_items_queued{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"})",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "G",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_size_content_queued_total{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"})",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "H",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_amount_threads_active{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"})",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "I",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (component_id, component_name) (nifi_total_task_duration{namespace=~\"$namespace\",app_kubernetes_io_instance=~\"$cluster\",component_type=~\"ProcessGroup|RootProcessGroup\"}) / 300000",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "indexByName": {
+                  "component_name": 0,
+                  "component_id": 1,
+                  "Value #A": 2,
+                  "Value #B": 3,
+                  "Value #C": 4,
+                  "Value #D": 5,
+                  "Value #E": 6,
+                  "Value #F": 7,
+                  "Value #G": 8,
+                  "Value #H": 9,
+                  "Value #I": 10
+                },
+                "renameByName": {
+                  "component_name": "Process group",
+                  "component_id": "component_id",
+                  "Value #A": "Processors",
+                  "Value #B": "Received",
+                  "Value #C": "Sent",
+                  "Value #D": "Data received",
+                  "Value #E": "Data sent",
+                  "Value #F": "Queued",
+                  "Value #G": "Queued data",
+                  "Value #H": "Active threads",
+                  "Value #I": "Task time"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "noValue": "-",
+              "links": [
+                {
+                  "title": "Process group: processors, queues",
+                  "url": "/d/nifi-process-group/nifi-process-group?var-pg=${__data.fields.component_id}&var-namespace=${namespace}&var-cluster=${cluster}&${__url_time_range}"
+                }
+              ]
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Process group"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 220
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "component_id"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Processors"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Received"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "suffix: FF/s"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "lcd",
+                      "valueDisplayMode": "text"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Sent"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "suffix: FF/s"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "lcd",
+                      "valueDisplayMode": "text"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Data received"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "Bps"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "lcd",
+                      "valueDisplayMode": "text"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Data sent"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "Bps"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "lcd",
+                      "valueDisplayMode": "text"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Queued"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 1000
+                        },
+                        {
+                          "color": "red",
+                          "value": 10000
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "thresholds"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Queued data"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Task time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "none"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 3
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "basic",
+                      "valueDisplayMode": "text"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "continuous-GrYlRd"
+                    }
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  },
+                  {
+                    "id": "max",
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "Data received",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": 103,
+          "type": "row",
+          "title": "Cluster resources and throughput",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 10,
+            "w": 24,
+            "h": 1
+          }
+        },
         {
           "datasource": {
             "type": "prometheus",
@@ -6762,7 +7248,7 @@ data:
             "h": 3,
             "w": 3,
             "x": 0,
-            "y": 0
+            "y": 11
           },
           "id": 6,
           "options": {
@@ -6830,7 +7316,7 @@ data:
             "h": 3,
             "w": 3,
             "x": 3,
-            "y": 0
+            "y": 11
           },
           "id": 7,
           "options": {
@@ -6899,7 +7385,7 @@ data:
             "h": 3,
             "w": 3,
             "x": 6,
-            "y": 0
+            "y": 11
           },
           "id": 8,
           "options": {
@@ -6945,7 +7431,7 @@ data:
             "h": 3,
             "w": 5,
             "x": 9,
-            "y": 0
+            "y": 11
           },
           "id": 2,
           "options": {
@@ -6991,7 +7477,7 @@ data:
             "h": 3,
             "w": 3,
             "x": 14,
-            "y": 0
+            "y": 11
           },
           "id": 3,
           "options": {
@@ -7147,7 +7633,7 @@ data:
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 3
+            "y": 14
           },
           "id": 5,
           "options": {
@@ -7320,7 +7806,7 @@ data:
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 3
+            "y": 14
           },
           "id": 9,
           "options": {
@@ -7477,7 +7963,7 @@ data:
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 3
+            "y": 14
           },
           "id": 15,
           "options": {
@@ -7589,7 +8075,7 @@ data:
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 10
+            "y": 21
           },
           "id": 24,
           "options": {
@@ -7691,7 +8177,7 @@ data:
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 10
+            "y": 21
           },
           "id": 18,
           "options": {
@@ -7792,7 +8278,7 @@ data:
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 29
           },
           "id": 25,
           "options": {
@@ -7941,7 +8427,7 @@ data:
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 18
+            "y": 29
           },
           "id": 26,
           "options": {
@@ -8066,7 +8552,7 @@ data:
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 26
+            "y": 37
           },
           "id": 27,
           "options": {
@@ -8191,7 +8677,7 @@ data:
             "h": 8,
             "w": 9,
             "x": 9,
-            "y": 26
+            "y": 37
           },
           "id": 28,
           "options": {
@@ -8367,7 +8853,7 @@ data:
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 26
+            "y": 37
           },
           "id": 23,
           "options": {
@@ -8489,5 +8975,6 @@ data:
       "timezone": "",
       "title": "NiFi",
       "uid": "C_8qIX04l",
-      "version": 13
+      "version": 13,
+      "description": "NiFi cluster: process groups with drill-down (NiFi process group, NiFi processor), resources and throughput."
     }

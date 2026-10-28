@@ -7,6 +7,8 @@ Grafana dashboard sidecar). The YAML files are committed; run this after changin
   - grafana-dashboards-overview.yaml       "Stackable Data Platform", the home dashboard
   - grafana-dashboards-kafka.yaml          "Kafka topic" and "Kafka broker", plus the topic and broker
                                            lists on the vendored "Kafka" dashboard
+  - grafana-dashboards-nifi-flow.yaml      "NiFi process group" and "NiFi processor", plus the process
+                                           group list on the vendored "NiFi" dashboard
   - the common header (Stackable logo + navigation) on these and on the Airflow, OPA and logs
     dashboards, which are otherwise edited by hand
 
@@ -489,6 +491,98 @@ data:
     print("Headers, Stackable Data Platform overview")
 
 
+# --- Prometheus panel helpers (Kafka, NiFi) -------------------------------------------------
+PROM = {"type": "prometheus", "uid": "prometheus"}
+ZERO_GOOD = {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}
+
+
+def target(ref, expr, legend=None, instant=False):
+    t = {"refId": ref, "datasource": PROM, "expr": expr, "range": not instant, "instant": instant}
+    if instant: t["format"] = "table"
+    if legend: t["legendFormat"] = legend
+    return t
+
+
+def by(name, *props):
+    return {"matcher": {"id": "byName", "options": name}, "properties": list(props)}
+
+
+def row(pid, title, y, collapsed=False):
+    return {"id": pid, "type": "row", "title": title, "collapsed": collapsed, "panels": [],
+            "gridPos": {"x": 0, "y": y, "w": 24, "h": 1}}
+
+
+def stat(pid, title, desc, expr, grid, unit="short", color="blue", thresholds=None, mappings=None,
+         spark=False, text_mode="value", legend=None, decimals=None):
+    d = {"unit": unit, "color": {"mode": "thresholds" if thresholds else "fixed", "fixedColor": color},
+         "mappings": mappings or [], "noValue": "-"}
+    if thresholds: d["thresholds"] = thresholds
+    if decimals is not None: d["decimals"] = decimals
+    return {"id": pid, "type": "stat", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
+            "targets": [target("A", expr, legend)],
+            "fieldConfig": {"defaults": d, "overrides": []},
+            "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                        "colorMode": "background" if (thresholds or mappings) else "value",
+                        "graphMode": "area" if spark else "none", "textMode": text_mode,
+                        "justifyMode": "center", "wideLayout": True}}
+
+
+def ts(pid, title, desc, targets, grid, unit="short", stack=False, negative=None, draw="line", fill=15, extra=None):
+    custom = {"drawStyle": draw, "lineWidth": 1 if draw == "line" else 0, "fillOpacity": fill,
+              "gradientMode": "opacity", "showPoints": "never", "spanNulls": True,
+              "stacking": {"mode": "normal" if stack else "none"}}
+    overrides = []
+    if negative:
+        overrides.append({"matcher": {"id": "byRegexp", "options": negative},
+                          "properties": [{"id": "custom.transform", "value": "negative-Y"}]})
+    p = {"id": pid, "type": "timeseries", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
+         "targets": targets, "fieldConfig": {"defaults": {"unit": unit, "custom": custom, "min": None if negative else 0},
+                                             "overrides": overrides},
+         "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+                     "tooltip": {"mode": "multi", "sort": "desc"}}}
+    if extra: p["fieldConfig"]["defaults"].update(extra)
+    return p
+
+
+def table(pid, title, desc, queries, columns, grid, link=None, overrides=(), sort=None):
+    """queries: [(refId, expr, column name)], merged on their common labels; columns: label renames,
+    in display order, before the value columns."""
+    names = dict(columns)
+    names.update({f"Value #{r}": n for r, _, n in queries})
+    order = [c for c, _ in columns] + [f"Value #{r}" for r, _, _ in queries]
+    p = {"id": pid, "type": "table", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
+         "targets": [target(r, e, instant=True) for r, e, _ in queries],
+         "transformations": [{"id": "merge", "options": {}},
+                             {"id": "organize", "options": {
+                                 "excludeByName": {"Time": True},
+                                 "indexByName": {c: i for i, c in enumerate(order)},
+                                 "renameByName": names}}],
+         "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False},
+                                      "noValue": "-"},
+                         "overrides": list(overrides)},
+         "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False},
+                     "sortBy": [{"displayName": sort, "desc": True}] if sort else []}}
+    if link: p["fieldConfig"]["defaults"]["links"] = [{"title": link[0], "url": link[1]}]
+    return p
+
+
+def gauge_cell(name, unit, color="blue"):
+    return by(name, {"id": "unit", "value": unit},
+              {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "lcd", "valueDisplayMode": "text"}},
+              {"id": "color", "value": {"mode": "continuous-BlYlRd" if color == "heat" else "fixed", "fixedColor": color}},
+              {"id": "min", "value": 0})
+
+
+def alarm_cell(name):
+    return by(name, {"id": "thresholds", "value": ZERO_GOOD}, {"id": "color", "value": {"mode": "thresholds"}},
+              {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+              {"id": "custom.width", "value": 130})
+
+
+def hidden(name):
+    return by(name, {"id": "custom.hidden", "value": True})
+
+
 def kafka():
     """Kafka: topic and broker lists on the "Kafka" dashboard (vendored, grafana-dashboards-stackable.yaml),
     with drill-down to "Kafka topic" and "Kafka broker" (grafana-dashboards-kafka.yaml).
@@ -511,85 +605,6 @@ def kafka():
         "2": {"text": "Recovery", "color": "orange", "index": 2}, "3": {"text": "Running", "color": "green", "index": 3},
         "6": {"text": "Pending shutdown", "color": "orange", "index": 4}, "7": {"text": "Shutting down", "color": "red", "index": 5},
         "127": {"text": "Unknown", "color": "red", "index": 6}}}]
-    ZERO_GOOD = {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}
-
-    def target(ref, expr, legend=None, instant=False):
-        t = {"refId": ref, "datasource": PROM, "expr": expr, "range": not instant, "instant": instant}
-        if instant: t["format"] = "table"
-        if legend: t["legendFormat"] = legend
-        return t
-
-    def by(name, *props):
-        return {"matcher": {"id": "byName", "options": name}, "properties": list(props)}
-
-    def row(pid, title, y, collapsed=False):
-        return {"id": pid, "type": "row", "title": title, "collapsed": collapsed, "panels": [],
-                "gridPos": {"x": 0, "y": y, "w": 24, "h": 1}}
-
-    def stat(pid, title, desc, expr, grid, unit="short", color="blue", thresholds=None, mappings=None,
-             spark=False, text_mode="value", legend=None, decimals=None):
-        d = {"unit": unit, "color": {"mode": "thresholds" if thresholds else "fixed", "fixedColor": color},
-             "mappings": mappings or [], "noValue": "-"}
-        if thresholds: d["thresholds"] = thresholds
-        if decimals is not None: d["decimals"] = decimals
-        return {"id": pid, "type": "stat", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
-                "targets": [target("A", expr, legend)],
-                "fieldConfig": {"defaults": d, "overrides": []},
-                "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
-                            "colorMode": "background" if (thresholds or mappings) else "value",
-                            "graphMode": "area" if spark else "none", "textMode": text_mode,
-                            "justifyMode": "center", "wideLayout": True}}
-
-    def ts(pid, title, desc, targets, grid, unit="short", stack=False, negative=None, draw="line", fill=15, extra=None):
-        custom = {"drawStyle": draw, "lineWidth": 1 if draw == "line" else 0, "fillOpacity": fill,
-                  "gradientMode": "opacity", "showPoints": "never", "spanNulls": True,
-                  "stacking": {"mode": "normal" if stack else "none"}}
-        overrides = []
-        if negative:
-            overrides.append({"matcher": {"id": "byRegexp", "options": negative},
-                              "properties": [{"id": "custom.transform", "value": "negative-Y"}]})
-        p = {"id": pid, "type": "timeseries", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
-             "targets": targets, "fieldConfig": {"defaults": {"unit": unit, "custom": custom, "min": None if negative else 0},
-                                                 "overrides": overrides},
-             "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
-                         "tooltip": {"mode": "multi", "sort": "desc"}}}
-        if extra: p["fieldConfig"]["defaults"].update(extra)
-        return p
-
-    def table(pid, title, desc, queries, columns, grid, link=None, overrides=(), sort=None):
-        """queries: [(refId, expr, column name)], merged on their common labels; columns: label renames,
-        in display order, before the value columns."""
-        names = dict(columns)
-        names.update({f"Value #{r}": n for r, _, n in queries})
-        order = [c for c, _ in columns] + [f"Value #{r}" for r, _, _ in queries]
-        p = {"id": pid, "type": "table", "title": title, "description": desc, "datasource": PROM, "gridPos": grid,
-             "targets": [target(r, e, instant=True) for r, e, _ in queries],
-             "transformations": [{"id": "merge", "options": {}},
-                                 {"id": "organize", "options": {
-                                     "excludeByName": {"Time": True},
-                                     "indexByName": {c: i for i, c in enumerate(order)},
-                                     "renameByName": names}}],
-             "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False},
-                                          "noValue": "-"},
-                             "overrides": list(overrides)},
-             "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False},
-                         "sortBy": [{"displayName": sort, "desc": True}] if sort else []}}
-        if link: p["fieldConfig"]["defaults"]["links"] = [{"title": link[0], "url": link[1]}]
-        return p
-
-    def gauge_cell(name, unit, color="blue"):
-        return by(name, {"id": "unit", "value": unit},
-                  {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "lcd", "valueDisplayMode": "text"}},
-                  {"id": "color", "value": {"mode": "continuous-BlYlRd" if color == "heat" else "fixed", "fixedColor": color}},
-                  {"id": "min", "value": 0})
-
-    def alarm_cell(name):
-        return by(name, {"id": "thresholds", "value": ZERO_GOOD}, {"id": "color", "value": {"mode": "thresholds"}},
-                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
-                  {"id": "custom.width", "value": 130})
-
-    def hidden(name):
-        return by(name, {"id": "custom.hidden", "value": True})
 
     def per_partition(metric, sel, keys="topic, partition"):
         return f"max by ({keys}) ({metric}{{{sel}}})"
@@ -932,8 +947,297 @@ data:
     print("Kafka, Kafka topic, Kafka broker")
 
 
+def nifi():
+    """NiFi: process group list on the "NiFi" dashboard (vendored, grafana-dashboards-stackable.yaml), with
+    drill-down to "NiFi process group" and "NiFi processor" (grafana-dashboards-nifi-flow.yaml).
+
+    NiFi's flow metrics (nifi_amount_*, nifi_*_duration, nifi_processor_counters) are its status
+    statistics: totals over a rolling 5-minute window, not counters. Rates are value / 300. A processor's
+    nifi_amount_threads_active is its group's count (NiFi bug), so it isn't shown per processor.
+    """
+    S = 'namespace=~"$namespace",app_kubernetes_io_instance=~"$cluster"'
+    W = 300  # NiFi's statistics window in seconds
+    VARS = "var-namespace=${namespace}&var-cluster=${cluster}&${__url_time_range}"
+    PG_URL = "/d/nifi-process-group/nifi-process-group?var-pg=${__data.fields.component_id}&" + VARS
+    PROC_URL = "/d/nifi-processor/nifi-processor?var-processor=${__data.fields.component_id}&" + VARS
+    PG_TYPES = 'component_type=~"ProcessGroup|RootProcessGroup"'
+
+    def m(metric, sel, keys="component_id, component_name"):
+        """One value per component (max over pods and old series)."""
+        return f"max by ({keys}) ({metric}{{{S},{sel}}})"
+
+    def per_s(metric, sel, keys="component_id, component_name"):
+        return f"{m(metric, sel, keys)} / {W}"
+
+    def var(name, label, metric, sel):
+        q = f"query_result(max by (component_id, component_name) ({metric}{{{S},{sel}}}))"
+        return {"name": name, "label": label, "type": "query", "datasource": PROM, "refresh": 2, "sort": 1,
+                "query": {"query": q, "refId": name}, "definition": q,
+                "regex": '/component_id="(?<value>[^"]+)",component_name="(?<text>[^"]+)"/',
+                "current": {}, "includeAll": False, "multi": False}
+
+    FF = "suffix: FF/s"
+
+    # ------------------------------------------------------------------ "NiFi": process group list
+    SRC = M + "grafana-dashboards-stackable.yaml"
+    text = open(SRC).read()
+    start = text.index("  nifi.json: |\n")
+    end = len(text)
+    n = json.loads(yaml.safe_load(text[start:end].replace("  nifi.json: |\n", "nifi.json: |\n", 1))["nifi.json"])
+    OWNED, OFFSET = 100, 11
+    vendored = [p for p in n["panels"] if p["id"] < OWNED]
+    if len(vendored) == len(n["panels"]):
+        for p in vendored: p["gridPos"]["y"] += OFFSET
+    groups = table(101, "Process groups",
+        "All process groups (NiFi Flow is the root canvas). Received / sent: FlowFiles and data that enter or leave NiFi "
+        "in the group (e.g. ListenHTTP, PublishKafka); per second, averaged over NiFi's last 5 minutes. "
+        "Task time: busy time of the group's processors, in cores. Click a group for its processors and queues.",
+        [("A", f'max by (component_id) (label_replace(count by (parent_id) (max by (parent_id, component_id) '
+               f'(nifi_amount_items_input{{{S},component_type="Processor"}})), "component_id", "$1", "parent_id", "(.*)"))', "Processors"),
+         ("B", per_s("nifi_amount_flowfiles_received", PG_TYPES), "Received"),
+         ("C", per_s("nifi_amount_flowfiles_sent", PG_TYPES), "Sent"),
+         ("D", per_s("nifi_amount_bytes_received", PG_TYPES), "Data received"),
+         ("E", per_s("nifi_amount_bytes_sent", PG_TYPES), "Data sent"),
+         ("F", m("nifi_amount_items_queued", PG_TYPES), "Queued"),
+         ("G", m("nifi_size_content_queued_total", PG_TYPES), "Queued data"),
+         ("H", m("nifi_amount_threads_active", PG_TYPES), "Active threads"),
+         ("I", f"{m('nifi_total_task_duration', PG_TYPES)} / {W * 1000}", "Task time")],
+        [("component_name", "Process group"), ("component_id", "component_id")],
+        {"x": 0, "y": 1, "w": 24, "h": 8}, link=("Process group: processors, queues", PG_URL), sort="Data received",
+        overrides=[by("Process group", {"id": "custom.width", "value": 220}), hidden("component_id"),
+                   by("Processors", {"id": "custom.width", "value": 100}),
+                   gauge_cell("Received", FF, "green"), gauge_cell("Sent", FF, "blue"),
+                   gauge_cell("Data received", "Bps", "green"), gauge_cell("Data sent", "Bps", "blue"),
+                   by("Queued", {"id": "unit", "value": "short"},
+                      {"id": "thresholds", "value": {"mode": "absolute", "steps": [
+                          {"color": "green", "value": None}, {"color": "orange", "value": 1000}, {"color": "red", "value": 10000}]}},
+                      {"id": "color", "value": {"mode": "thresholds"}},
+                      {"id": "custom.cellOptions", "value": {"type": "color-text"}}),
+                   by("Queued data", {"id": "unit", "value": "bytes"}),
+                   by("Task time", {"id": "unit", "value": "none"}, {"id": "decimals", "value": 3},
+                      {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "basic", "valueDisplayMode": "text"}},
+                      {"id": "color", "value": {"mode": "continuous-GrYlRd"}}, {"id": "min", "value": 0}, {"id": "max", "value": 1})])
+    n["panels"] = [row(100, "Process groups (click a row for its processors and queues)", 0), groups,
+                   row(103, "Cluster resources and throughput", 10)] + vendored
+    n["links"] = [{"title": "NiFi process group", "type": "link", "url": "/d/nifi-process-group/nifi-process-group", "icon": "dashboard", "keepTime": True},
+                  {"title": "NiFi processor", "type": "link", "url": "/d/nifi-processor/nifi-processor", "icon": "dashboard", "keepTime": True}]
+    n["description"] = "NiFi cluster: process groups with drill-down (NiFi process group, NiFi processor), resources and throughput."
+    out = "\n".join("    " + l for l in json.dumps(n, indent=2, ensure_ascii=True).splitlines()) + "\n"
+    open(SRC, "w").write(text[:start] + "  nifi.json: |\n" + out)
+
+    var_by_name = {v["name"]: v for v in n["templating"]["list"]}
+    common_vars = [copy.deepcopy(var_by_name["namespace"]), copy.deepcopy(var_by_name["cluster"])]
+    for v in common_vars: v["hide"] = 2
+    back = {"title": "NiFi", "type": "link", "url": "/d/C_8qIX04l", "icon": "arrow-left", "keepTime": True}
+
+    # ------------------------------------------------------------------ "NiFi process group"
+    G = 'component_id="$pg"'
+    PIN = 'component_type="Processor",parent_id="$pg"'
+    CIN = 'component_type="Connection",parent_id="$pg"'
+    pg_stat = lambda pid, title, desc, expr, x, **kw: stat(pid, title, desc, expr, {"x": x, "y": 0, "w": 3, "h": 4}, **kw)
+    gp = [
+        pg_stat(1, "Processors", "Processors directly in this group.",
+                f'count(max by (component_id) (nifi_amount_items_input{{{S},{PIN}}}))', 0, color="purple"),
+        pg_stat(2, "Received", "FlowFiles entering NiFi in this group per second (last 5 minutes).",
+                f"sum({per_s('nifi_amount_flowfiles_received', G)})", 3, unit=FF, color="green", spark=True, decimals=1),
+        pg_stat(3, "Sent", "FlowFiles leaving NiFi from this group per second (last 5 minutes).",
+                f"sum({per_s('nifi_amount_flowfiles_sent', G)})", 6, unit=FF, color="blue", spark=True, decimals=1),
+        pg_stat(4, "Data received", "Bytes received per second.", f"sum({per_s('nifi_amount_bytes_received', G)})", 9,
+                unit="Bps", color="green", spark=True),
+        pg_stat(5, "Data sent", "Bytes sent per second.", f"sum({per_s('nifi_amount_bytes_sent', G)})", 12,
+                unit="Bps", color="blue", spark=True),
+        pg_stat(6, "Queued", "FlowFiles waiting in the group's connections.", f"sum({m('nifi_amount_items_queued', G)})", 15,
+                thresholds={"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "orange", "value": 1000},
+                                                          {"color": "red", "value": 10000}]}, spark=True),
+        pg_stat(7, "Active threads", "Threads running tasks of the group's processors right now.",
+                f"sum({m('nifi_amount_threads_active', G)})", 18, color="purple", spark=True),
+        pg_stat(8, "Task time", "Busy time of the group's processors, in cores (1 = one core busy all the time).",
+                f"sum({m('nifi_total_task_duration', G)}) / {W * 1000}", 21, unit="none", color="orange", spark=True, decimals=3),
+        row(9, "Processors", 4),
+        table(10, "Processors",
+              "Per second, averaged over NiFi's last 5 minutes. In / out: FlowFiles taken from and passed to connections; "
+              "received / sent: from and to outside NiFi; removed: dropped (auto-terminated). CPU in cores. Click a processor.",
+              [("A", per_s("nifi_amount_items_input", PIN), "In"),
+               ("B", per_s("nifi_amount_items_output", PIN), "Out"),
+               ("C", per_s("nifi_amount_flowfiles_received", PIN), "Received"),
+               ("D", per_s("nifi_amount_flowfiles_sent", PIN), "Sent"),
+               ("E", per_s("nifi_amount_flowfiles_removed", PIN), "Removed"),
+               ("F", per_s("nifi_amount_bytes_read", PIN), "Read"),
+               ("G", per_s("nifi_amount_bytes_written", PIN), "Written"),
+               ("H", per_s("nifi_amount_bytes_sent", PIN), "Data sent"),
+               ("I", f"{m('nifi_processing_performance_cpu_duration', PIN)} / {W * 1000}", "CPU"),
+               ("J", m("nifi_average_lineage_duration", PIN), "Lineage")],
+              [("component_name", "Processor"), ("component_id", "component_id")], {"x": 0, "y": 5, "w": 24, "h": 7},
+              link=("Processor details", PROC_URL), sort="Read",
+              overrides=[by("Processor", {"id": "custom.width", "value": 260}), hidden("component_id"),
+                         gauge_cell("In", FF, "green"), gauge_cell("Out", FF, "blue"),
+                         by("Received", {"id": "unit", "value": FF}), by("Sent", {"id": "unit", "value": FF}),
+                         by("Removed", {"id": "unit", "value": FF}),
+                         gauge_cell("Read", "Bps", "purple"), gauge_cell("Written", "Bps", "purple"),
+                         by("Data sent", {"id": "unit", "value": "Bps"}),
+                         by("CPU", {"id": "unit", "value": "none"}, {"id": "decimals", "value": 3},
+                            {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "basic", "valueDisplayMode": "text"}},
+                            {"id": "color", "value": {"mode": "continuous-GrYlRd"}}, {"id": "min", "value": 0}, {"id": "max", "value": 1}),
+                         by("Lineage", {"id": "unit", "value": "ms"}, {"id": "description", "value": "Average time FlowFiles have been in the flow"})]),
+        row(11, "Connections (queues)", 12),
+        table(12, "Connections",
+              "Queues between the group's components. Fill: how close the queue is to its back pressure threshold "
+              "(at 100 % NiFi stops scheduling the upstream processor).",
+              [("A", m("nifi_amount_items_queued", CIN, "component_id, component_name, source_name, destination_name"), "Queued"),
+               ("B", m("nifi_size_content_queued_total", CIN, "component_id, component_name, source_name, destination_name"), "Queued data"),
+               ("C", f'{m("nifi_percent_used_count", CIN, "component_id, component_name, source_name, destination_name")} / 100', "Fill (count)"),
+               ("D", f'{m("nifi_percent_used_bytes", CIN, "component_id, component_name, source_name, destination_name")} / 100', "Fill (size)"),
+               ("E", m("nifi_backpressure_object_threshold", CIN, "component_id, component_name, source_name, destination_name"), "Threshold"),
+               ("F", f'{m("nifi_amount_items_input", CIN, "component_id, component_name, source_name, destination_name")} / {W}', "In"),
+               ("G", f'{m("nifi_amount_items_output", CIN, "component_id, component_name, source_name, destination_name")} / {W}', "Out")],
+              [("source_name", "From"), ("component_name", "Relationship"), ("destination_name", "To"), ("component_id", "component_id")],
+              {"x": 0, "y": 13, "w": 24, "h": 6}, sort="Queued",
+              overrides=[hidden("component_id"), by("From", {"id": "custom.width", "value": 240}),
+                         by("To", {"id": "custom.width", "value": 240}), by("Relationship", {"id": "custom.width", "value": 120}),
+                         by("Queued", {"id": "unit", "value": "short"}), by("Queued data", {"id": "unit", "value": "bytes"}),
+                         *[by(f, {"id": "unit", "value": "percentunit"}, {"id": "min", "value": 0}, {"id": "max", "value": 1},
+                              {"id": "thresholds", "value": {"mode": "absolute", "steps": [
+                                  {"color": "green", "value": None}, {"color": "orange", "value": 0.6}, {"color": "red", "value": 0.9}]}},
+                              {"id": "color", "value": {"mode": "thresholds"}},
+                              {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "lcd", "valueDisplayMode": "text"}})
+                           for f in ("Fill (count)", "Fill (size)")],
+                         by("Threshold", {"id": "unit", "value": "short"}),
+                         by("In", {"id": "unit", "value": FF}), by("Out", {"id": "unit", "value": FF})]),
+        table(13, "Process groups inside",
+              "Child process groups. Click one to open it.",
+              [("A", per_s("nifi_amount_flowfiles_received", 'component_type="ProcessGroup",parent_id="$pg"'), "Received"),
+               ("B", per_s("nifi_amount_flowfiles_sent", 'component_type="ProcessGroup",parent_id="$pg"'), "Sent"),
+               ("C", m("nifi_amount_items_queued", 'component_type="ProcessGroup",parent_id="$pg"'), "Queued"),
+               ("D", m("nifi_amount_threads_active", 'component_type="ProcessGroup",parent_id="$pg"'), "Active threads")],
+              [("component_name", "Process group"), ("component_id", "component_id")], {"x": 0, "y": 19, "w": 24, "h": 5},
+              link=("Open process group", PG_URL),
+              overrides=[hidden("component_id"), by("Received", {"id": "unit", "value": FF}), by("Sent", {"id": "unit", "value": FF})]),
+        row(14, "Over time", 24),
+        ts(15, "FlowFiles out per processor", "FlowFiles each processor passed on per second (5-minute average).",
+           [target("A", per_s("nifi_amount_items_output", PIN), "{{component_name}}")],
+           {"x": 0, "y": 25, "w": 12, "h": 8}, unit=FF, fill=20),
+        ts(16, "Data per processor", "Bytes read (up) and written (down) per second by each processor.",
+           [target("A", per_s("nifi_amount_bytes_read", PIN), "{{component_name}} read"),
+            target("B", per_s("nifi_amount_bytes_written", PIN), "{{component_name}} written")],
+           {"x": 12, "y": 25, "w": 12, "h": 8}, unit="Bps", negative=".* written", fill=20),
+        ts(17, "Queues", "FlowFiles queued per connection.",
+           [target("A", m("nifi_amount_items_queued", CIN, "component_name, source_name, destination_name"),
+                   "{{source_name}} → {{destination_name}} ({{component_name}})")],
+           {"x": 0, "y": 33, "w": 12, "h": 8}, unit="short", fill=20),
+        ts(18, "Where the time goes", "Processing time of the group's processors per second of wall time, by kind (cores).",
+           [target(r, f"sum({m(metric, G)}) / {W * 1000}", lbl) for r, metric, lbl in [
+               ("A", "nifi_processing_performance_cpu_duration", "CPU"),
+               ("B", "nifi_processing_performance_content_read_duration", "content read"),
+               ("C", "nifi_processing_performance_content_write_duration", "content write"),
+               ("D", "nifi_processing_performance_session_commit_duration", "session commit"),
+               ("E", "nifi_processing_performance_gc_duration", "GC")]],
+           {"x": 12, "y": 33, "w": 12, "h": 8}, unit="none", stack=True, fill=50),
+    ]
+    group = {"uid": "nifi-process-group", "title": "NiFi process group", "tags": ["nifi"], "editable": True, "schemaVersion": 41,
+             "description": "One NiFi process group: processors, connections (queues, back pressure), child groups. Opened from 'NiFi'.",
+             "time": {"from": "now-6h", "to": "now"}, "refresh": "1m",
+             "templating": {"list": common_vars + [var("pg", "Process group", "nifi_amount_items_queued", PG_TYPES)]},
+             "links": [back], "panels": gp}
+
+    # ------------------------------------------------------------------ "NiFi processor"
+    P = 'component_id="$processor"'
+    PARENT = (f'max by (component_id, component_name) (nifi_amount_items_queued{{{S},{PG_TYPES}}}) * on (component_id) group_left() '
+              f'label_replace(max by (parent_id) (nifi_amount_items_input{{{S},{P}}}), "component_id", "$1", "parent_id", "(.*)")')
+    pstat = lambda pid, title, desc, expr, x, w=3, **kw: stat(pid, title, desc, expr, {"x": x, "y": 0, "w": w, "h": 4}, **kw)
+    group_stat = pstat(1, "Process group", "The group this processor belongs to. Click to open it.", PARENT, 0, w=4,
+                       text_mode="name", legend="{{component_name}}", color="purple")
+    group_stat["fieldConfig"]["defaults"]["links"] = [
+        {"title": "Open process group", "url": "/d/nifi-process-group/nifi-process-group?var-pg=${__field.labels.component_id}&" + VARS}]
+    CONN = 'component_type="Connection"'
+    pp = [
+        group_stat,
+        pstat(2, "In", "FlowFiles taken from incoming connections per second.", f"sum({per_s('nifi_amount_items_input', P)})", 4,
+              unit=FF, color="green", spark=True, decimals=1),
+        pstat(3, "Out", "FlowFiles passed to outgoing connections per second.", f"sum({per_s('nifi_amount_items_output', P)})", 7,
+              unit=FF, color="blue", spark=True, decimals=1),
+        pstat(4, "Received", "FlowFiles received from outside NiFi per second.", f"sum({per_s('nifi_amount_flowfiles_received', P)})", 10,
+              unit=FF, color="green", spark=True, decimals=1),
+        pstat(5, "Sent", "FlowFiles sent outside NiFi per second.", f"sum({per_s('nifi_amount_flowfiles_sent', P)})", 13,
+              unit=FF, color="blue", spark=True, decimals=1),
+        pstat(6, "Removed", "FlowFiles dropped per second (auto-terminated relationships).",
+              f"sum({per_s('nifi_amount_flowfiles_removed', P)})", 16, unit=FF, color="orange", spark=True, decimals=1),
+        pstat(7, "CPU", "CPU time per second of wall time (cores).",
+              f"sum({m('nifi_processing_performance_cpu_duration', P)}) / {W * 1000}", 19, unit="none", color="orange", spark=True, decimals=3),
+        pstat(8, "Lineage", "Average time the FlowFiles it processed had been in the flow.",
+              f"max({m('nifi_average_lineage_duration', P)})", 22, w=2, unit="ms", color="purple"),
+        row(9, "Throughput", 4),
+        ts(10, "FlowFiles", "Per second (5-minute averages).",
+           [target(r, f"sum({per_s(metric, P)})", lbl) for r, metric, lbl in [
+               ("A", "nifi_amount_items_input", "in"), ("B", "nifi_amount_items_output", "out"),
+               ("C", "nifi_amount_flowfiles_received", "received"), ("D", "nifi_amount_flowfiles_sent", "sent"),
+               ("E", "nifi_amount_flowfiles_removed", "removed")]],
+           {"x": 0, "y": 5, "w": 12, "h": 8}, unit=FF, fill=10),
+        ts(11, "Data", "Bytes per second: read from and written to the content repository, received from and sent to outside NiFi.",
+           [target(r, f"sum({per_s(metric, P)})", lbl) for r, metric, lbl in [
+               ("A", "nifi_amount_bytes_read", "read"), ("B", "nifi_amount_bytes_written", "written"),
+               ("C", "nifi_amount_bytes_received", "received"), ("D", "nifi_amount_bytes_sent", "sent")]],
+           {"x": 12, "y": 5, "w": 12, "h": 8}, unit="Bps", fill=10),
+        ts(12, "Where the time goes", "Processing time per second of wall time, by kind (cores).",
+           [target(r, f"sum({m(metric, P)}) / {W * 1000}", lbl) for r, metric, lbl in [
+               ("A", "nifi_processing_performance_cpu_duration", "CPU"),
+               ("B", "nifi_processing_performance_content_read_duration", "content read"),
+               ("C", "nifi_processing_performance_content_write_duration", "content write"),
+               ("D", "nifi_processing_performance_session_commit_duration", "session commit"),
+               ("E", "nifi_processing_performance_gc_duration", "GC")]],
+           {"x": 0, "y": 13, "w": 12, "h": 8}, unit="none", stack=True, fill=50),
+        ts(13, "Counters", "The processor's own counters per second, e.g. PublishKafka's messages sent per topic.",
+           [target("A", f'max by (counter_name) (nifi_processor_counters{{{S},processor_id="$processor"}}) / {W}', "{{counter_name}}")],
+           {"x": 12, "y": 13, "w": 12, "h": 8}, unit="suffix: /s", fill=10),
+        row(14, "Connections", 21),
+        table(15, "Incoming queues", "Connections that feed this processor.",
+              [("A", m("nifi_amount_items_queued", CONN + ',destination_id="$processor"', "component_name, source_name"), "Queued"),
+               ("B", m("nifi_size_content_queued_total", CONN + ',destination_id="$processor"', "component_name, source_name"), "Queued data"),
+               ("C", f'{m("nifi_percent_used_count", CONN + ",destination_id=\"$processor\"", "component_name, source_name")} / 100', "Fill"),
+               ("D", f'{m("nifi_amount_items_output", CONN + ",destination_id=\"$processor\"", "component_name, source_name")} / {W}', "Taken")],
+              [("source_name", "From"), ("component_name", "Relationship")], {"x": 0, "y": 22, "w": 12, "h": 5},
+              overrides=[by("Queued data", {"id": "unit", "value": "bytes"}), by("Taken", {"id": "unit", "value": FF}),
+                         by("Fill", {"id": "unit", "value": "percentunit"}, {"id": "min", "value": 0}, {"id": "max", "value": 1},
+                            {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "lcd", "valueDisplayMode": "text"}},
+                            {"id": "color", "value": {"mode": "continuous-GrYlRd"}})]),
+        table(16, "Outgoing queues", "Connections this processor writes to.",
+              [("A", m("nifi_amount_items_queued", CONN + ',source_id="$processor"', "component_name, destination_name"), "Queued"),
+               ("B", m("nifi_size_content_queued_total", CONN + ',source_id="$processor"', "component_name, destination_name"), "Queued data"),
+               ("C", f'{m("nifi_percent_used_count", CONN + ",source_id=\"$processor\"", "component_name, destination_name")} / 100', "Fill"),
+               ("D", f'{m("nifi_amount_items_input", CONN + ",source_id=\"$processor\"", "component_name, destination_name")} / {W}', "Added")],
+              [("component_name", "Relationship"), ("destination_name", "To")], {"x": 12, "y": 22, "w": 12, "h": 5},
+              overrides=[by("Queued data", {"id": "unit", "value": "bytes"}), by("Added", {"id": "unit", "value": FF}),
+                         by("Fill", {"id": "unit", "value": "percentunit"}, {"id": "min", "value": 0}, {"id": "max", "value": 1},
+                            {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "lcd", "valueDisplayMode": "text"}},
+                            {"id": "color", "value": {"mode": "continuous-GrYlRd"}})]),
+    ]
+    processor = {"uid": "nifi-processor", "title": "NiFi processor", "tags": ["nifi"], "editable": True, "schemaVersion": 41,
+                 "description": "One NiFi processor: throughput, data, processing time, counters, its queues. Opened from 'NiFi process group'.",
+                 "time": {"from": "now-6h", "to": "now"}, "refresh": "1m",
+                 "templating": {"list": common_vars + [var("processor", "Processor", "nifi_amount_items_input", 'component_type="Processor"')]},
+                 "links": [back, {"title": "NiFi process group", "type": "link", "url": "/d/nifi-process-group/nifi-process-group",
+                                  "icon": "dashboard", "keepTime": True}],
+                 "panels": pp}
+    open(M + "grafana-dashboards-nifi-flow.yaml", "w").write("""---
+# Grafana dashboards "NiFi process group" and "NiFi processor": drill-down from the process group list on
+# the "NiFi" dashboard (grafana-dashboards-stackable.yaml). Prometheus only (NiFi's flow metrics: totals
+# over NiFi's rolling 5-minute window, shown per second). Generated by scripts/grafana-dashboards.py.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-nifi-flow
+  namespace: platform
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: Stackable Data Platform
+data:
+""" + block("nifi-process-group.json", group) + block("nifi-processor.json", processor))
+    print("NiFi, NiFi process group, NiFi processor")
+
+
 if __name__ == "__main__":
     trino_queries()
     nifi_authorization()
     branding_and_overview()
     kafka()
+    nifi()
