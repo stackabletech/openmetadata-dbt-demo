@@ -3,17 +3,17 @@
 Synthetic, physically plausible PV telemetry for German sites (capacities, orientations and
 regions from the Marktstammdatenregister) flows in near real time through Apache NiFi and
 Apache Kafka into an Apache Iceberg lakehouse, is refined with Apache Spark into bronze, silver
-and gold, and ends in Apache Superset dashboards. Lineage from the Kafka topics to the
-dashboards is recorded in OpenMetadata.
+and gold, and ends in Apache Superset dashboards. Lineage from the NiFi flow to the dashboards
+is recorded in OpenMetadata.
 
 ```
 solar-generator ──HTTP──> NiFi "solar ingest" ──> Kafka solar-* ──> Spark bronze (streaming)
                                                                         │
-                       Airflow: solar_bronze_watchdog / solar_dims / solar_silver (silver -> gold)
+      Airflow: solar_bronze_watchdog / solar_dims / solar_silver -> (asset) -> solar_gold
                                                                         │
              data2day.solar_bronze ──> solar_silver ──> solar_gold ──> Trino ──> Superset
                                                                         │
-                                OpenMetadata: Kafka topics -> tables -> dashboards
+             OpenMetadata: NiFi flow -> Kafka topics -> tables -> dashboards
 ```
 
 ## Components (ArgoCD Applications)
@@ -22,10 +22,10 @@ solar-generator ──HTTP──> NiFi "solar ingest" ──> Kafka solar-* ─�
 |---|---|
 | `solar-generator` | Generator Deployment (one replica; image `oci.stackable.tech/sandbox/solar-generator`, site catalogue baked in), Service `nifi-listenhttp` (port 8090 on the NiFi pods) |
 | `solar-ingest` | Job that builds the NiFi process group `solar ingest` (ListenHTTP -> PublishKafka, one message per reading), Job that creates the Kafka topics with bounded retention |
-| `solar-pipeline` | `SparkApplicationTemplate solar-spark`, ConfigMap `solar-spark-jobs` (`bronze.py`, `dims.py`, `silver.py`, `gold.py`, `solar_common.py`), Role for Airflow to manage SparkApplications. The DAGs are in `dags/solar_pipeline.py` |
+| `solar-pipeline` | `SparkApplicationTemplate solar-spark`, ConfigMap `solar-spark-jobs` (`bronze.py`, `dims.py`, `silver.py`, `gold.py`, `solar_common.py`), Role for Airflow to manage SparkApplications. The DAGs, with the lineage of each job, are in `dags/solar_pipeline.py` |
 | `spark-history` | Spark History Server behind an oauth2-proxy (Keycloak login), UI on NodePort 30188; event logs in Garage bucket `spark-logs` |
 | `solar-dashboards` | Job that creates the Superset database connection, datasets, charts and four dashboards (`configure_superset.py`) |
-| `solar-metadata` | Job that sets up OpenMetadata: Superset dashboard service with lineage to the `trino` service, pipeline service `solar-spark`, messaging service `kafka`, bot `solar-lineage-bot` and its token Secret |
+| `solar-metadata` | Job that sets up OpenMetadata: messaging service `kafka`, pipeline service `nifi` (flow `solar-ingest` -> topics), pipeline service `airflow` (Airflow connector, solar DAGs and their lineage), dashboard service `superset` with lineage to the `trino` service |
 
 All tables live in the `data2day` catalog (Iceberg via Lakekeeper, data in Garage S3), schemas
 `solar_bronze`, `solar_silver`, `solar_gold`.
@@ -42,7 +42,7 @@ All tables live in the `data2day` catalog (Iceberg via Lakekeeper, data in Garag
   above capacity, output at night, duplicates), interval energy from the counter (resets and
   implausible jumps flagged), measured irradiance of the site's weather cell, expected output and
   performance ratio.
-- **Gold** (`gold.py`, after silver): `site_15min` with a comparison against peers (same weather
+- **Gold** (`gold.py`, DAG `solar_gold`, runs whenever silver has updated `inverter_readings`): `site_15min` with a comparison against peers (same weather
   cell and orientation), `fleet_15min` per postcode, `site_daily`, `region_daily`,
   `fault_events`, `dq_daily`, `cloud_cover`, `watermark`. Recomputes only the affected slots and
   days, one `MERGE` per table.
@@ -64,6 +64,16 @@ All tables live in the `data2day` catalog (Iceberg via Lakekeeper, data in Garag
 - **Order of changes:** Airflow pulls DAGs from Forgejo immediately, ArgoCD syncs every few
   minutes. Push manifests a DAG depends on (RBAC, ConfigMaps, templates) before the DAG change.
 
+## Lineage
+
+Each DAG task in `dags/solar_pipeline.py` declares what its Spark job reads and writes, as
+Airflow assets (asset graph in the Airflow UI; `solar_gold` is scheduled on silver's asset) and
+as OpenMetadata entity references. OpenMetadata's Airflow connector (pipeline service `airflow`,
+every 30 minutes) turns the latter into lineage edges with the DAG as pipeline: OpenMetadata
+1.12.1 ignores Airflow assets. The Superset connector adds gold -> datasets -> charts ->
+dashboards, and the solar-metadata Job the NiFi flow -> topics. The declarations in the DAGs
+must be kept in line with the Spark scripts: the jobs don't report lineage themselves.
+
 ## Access
 
 Superset connects to Trino as the service user `superset` and impersonates the logged-in user,
@@ -75,7 +85,7 @@ addition to Gamma. The setup Job queries as the local Superset `admin`, which ma
 
 ## Known limitations
 
-- Lineage is table-level only. It is recorded by the jobs through the OpenMetadata lineage API:
+- Lineage is table-level and declared, not observed. OpenLineage from Spark was not used:
   OpenMetadata 1.12.1 did not resolve OpenLineage events to the Trino tables, and the OpenLineage
   Spark listener names Lakekeeper tables by storage location.
 - Positions of small sites are random points within their postcode area: illustrative, not real

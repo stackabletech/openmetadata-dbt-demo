@@ -67,6 +67,10 @@ spec:
                 k8s:
                   # Container image for ingestion jobs
                   ingestionImage: "docker.getcollate.io/openmetadata/ingestion-base:1.12.1"
+                  # The Airflow connector (service `airflow`, solar demo) imports Airflow, which
+                  # creates its log folder under AIRFLOW_HOME (/airflow: not writable as UID 1000)
+                  extraEnvVars:
+                    - "AIRFLOW_HOME:/tmp/airflow"
               authentication:
                 provider: "custom-oidc"
                 publicKeys:

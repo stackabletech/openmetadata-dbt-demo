@@ -7,18 +7,87 @@
 # On failure the SparkApplication is kept; the driver log is in OpenSearch (logs-*, field
 # `cluster` = the application name).
 #
+# Lineage: every task declares what its Spark job reads and writes (`lineage()`), twice:
+#   - as Airflow assets: the asset graph in the Airflow UI, and solar_gold runs whenever
+#     solar_silver has updated inverter_readings;
+#   - as OpenMetadata entity dicts, which the OpenMetadata Airflow connector (pipeline service
+#     `airflow`, set up by platform/manifests/solar-metadata/) turns into lineage edges with the
+#     DAG as pipeline. OpenMetadata 1.12 ignores Airflow assets, hence the second form.
+# The declarations must match what the scripts in the ConfigMap solar-spark-jobs do.
+#
 # Needs the Role airflow-spark-applications (platform/manifests/solar-pipeline/airflow-rbac.yaml).
 import time
 from datetime import datetime, timedelta, timezone
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.sdk import Asset
 
 NAMESPACE = "platform"
 TEMPLATE = "solar-spark"
 SPARK_VERSION = "3.5.8"
 GROUP, VERSION, PLURAL = "spark.stackable.tech", "v1alpha1", "sparkapplications"
 TIMEOUT = timedelta(minutes=30)
+TRINO = "trino-coordinator.platform.svc.cluster.local:8443"
+KAFKA = "kafka-broker-default-bootstrap.platform.svc.cluster.local:9093"
+
+
+def asset(name):
+    """Airflow asset for a table `schema.table` in catalog data2day or a Kafka topic `topic:<name>`."""
+    if name.startswith("topic:"):
+        topic = name[len("topic:"):]
+        return Asset(uri=f"kafka://{KAFKA}/{topic}", name=f"kafka.{topic}")
+    schema, table = name.split(".")
+    return Asset(uri=f"trino://{TRINO}/data2day/{schema}/{table}", name=f"data2day.{name}")
+
+
+def om_entity(name, key):
+    """OpenMetadata entity reference for the Airflow connector: Trino service `trino`, Kafka service `kafka`."""
+    if name.startswith("topic:"):
+        return {"entity": "topic", "fqn": "kafka." + name[len("topic:"):], "key": key}
+    return {"entity": "table", "fqn": "trino.data2day." + name, "key": key}
+
+
+def lineage(edges, emit=True):
+    """inlets/outlets for a task whose job writes each output from its inputs: {output: [inputs]}.
+
+    OpenMetadata pairs every inlet with every outlet of the same key in a DAG, so each output gets
+    its own key and the edges stay exact. emit=False leaves the outputs out of the Airflow assets,
+    so the task records no asset events (the outputs' OpenMetadata lineage stays).
+    """
+    inputs = sorted({i for sources in edges.values() for i in sources})
+    inlets = [asset(i) for i in inputs]
+    outlets = [asset(o) for o in edges] if emit else []
+    for output, sources in edges.items():
+        inlets += [om_entity(i, output) for i in sources]
+        outlets.append(om_entity(output, output))
+    return {"inlets": inlets, "outlets": outlets}
+
+
+# What each Spark job reads and writes: {output: [inputs]}.
+BRONZE = {f"solar_bronze.{stream}_raw": [f"topic:solar-{stream}"] for stream in ("inverter", "weather", "clouds")}
+DIMS = {
+    "solar_silver.dim_site": ["topic:solar-sites"],
+    "solar_silver.dim_weather_station": ["topic:solar-weather_stations"],
+}
+SILVER = {
+    "solar_silver.weather_readings": ["solar_bronze.weather_raw", "solar_silver.dim_weather_station"],
+    "solar_silver.inverter_readings": ["solar_bronze.inverter_raw", "solar_silver.dim_site",
+                                       "solar_silver.weather_readings"],
+    "solar_silver.cloud_polygons": ["solar_bronze.clouds_raw"],
+    "solar_silver.quarantine": ["solar_bronze.weather_raw", "solar_bronze.inverter_raw",
+                                "solar_bronze.clouds_raw"],
+}
+GOLD = {
+    "solar_gold.site_15min": ["solar_silver.inverter_readings"],
+    "solar_gold.fleet_15min": ["solar_gold.site_15min"],
+    "solar_gold.site_daily": ["solar_gold.site_15min"],
+    "solar_gold.region_daily": ["solar_gold.site_daily"],
+    "solar_gold.fault_events": ["solar_gold.site_15min"],
+    "solar_gold.dq_daily": ["solar_silver.quarantine"],
+    "solar_gold.cloud_cover": ["solar_silver.cloud_polygons"],
+    "solar_gold.watermark": ["solar_silver.inverter_readings"],
+}
 
 
 def spark_api():
@@ -114,12 +183,13 @@ with DAG(
         task_id="dims",
         python_callable=run_spark_job,
         op_kwargs={"script": "dims"},
+        **lineage(DIMS),
     )
 
 
 with DAG(
     dag_id="solar_silver",
-    description="Solar demo: bronze -> silver (checks, quarantine, energy, performance ratio) -> gold (aggregates, fault events)",
+    description="Solar demo: bronze -> silver (checks, quarantine, energy, performance ratio)",
     start_date=datetime(2026, 10, 27),
     schedule="*/10 * * * *",
     catchup=False,
@@ -127,17 +197,30 @@ with DAG(
     is_paused_upon_creation=False,
     tags=["solar"],
 ) as dag:
-    silver = PythonOperator(
+    PythonOperator(
         task_id="silver",
         python_callable=run_spark_job,
         op_kwargs={"script": "silver"},
+        **lineage(SILVER),
     )
-    gold = PythonOperator(
+
+
+with DAG(
+    dag_id="solar_gold",
+    description="Solar demo: silver -> gold (aggregates, fault events, data quality), after each silver run",
+    start_date=datetime(2026, 10, 27),
+    schedule=[asset("solar_silver.inverter_readings")],
+    catchup=False,
+    max_active_runs=1,
+    is_paused_upon_creation=False,
+    tags=["solar"],
+) as dag:
+    PythonOperator(
         task_id="gold",
         python_callable=run_spark_job,
         op_kwargs={"script": "gold"},
+        **lineage(GOLD),
     )
-    silver >> gold
 
 
 with DAG(
@@ -150,4 +233,5 @@ with DAG(
     is_paused_upon_creation=False,
     tags=["solar"],
 ) as dag:
-    PythonOperator(task_id="ensure_bronze", python_callable=ensure_bronze)
+    # The streaming job writes bronze, not this task: no asset events every 5 minutes.
+    PythonOperator(task_id="ensure_bronze", python_callable=ensure_bronze, **lineage(BRONZE, emit=False))

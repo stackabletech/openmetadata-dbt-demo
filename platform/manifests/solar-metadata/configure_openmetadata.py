@@ -1,22 +1,25 @@
 """OpenMetadata setup for the solar demo (idempotent).
 
-1. Bot solar-lineage-bot (IngestionBotRole) whose JWT the Spark jobs use to send OpenLineage
-   events to OpenMetadata; stored in the Secret solar-openlineage-token (key `token`).
-2. Dashboard service `superset` with an hourly metadata pipeline, including lineage from the
+Lineage end to end: NiFi flow -> Kafka topics -> bronze -> silver -> gold -> Superset.
+
+1. Messaging service `kafka` with the solar topics.
+2. Pipeline service `nifi` with the pipeline `solar-ingest` (the NiFi process group "solar ingest",
+   ListenHTTP -> PublishKafka) and lineage from it to the topics it publishes to. Created here
+   rather than by OpenMetadata's NiFi connector: that connector only links process groups to each
+   other, and NiFi accepts only OIDC logins or client certificates, neither of which the
+   ingestion pods have.
+3. Pipeline service `airflow`: OpenMetadata's Airflow connector reads the solar DAGs from the
+   Airflow metadata database every 30 minutes, with their runs and the lineage the tasks declare
+   (dags/solar_pipeline.py): topics -> bronze -> silver -> gold, the DAG on each edge.
+4. Dashboard service `superset` with an hourly metadata pipeline, including lineage from the
    Trino tables (service `trino`) to Superset datasets and dashboards.
-3. One run of the existing Trino metadata ingestion, so new solar tables appear right away
-   (it also runs every 6 hours on its own).
-4. OpenLineage settings: process COMPLETE events (the stored eventTypeFilter was an empty list,
-   which drops every event) and don't auto-create tables for datasets that can't be resolved.
-5. Pipeline service solar-spark with one pipeline per Spark job and messaging service kafka with
-   the solar topics. The jobs record their lineage against these (solar_common.report_lineage):
-   Kafka topics -> bronze -> silver -> gold, and the Superset pipeline adds gold -> dashboards.
+5. One run of the Trino metadata ingestion first, so new solar tables exist when the Airflow and
+   Superset lineage is resolved (it also runs every 6 hours on its own).
 
 Authenticates like configure-openmetadata (platform/manifests/openmetadata-init/): a Keycloak
 password grant for demo-admin through the `openmetadata` client.
 """
 
-import base64
 import json
 import os
 import ssl
@@ -28,10 +31,10 @@ import urllib.request
 OM = "http://openmetadata.platform.svc.cluster.local:8585/api/v1"
 KEYCLOAK_TOKEN_URL = ("http://keycloak-service.platform.svc.cluster.local:8080"
                       "/realms/stackable-demo/protocol/openid-connect/token")
-BOT = "solar-lineage-bot"
-SECRET = "solar-openlineage-token"
 SUPERSET_URL = "http://simple-superset-node.platform.svc.cluster.local:8088"
 K8S_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+TOPICS = ["solar-inverter", "solar-weather", "solar-clouds", "solar-sites", "solar-weather_stations"]
+NIFI_PIPELINE = "solar-ingest"
 
 
 def om(method, path, body=None, token=None):
@@ -59,51 +62,72 @@ def login():
     raise SystemExit("OpenMetadata not reachable")
 
 
-def ensure_lineage_bot(token):
-    """Bot user with IngestionBotRole (edit lineage, create pipeline entities); returns its JWT."""
-    role = om("GET", "/roles/name/IngestionBotRole", token=token)
-    try:
-        user_id = om("GET", f"/bots/name/{BOT}", token=token)["botUser"]["id"]
-        print(f"Bot {BOT} exists")
-    except urllib.error.HTTPError as e:
-        if e.code != 404:
-            raise
-        # PUT /users is not idempotent for bot users, so only create user + bot once.
-        user_id = om("PUT", "/users", token=token, body={
-            "name": BOT, "displayName": "Solar lineage (Spark OpenLineage)",
-            "email": f"{BOT}@stackable.demo", "isBot": True,
-            "roles": [role["id"]],
-            "authenticationMechanism": {"authType": "JWT", "config": {"JWTTokenExpiry": "Unlimited"}}})["id"]
-        om("PUT", "/bots", token=token, body={
-            "name": BOT, "displayName": "Solar lineage (Spark OpenLineage)", "botUser": BOT,
-            "description": "Sends OpenLineage events from the solar Spark jobs."})
-        print(f"Created bot {BOT}")
-    jwt = om("GET", f"/users/auth-mechanism/{user_id}", token=token).get("config", {}).get("JWTToken")
-    if not jwt:
-        raise SystemExit("OpenMetadata returned no JWT for the bot")
-    return jwt
-
-
-def store_secret(jwt):
-    """Create or update the Secret the Spark jobs read the token from (not managed by ArgoCD)."""
+def node_port(service):
+    """NodePort of a Service (the NiFi UI's port is assigned by its listener on every deploy)."""
     ns = open(f"{K8S_SA_DIR}/namespace").read().strip()
-    headers = {"Authorization": "Bearer " + open(f"{K8S_SA_DIR}/token").read().strip(),
-               "Content-Type": "application/json"}
+    req = urllib.request.Request(f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/services/{service}",
+                                 headers={"Authorization": "Bearer " + open(f"{K8S_SA_DIR}/token").read().strip()})
     ctx = ssl.create_default_context(cafile=f"{K8S_SA_DIR}/ca.crt")
-    base = f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/secrets"
-    body = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": SECRET, "namespace": ns},
-            "type": "Opaque", "data": {"token": base64.b64encode(jwt.encode()).decode()}}
-    try:
-        urllib.request.urlopen(urllib.request.Request(base, data=json.dumps(body).encode(), method="POST",
-                                                      headers=headers), context=ctx).read()
-        print(f"Created Secret {SECRET}")
-    except urllib.error.HTTPError as e:
-        if e.code != 409:
-            raise
-        req = urllib.request.Request(f"{base}/{SECRET}", data=json.dumps({"data": body["data"]}).encode(),
-                                     method="PATCH", headers={**headers, "Content-Type": "application/merge-patch+json"})
-        urllib.request.urlopen(req, context=ctx).read()
-        print(f"Updated Secret {SECRET}")
+    with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+        return json.loads(r.read())["spec"]["ports"][0]["nodePort"]
+
+
+def ensure_kafka(token):
+    om("PUT", "/services/messagingServices", token=token, body={
+        "name": "kafka", "serviceType": "Kafka",
+        "description": "Apache Kafka of the demo (solar topics; fed by the NiFi flow solar ingest).",
+        "connection": {"config": {"type": "Kafka", "bootstrapServers": os.environ.get(
+            "KAFKA", "kafka-broker-default-bootstrap.platform.svc.cluster.local:9093")}}})
+    for topic in TOPICS:
+        om("PUT", "/topics", token=token, body={"name": topic, "service": "kafka", "partitions": 1})
+    print(f"Messaging service kafka ({len(TOPICS)} topics)")
+
+
+def ensure_nifi(token):
+    nifi_url = f"https://{os.environ['NODE_IP']}:{node_port('nifi-node')}/nifi/"
+    om("PUT", "/services/pipelineServices", token=token, body={
+        "name": "nifi", "serviceType": "Nifi",
+        "description": "Apache NiFi of the demo. Pipelines are registered by the solar-metadata Job.",
+        "connection": {"config": {"type": "Nifi", "hostPort": nifi_url}}})
+    pipeline = om("PUT", "/pipelines", token=token, body={
+        "name": NIFI_PIPELINE, "displayName": "solar ingest", "service": "nifi", "sourceUrl": nifi_url,
+        "description": "NiFi process group *solar ingest*: receives the generator's readings over HTTP "
+                       "(ListenHTTP, port 8090) and publishes each one to the Kafka topic "
+                       "solar-<stream> (PublishKafka). Built by the Job configure-solar-ingest.",
+        "tasks": [
+            {"name": "ListenHTTP", "description": "Receives readings, one per line, at /<stream>",
+             "downstreamTasks": ["PublishKafka"]},
+            {"name": "PublishKafka", "description": "One Kafka message per reading, topic solar-${stream}"},
+        ]})
+    for topic in TOPICS:
+        topic_id = om("GET", f"/topics/name/kafka.{topic}", token=token)["id"]
+        om("PUT", "/lineage", token=token, body={"edge": {
+            "fromEntity": {"id": pipeline["id"], "type": "pipeline"},
+            "toEntity": {"id": topic_id, "type": "topic"},
+            "lineageDetails": {"source": "Manual", "description": "NiFi PublishKafka"}}})
+    print(f"Pipeline service nifi, pipeline {NIFI_PIPELINE} -> {len(TOPICS)} topics ({nifi_url})")
+
+
+def ensure_airflow(token):
+    db = urllib.parse.urlsplit(os.environ["AIRFLOW_DB_URI"])
+    svc = om("PUT", "/services/pipelineServices", token=token, body={
+        "name": "airflow", "serviceType": "Airflow",
+        "description": "Apache Airflow of the demo (solar DAGs, read from its metadata database).",
+        "connection": {"config": {
+            "type": "Airflow", "hostPort": f"http://{os.environ['NODE_IP']}:30134", "numberOfStatus": 10,
+            "connection": {"type": "Postgres", "username": urllib.parse.unquote(db.username),
+                           "authType": {"password": urllib.parse.unquote(db.password)},
+                           "hostPort": f"{db.hostname}:{db.port or 5432}", "database": db.path.lstrip("/")}}}})
+    pipeline = om("PUT", "/services/ingestionPipelines", token=token, body={
+        "name": "airflow_metadata_ingestion", "pipelineType": "metadata",
+        "service": {"id": svc["id"], "type": "pipelineService"},
+        "sourceConfig": {"config": {"type": "PipelineMetadata", "includeLineage": True,
+                                    "markDeletedPipelines": True,
+                                    "pipelineFilterPattern": {"includes": ["^solar_.*"]}}},
+        "airflowConfig": {"scheduleInterval": "*/30 * * * *"}})
+    om("POST", f"/services/ingestionPipelines/deploy/{pipeline['id']}", token=token)
+    print(f"Pipeline service airflow and pipeline {pipeline['fullyQualifiedName']} deployed")
+    return pipeline
 
 
 def ensure_superset(token):
@@ -125,47 +149,6 @@ def ensure_superset(token):
     return pipeline
 
 
-def ensure_openlineage_settings(token):
-    om("PUT", "/system/settings", token=token, body={
-        "config_type": "openLineageSettings",
-        "config_value": {"enabled": True, "autoCreateEntities": False, "eventTypeFilter": ["COMPLETE"],
-                         "defaultPipelineService": "openlineage"}})
-    print("OpenLineage settings: COMPLETE events, no auto-created tables")
-
-
-SPARK_JOBS = {
-    "solar_bronze": "Spark Structured Streaming: Kafka topics -> solar_bronze.*_raw (Iceberg), "
-                    "kept running by the Airflow DAG solar_bronze_watchdog.",
-    "solar_dims": "Spark batch, Airflow DAG solar_dims (hourly): master data topics -> "
-                  "solar_silver.dim_site / dim_weather_station.",
-    "solar_silver": "Spark batch, Airflow DAG solar_silver (every 10 min): bronze -> silver with checks, "
-                    "quarantine, deduplication, interval energy and performance ratio.",
-    "solar_gold": "Spark batch, after solar_silver: silver -> gold aggregates (15-minute, daily, regions, "
-                  "fault events, data quality).",
-}
-TOPICS = ["solar-inverter", "solar-weather", "solar-clouds", "solar-sites", "solar-weather_stations"]
-
-
-def ensure_lineage_entities(token):
-    history = f"http://{os.environ['NODE_IP']}:30188/" if os.environ.get("NODE_IP") else None
-    om("PUT", "/services/pipelineServices", token=token, body={
-        "name": "solar-spark", "serviceType": "Spark", "connection": {"config": {"type": "Spark"}},
-        "description": "Spark jobs of the solar demo (SparkApplications started by Airflow)."})
-    for name, description in SPARK_JOBS.items():
-        body = {"name": name, "service": "solar-spark", "description": description}
-        if history:
-            body["sourceUrl"] = history
-        om("PUT", "/pipelines", token=token, body=body)
-    om("PUT", "/services/messagingServices", token=token, body={
-        "name": "kafka", "serviceType": "Kafka",
-        "description": "Apache Kafka of the demo (solar topics; fed by the NiFi flow solar ingest).",
-        "connection": {"config": {"type": "Kafka", "bootstrapServers": os.environ.get(
-            "KAFKA", "kafka-broker-default-bootstrap.platform.svc.cluster.local:9093")}}})
-    for topic in TOPICS:
-        om("PUT", "/topics", token=token, body={"name": topic, "service": "kafka", "partitions": 1})
-    print(f"Pipeline service solar-spark ({len(SPARK_JOBS)} pipelines), messaging service kafka ({len(TOPICS)} topics)")
-
-
 def trigger(token, pipeline_fqn):
     pipeline = om("GET", f"/services/ingestionPipelines/name/{pipeline_fqn}", token=token)
     result = om("POST", f"/services/ingestionPipelines/trigger/{pipeline['id']}", token=token)
@@ -174,13 +157,14 @@ def trigger(token, pipeline_fqn):
 
 def main():
     token = login()
-    ensure_openlineage_settings(token)
-    store_secret(ensure_lineage_bot(token))
-    ensure_lineage_entities(token)
-    # Tables first, so the Superset lineage finds them.
-    trigger(token, "trino.trino_metadata_ingestion")
+    ensure_kafka(token)
+    ensure_nifi(token)
+    airflow = ensure_airflow(token)
     superset = ensure_superset(token)
+    # Tables first, so the Airflow and Superset lineage finds them.
+    trigger(token, "trino.trino_metadata_ingestion")
     time.sleep(180)
+    trigger(token, airflow["fullyQualifiedName"])
     trigger(token, superset["fullyQualifiedName"])
 
 
