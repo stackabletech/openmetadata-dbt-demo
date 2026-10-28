@@ -452,7 +452,7 @@ def ch(name, width, height=50):
 
 DASHBOARDS = {
     "solar-overview": ("Solar fleet: overview", 300, [
-        [md("## Solar fleet\nSynthetic PV telemetry from ~68,000 sites in Schleswig-Holstein (postcodes 24xxx) "
+        [md("## Solar fleet\nSynthetic PV telemetry from ~155,000 sites in Schleswig-Holstein "
             "and all parks ≥ 1 MW nationwide, refined through bronze, silver and gold on the "
             "Stackable Data Platform (SDP). Refreshes every 5 minutes; gold lags the generator by "
             "10–20 minutes.", 12, 14)],
@@ -473,9 +473,8 @@ DASHBOARDS = {
         [ch("Map: energy per Landkreis, Schleswig-Holstein (last 7 days)", 8, 110),
          md("### Schleswig-Holstein in 3D\nEach Kreis extruded by its energy of the last 7 days, "
             "coloured by it too; the tallest is always the same height. Kreise are matched to the "
-            "sites by their official code (AGS), not by name. Rooftop sites are simulated only for "
-            "postcodes 24xxx, so Kreise in the south have only their parks ≥ 1 MW; a Kreis without "
-            "any (Lübeck) isn't drawn. Hover for name and energy; drag with the right mouse button "
+            "sites by their official code (AGS), not by name. Every PV site in Schleswig-Holstein "
+            "is simulated (synthetic output on real capacities). Hover for name and energy; drag with the right mouse button "
             "to rotate. Kreis shapes © BKG, see below.", 4, 110)],
         [ch("Specific yield by Bundesland (kWh/kWp)", 6, 55), ch("Energy per day by Bundesland (MWh)", 6, 55)],
         [ch("Yield per Landkreis", 12, 70)],

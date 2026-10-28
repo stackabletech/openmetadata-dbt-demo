@@ -15,25 +15,48 @@ spec:
     # so a teardown + re-deploy is byte-for-byte reproducible.
     - repoURL: "https://github.com/stackabletech/cockpit"
       path: deploy/helm/cockpit
-      targetRevision: effa5c7e37582a47275e60bca929dff93c147295
+      targetRevision: c985c9ce5a248dc3784b5c6c5f7a7006d22d5a91
       helm:
         releaseName: cockpit
         valuesObject:
           image:
-            # Custom demo build of cockpit branch demo/data2day (local, commit cb12020):
-            # feat/app-bookmark-dialog (dashboard bookmarks) + PR #350 (Trino
-            # autocomplete) + main @ 5fc67f2 + a fix for bookmark URLs with IP
-            # addresses, with #330 reverted: it made every query run as Trino
-            # user `anonymous` (OIDC username dropped). The chart (pinned above)
-            # is unchanged on that branch.
+            # Custom demo build of cockpit branch demo/data2day-2 (local, /workspace/cockpit,
+            # commit 3a7effc): main @ c985c9c (S3 storage browser, bookmarks, Trino
+            # autocomplete) + PR #397 (fixes #371: with #330 alone every query ran as Trino
+            # user `anonymous`). The chart (pinned above) is unchanged on that branch.
             # name:tag@digest — the digest pins the exact build.
             registry: oci.stackable.tech
             repository: sandbox/cockpit
-            tag: "0.0.0-dev-data2day-cb12020@sha256:8175060460d87c41f0f6168947e808499735f12e565da453a36fd6702c475d74"
+            tag: "0.0.0-dev-data2day-3a7effc@sha256:0c09196492c584a63a3eeb2c458da11abf785aa1b0ee0271a0e0bad57ef1540f"
           sessionSecret:
             secretKeyRef:
               name: cockpit-secrets
               key: session-secret
+          # Required since Cockpit stores sessions, users and storage connections in
+          # PostgreSQL (postgresql-cockpit, platform/applications/postgres.yaml). No TLS on
+          # the demo's PostgreSQL instances.
+          database:
+            host: postgresql-cockpit.shared.svc.cluster.local
+            port: 5432
+            name: cockpit
+            user: cockpit
+            password:
+              secretKeyRef:
+                name: cockpit-secrets
+                key: database-password
+            tls:
+              mode: disable
+          # S3 storage browser: users add their own connections (e.g. Garage,
+          # http://garage.shared.svc.cluster.local:3900, region garage, path-style);
+          # the key encrypts the credentials they save.
+          features:
+            storage:
+              enabled: true
+          storage:
+            encryptionKey:
+              secretKeyRef:
+                name: cockpit-secrets
+                key: storage-encryption-key
           # base-url / origin / oidc discoveryUrl are node-IP dependent and are
           # patched at runtime by the configure-cockpit Job from the oidc-endpoints
           # ConfigMap (see platform/manifests/cockpit/). The placeholders below are

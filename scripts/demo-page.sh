@@ -210,7 +210,7 @@ body = f"""
 
 <section>
   <h2>Part 2: solar telemetry, from the sensor to the dashboard</h2>
-  <p>A generator simulates the inverters of ~68,000 PV sites in Schleswig-Holstein plus all parks of
+  <p>A generator simulates the inverters of all ~155,000 PV sites in Schleswig-Holstein plus all parks of
     1 MW and more in Germany (capacities, orientations and regions from the Marktstammdatenregister;
     output, weather, clouds and faults are synthetic). It sends one reading per inverter and
     interval to NiFi, which publishes each one to Kafka. From there Spark builds a lakehouse in

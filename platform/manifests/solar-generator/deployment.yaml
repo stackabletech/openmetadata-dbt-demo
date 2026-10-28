@@ -26,15 +26,16 @@ spec:
     spec:
       containers:
         - name: generator
-          image: oci.stackable.tech/sandbox/solar-generator:0.1.2-dev
+          image: oci.stackable.tech/sandbox/solar-generator:0.1.3-dev
           imagePullPolicy: Always
           env:
             - name: NIFI_URL
               value: http://nifi-listenhttp:8090/contentListener
-            # Region with per-site telemetry: postcodes 24xxx (~68,000 sites) plus all
-            # parks nationwide is ~1,100 records/s. All of Schleswig-Holstein is ~2,700/s.
-            - name: REGION_PLZ_PREFIX
-              value: "24"
+            # Region with per-site telemetry, by Kreis code (AGS) prefix, not by name: 01 = all of
+            # Schleswig-Holstein (~155,500 sites) plus all parks nationwide, 162,194 sites,
+            # ~2,700 records/s. Garage is sized for it (platform/applications/garagefs.yaml).
+            - name: REGION_KREIS_PREFIX
+              value: "01"
             - name: PARKS_NATIONWIDE
               value: "true"
             - name: TICK_SECONDS
