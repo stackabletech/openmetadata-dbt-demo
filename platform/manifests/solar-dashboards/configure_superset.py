@@ -146,6 +146,29 @@ DATASETS = {
         -- Ground-mounted parks >= 1 MW (jittered real positions)
         SELECT site_id, gemeinde, landkreis, bundesland, kwp_dc / 1000 AS mwp, lat, lon
         FROM solar_silver.dim_site WHERE site_id LIKE 'park-%'"""),
+    "solar_cloud_trail": ("solar_gold", "solar_cloud_trail", """
+        -- Simulated cloud cover every 15 minutes over the last 6 hours (age_min = 0: the latest
+        -- snapshot), as GeoJSON Features: Superset's GeoJSON chart draws only Features, the
+        -- table holds bare geometries. Older snapshots are paler and more transparent; the
+        -- tooltip (extraProps) shows the snapshot time.
+        WITH latest AS (SELECT max(ts) AS ts FROM solar_silver.cloud_polygons),
+        snap AS (
+            SELECT c.ts, c.part, c.geojson, date_diff('minute', c.ts, l.ts) AS age_min
+            FROM solar_silver.cloud_polygons c CROSS JOIN latest l
+            WHERE c.ts > l.ts - INTERVAL '361' MINUTE
+              AND date_diff('minute', c.ts, l.ts) % 15 = 0)
+        SELECT ts, part, age_min,
+               '{"type":"Feature","geometry":' || geojson
+               || ',"properties":{"fillColor":[' || format('%d,%d,%d,%d',
+                      CAST(round(70 + 110 * age_min / 360.0) AS integer),
+                      CAST(round(75 + 125 * age_min / 360.0) AS integer),
+                      CAST(round(95 + 135 * age_min / 360.0) AS integer),
+                      CAST(round(170 - 140 * age_min / 360.0) AS integer))
+               || '],"strokeColor":' || IF(age_min = 0, '[50,50,65,220]', '[0,0,0,0]')
+               || '},"extraProps":{"Snapshot":"'
+               || format_datetime(ts AT TIME ZONE 'Europe/Berlin', 'HH:mm')
+               || IF(age_min = 0, ' (latest)', format(' (%d min earlier)', age_min)) || '"}}' AS feature
+        FROM snap"""),
     "solar_sh_landkreis_bars": ("solar_gold", "solar_sh_landkreis_bars", """
         -- Energy of the last 7 days per Landkreis in Schleswig-Holstein, as a square of about
         -- 5.5 km at the centroid of its (illustrative) site positions. rel_height: share of the
@@ -275,11 +298,18 @@ def charts(ds):
             "min_radius": 1, "max_radius": 12, "multiplier": 1,
             "color_picker": color(240, 140, 0, 0.8), "mapbox_style": BASE_MAP,
             "viewport": GERMANY, "autozoom": False, "row_limit": 20000, "adhoc_filters": []}),
-        "Map: simulated cloud cover": ("deck_geojson", "cloud_cover", {
-            "geojson": "geojson", "filled": True, "stroked": True, "extruded": False,
+        "Map: simulated cloud cover": ("deck_geojson", "solar_cloud_trail", {
+            "geojson": "feature", "filled": True, "stroked": True, "extruded": False,
             "fill_color_picker": color(110, 110, 120, 0.35), "stroke_color_picker": color(80, 80, 90, 0.6),
             "line_width": 1, "line_width_unit": "pixels", "mapbox_style": BASE_MAP,
-            "viewport": GERMANY, "autozoom": False, "row_limit": 1000, "adhoc_filters": []}),
+            "viewport": GERMANY, "autozoom": False, "row_limit": 1000,
+            "adhoc_filters": [sql_filter("age_min = 0")]}),
+        # Transparent colour pickers: each Feature brings its own colour (paler with age).
+        "Map: cloud movement (last 6 hours)": ("deck_geojson", "solar_cloud_trail", {
+            "geojson": "feature", "filled": True, "stroked": True, "extruded": False,
+            "fill_color_picker": color(0, 0, 0, 0), "stroke_color_picker": color(0, 0, 0, 0),
+            "line_width": 2, "line_width_unit": "pixels", "mapbox_style": BASE_MAP,
+            "viewport": GERMANY, "autozoom": False, "row_limit": 2000, "adhoc_filters": []}),
         # Regional yield
         "Yield per Landkreis": ("table", "region_daily", {
             "query_mode": "aggregate", "groupby": ["day", "bundesland", "landkreis"],
@@ -419,6 +449,11 @@ DASHBOARDS = {
          ch("Reporting sites", 3, 30), ch("Installed capacity (MWp)", 3, 30)],
         [ch("Map: fleet, parks and clouds", 7, 110), ch("Fleet output (MW)", 5, 55)],
         [ch("Energy per day by Bundesland (MWh)", 12, 50)],
+        [ch("Map: cloud movement (last 6 hours)", 8, 100),
+         md("### Cloud movement\nThe simulated cloud cover every 15 minutes over the last 6 hours: "
+            "the latest snapshot dark with an outline, earlier ones paler the older they are, so the "
+            "trail shows where the clouds came from. Hover over a cloud for its snapshot time. "
+            "Clouds dim the output of the sites below them.", 4, 100)],
         [md(ATTRIBUTION, 12, 18)],
     ]),
     "solar-yield": ("Solar fleet: regional yield", 0, [
