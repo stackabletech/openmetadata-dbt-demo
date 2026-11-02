@@ -69,6 +69,7 @@ def call(method, path, body=None):
 
 
 def login():
+    _auth.clear()
     for i in range(60):
         try:
             token = call("POST", "/api/v1/security/login", {
@@ -243,6 +244,24 @@ def ensure_viewer_role(db_id):
     print(f"Role {VIEWER_ROLE}: database_access on {view_menu}")
 
 
+def create_dataset(body, wait_seconds=2 * 3600):
+    """POST a dataset, waiting for its table if the pipeline hasn't written it yet.
+
+    On a fresh cluster the gold tables appear only after the first successful silver and gold
+    runs, 20-30 minutes after the deploy; without waiting, the Job runs out of retries first.
+    """
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            return call("POST", "/api/v1/dataset/", body)["id"]
+        except RuntimeError as e:
+            if "could not be found" not in str(e) or time.monotonic() > deadline:
+                raise
+            print(f"Waiting for table {body['schema']}.{body['table_name']}")
+            time.sleep(60)
+            login()  # the access token expires while waiting
+
+
 def ensure_datasets(db_id):
     ids = {}
     for key, (schema, table, sql) in DATASETS.items():
@@ -251,7 +270,7 @@ def ensure_datasets(db_id):
             body = {"database": db_id, "schema": schema, "table_name": table}
             if sql:
                 body["sql"] = sql
-            ds_id = call("POST", "/api/v1/dataset/", body)["id"]
+            ds_id = create_dataset(body)
         else:
             ds_id = ds["id"]
             if sql:
