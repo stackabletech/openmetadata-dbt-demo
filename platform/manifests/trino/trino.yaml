@@ -55,10 +55,16 @@ spec:
             volumeMounts:
               - name: http-event-listener
                 mountPath: /stackable/http-event-listener
+              - name: kafka-tables
+                mountPath: /stackable/kafka-tables
         volumes:
           - name: http-event-listener
             configMap:
               name: trino-http-event-listener
+          # Table descriptions for the catalog `kafka` (catalog-kafka.yaml), on workers too
+          - name: kafka-tables
+            configMap:
+              name: trino-kafka-tables
     roleGroups:
       default:
         replicas: 1
@@ -85,6 +91,14 @@ spec:
                 cpu: 10m
               limits:
                 memory: 512Mi
+          - name: trino
+            volumeMounts:
+              - name: kafka-tables
+                mountPath: /stackable/kafka-tables
+        volumes:
+          - name: kafka-tables
+            configMap:
+              name: trino-kafka-tables
     roleGroups:
       default:
         replicas: 1

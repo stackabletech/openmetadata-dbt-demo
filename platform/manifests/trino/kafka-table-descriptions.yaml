@@ -1,0 +1,133 @@
+---
+# Table descriptions for the Trino catalog `kafka` (catalog-kafka.yaml): one JSON file per
+# topic, mounted into the coordinator and the workers (trino.yaml) as kafka.table-description-dir.
+# They turn the JSON records into typed columns; the connector's internal columns (`_message`,
+# `_timestamp`, `_partition_offset`, ...) stay visible next to them. Fields and types follow the
+# payloads the solar generator sends and the schemas the Spark jobs parse them with
+# (platform/manifests/solar-pipeline/spark-jobs.yaml); `stream` is left out, it's the topic.
+# Timestamps and dates are ISO 8601. The generator's injected defects (missing values) arrive
+# as NULL. JSON files can't sit in the directory itself: ArgoCD would read them as manifests.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-kafka-tables
+  namespace: platform
+data:
+  solar-inverter.json: |
+    {
+      "tableName": "solar-inverter",
+      "schemaName": "default",
+      "topicName": "solar-inverter",
+      "message": {
+        "dataFormat": "json",
+        "fields": [
+          {"name": "ts", "mapping": "ts", "type": "TIMESTAMP WITH TIME ZONE", "dataFormat": "iso8601"},
+          {"name": "site_id", "mapping": "site_id", "type": "VARCHAR"},
+          {"name": "ac_kw", "mapping": "ac_kw", "type": "DOUBLE"},
+          {"name": "energy_total_kwh", "mapping": "energy_total_kwh", "type": "DOUBLE"},
+          {"name": "dc_v", "mapping": "dc_v", "type": "DOUBLE"},
+          {"name": "inv_temp_c", "mapping": "inv_temp_c", "type": "DOUBLE"},
+          {"name": "status", "mapping": "status", "type": "VARCHAR"}
+        ]
+      }
+    }
+  solar-weather.json: |
+    {
+      "tableName": "solar-weather",
+      "schemaName": "default",
+      "topicName": "solar-weather",
+      "message": {
+        "dataFormat": "json",
+        "fields": [
+          {"name": "ts", "mapping": "ts", "type": "TIMESTAMP WITH TIME ZONE", "dataFormat": "iso8601"},
+          {"name": "station_id", "mapping": "station_id", "type": "VARCHAR"},
+          {"name": "ghi_wm2", "mapping": "ghi_wm2", "type": "DOUBLE"},
+          {"name": "air_temp_c", "mapping": "air_temp_c", "type": "DOUBLE"}
+        ]
+      }
+    }
+  solar-clouds.json: |
+    {
+      "tableName": "solar-clouds",
+      "schemaName": "default",
+      "topicName": "solar-clouds",
+      "message": {
+        "dataFormat": "json",
+        "fields": [
+          {"name": "ts", "mapping": "ts", "type": "TIMESTAMP WITH TIME ZONE", "dataFormat": "iso8601"},
+          {"name": "part", "mapping": "part", "type": "BIGINT"},
+          {"name": "min_dimming", "mapping": "min_dimming", "type": "DOUBLE"},
+          {"name": "geojson", "mapping": "geojson", "type": "VARCHAR"}
+        ]
+      }
+    }
+  solar-sites.json: |
+    {
+      "tableName": "solar-sites",
+      "schemaName": "default",
+      "topicName": "solar-sites",
+      "message": {
+        "dataFormat": "json",
+        "fields": [
+          {"name": "published_at", "mapping": "published_at", "type": "TIMESTAMP WITH TIME ZONE", "dataFormat": "iso8601"},
+          {"name": "site_id", "mapping": "site_id", "type": "VARCHAR"},
+          {"name": "kind", "mapping": "kind", "type": "VARCHAR"},
+          {"name": "bundesland", "mapping": "bundesland", "type": "VARCHAR"},
+          {"name": "landkreis", "mapping": "landkreis", "type": "VARCHAR"},
+          {"name": "kreis_ags", "mapping": "kreis_ags", "type": "VARCHAR"},
+          {"name": "gemeinde", "mapping": "gemeinde", "type": "VARCHAR"},
+          {"name": "plz", "mapping": "plz", "type": "VARCHAR"},
+          {"name": "kwp_dc", "mapping": "kwp_dc", "type": "DOUBLE"},
+          {"name": "kw_ac", "mapping": "kw_ac", "type": "DOUBLE"},
+          {"name": "feedin_limit", "mapping": "feedin_limit", "type": "DOUBLE"},
+          {"name": "commissioned", "mapping": "commissioned", "type": "DATE", "dataFormat": "iso8601"},
+          {"name": "orientation", "mapping": "orientation", "type": "VARCHAR"},
+          {"name": "azimuth_deg", "mapping": "azimuth_deg", "type": "DOUBLE"},
+          {"name": "tilt_deg", "mapping": "tilt_deg", "type": "DOUBLE"},
+          {"name": "orientation_imputed", "mapping": "orientation_imputed", "type": "BOOLEAN"},
+          {"name": "has_storage", "mapping": "has_storage", "type": "BOOLEAN"},
+          {"name": "lat", "mapping": "lat", "type": "DOUBLE"},
+          {"name": "lon", "mapping": "lon", "type": "DOUBLE"},
+          {"name": "placement", "mapping": "placement", "type": "VARCHAR"},
+          {"name": "weather_station_id", "mapping": "weather_station_id", "type": "VARCHAR"}
+        ]
+      }
+    }
+  solar-weather_stations.json: |
+    {
+      "tableName": "solar-weather_stations",
+      "schemaName": "default",
+      "topicName": "solar-weather_stations",
+      "message": {
+        "dataFormat": "json",
+        "fields": [
+          {"name": "published_at", "mapping": "published_at", "type": "TIMESTAMP WITH TIME ZONE", "dataFormat": "iso8601"},
+          {"name": "station_id", "mapping": "station_id", "type": "VARCHAR"},
+          {"name": "lat", "mapping": "lat", "type": "DOUBLE"},
+          {"name": "lon", "mapping": "lon", "type": "DOUBLE"},
+          {"name": "lat_min", "mapping": "lat_min", "type": "DOUBLE"},
+          {"name": "lat_max", "mapping": "lat_max", "type": "DOUBLE"},
+          {"name": "lon_min", "mapping": "lon_min", "type": "DOUBLE"},
+          {"name": "lon_max", "mapping": "lon_max", "type": "DOUBLE"}
+        ]
+      }
+    }
+  solar-landkreise.json: |
+    {
+      "tableName": "solar-landkreise",
+      "schemaName": "default",
+      "topicName": "solar-landkreise",
+      "message": {
+        "dataFormat": "json",
+        "fields": [
+          {"name": "published_at", "mapping": "published_at", "type": "TIMESTAMP WITH TIME ZONE", "dataFormat": "iso8601"},
+          {"name": "kreis_ags", "mapping": "kreis_ags", "type": "VARCHAR"},
+          {"name": "name", "mapping": "name", "type": "VARCHAR"},
+          {"name": "bez", "mapping": "bez", "type": "VARCHAR"},
+          {"name": "bundesland_ags", "mapping": "bundesland_ags", "type": "VARCHAR"},
+          {"name": "bundesland", "mapping": "bundesland", "type": "VARCHAR"},
+          {"name": "area_km2", "mapping": "area_km2", "type": "DOUBLE"},
+          {"name": "geojson", "mapping": "geojson", "type": "VARCHAR"}
+        ]
+      }
+    }

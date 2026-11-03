@@ -1,10 +1,10 @@
 ---
 # Read access to the solar demo's Kafka topics (schema `default`, one table per topic, e.g.
-# `kafka."default"."solar-inverter"`). There are no table descriptions yet, so a table has only
-# the connector's internal columns: the record is the JSON string `_message`, plus `_key`,
-# `_timestamp`, `_partition_id`, `_partition_offset`. Parse with json_extract_scalar() and
-# filter on `_timestamp`, which is pushed down to Kafka: solar-inverter holds tens of millions
-# of records within its retention.
+# `kafka."default"."solar-inverter"`). The table descriptions (kafka-table-descriptions.yaml)
+# define the tables and decode the JSON records into typed columns; the connector's internal
+# columns stay visible next to them: the raw record `_message`, `_key`, `_timestamp`,
+# `_partition_id`, `_partition_offset`. Filter on `_timestamp`, which is pushed down to Kafka:
+# solar-inverter holds tens of millions of records within its retention.
 # Read-only for everyone (rego-trino-policies.yaml); the data is synthetic.
 apiVersion: trino.stackable.tech/v1alpha1
 kind: TrinoCatalog
@@ -24,9 +24,10 @@ spec:
             key: KAFKA
         kafka.default-schema:
           value: default
-        kafka.table-names:
-          value: solar-inverter,solar-weather,solar-clouds,solar-sites,solar-weather_stations,solar-landkreise
-        # Without a table description only the internal columns exist; don't hide them.
+        # Mounted from the ConfigMap trino-kafka-tables into coordinator and workers (trino.yaml)
+        kafka.table-description-dir:
+          value: /stackable/kafka-tables
+        # Keep `_message`, `_timestamp` etc. next to the decoded columns.
         kafka.hide-internal-columns:
           value: "false"
         # Kafka's certificate is issued by the secret-operator CA of SecretClass `tls`, which is
