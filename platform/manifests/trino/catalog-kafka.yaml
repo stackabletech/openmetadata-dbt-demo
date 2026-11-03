@@ -24,6 +24,10 @@ spec:
             key: KAFKA
         kafka.default-schema:
           value: default
+        # Only the tables listed here exist; a description file adds the decoded columns to its
+        # table, it doesn't create one.
+        kafka.table-names:
+          value: solar-inverter,solar-weather,solar-clouds,solar-sites,solar-weather_stations,solar-landkreise
         # Mounted from the ConfigMap trino-kafka-tables into coordinator and workers (trino.yaml)
         kafka.table-description-dir:
           value: /stackable/kafka-tables
