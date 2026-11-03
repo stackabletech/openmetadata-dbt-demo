@@ -41,6 +41,8 @@ data:
         {"catalog": "tpcds", "allow": "read-only"},
         # Logs and audit trail from OpenSearch (tables restricted below)
         {"catalog": "opensearch", "allow": "read-only"},
+        # Raw solar records straight from the Kafka topics (synthetic data)
+        {"catalog": "kafka", "allow": "read-only"},
         # Needed for JDBC/BI clients (system.jdbc, system.metadata).
         {"catalog": "system", "allow": "read-only"},
       ],
@@ -118,6 +120,7 @@ data:
         {"catalog": "tpch", "privileges": ["SELECT"]},
         {"catalog": "tpcds", "privileges": ["SELECT"]},
         {"catalog": "hive", "privileges": ["SELECT"]},
+        {"catalog": "kafka", "privileges": ["SELECT"]},
         # Needed for JDBC clients (e.g. system.metadata.table_comments).
         {"catalog": "system", "schema": "jdbc|metadata", "privileges": ["SELECT"]},
       ],
