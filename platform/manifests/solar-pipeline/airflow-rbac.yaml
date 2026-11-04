@@ -1,6 +1,7 @@
 ---
 # Lets Airflow's task pods (service account airflow-serviceaccount) run the solar Spark jobs:
-# create a SparkApplication, poll its status, delete it after success.
+# create a SparkApplication, poll its status, delete it after success; at a timeout also
+# delete its driver pod, which the SparkApplication doesn't own.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -10,6 +11,9 @@ rules:
   - apiGroups: ["spark.stackable.tech"]
     resources: ["sparkapplications"]
     verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["deletecollection"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

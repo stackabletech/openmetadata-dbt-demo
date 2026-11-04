@@ -99,8 +99,10 @@ def spark_api():
     return client.CustomObjectsApi()
 
 
-def create_spark_app(api, script):
-    """Create a minimal SparkApplication for jobs/<script>.py from the template; return its name."""
+def create_spark_app(api, script, executor=None):
+    """Create a minimal SparkApplication for jobs/<script>.py from the template; return its name.
+
+    `executor` is merged over the template's executor settings (e.g. more replicas)."""
     # Unique per start; Kubernetes names are lowercase, at most 63 characters. Not derived from
     # the logical date: in Airflow 3 manually triggered runs have none.
     name = f"solar-{script}-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
@@ -118,20 +120,33 @@ def create_spark_app(api, script):
             "mode": "cluster",
             "sparkImage": {"productVersion": SPARK_VERSION},
             "mainApplicationFile": f"local:///stackable/spark/jobs/{script}.py",
+            **({"executor": executor} if executor else {}),
         },
     })
     print(f"Created SparkApplication {name}")
     return name
 
 
-def run_spark_job(script, timeout=TIMEOUT):
+def delete_driver(name):
+    """Delete the driver pod of a SparkApplication that is being deleted at the timeout.
+
+    The driver isn't owned by the SparkApplication: it would survive without its service
+    account, unable to start executors, and keep its memory (and its executors') for hours.
+    """
+    from kubernetes import client
+
+    client.CoreV1Api().delete_collection_namespaced_pod(
+        NAMESPACE, label_selector=f"spark-app-name={name},spark-role=driver")
+
+
+def run_spark_job(script, timeout=TIMEOUT, executor=None):
     """Run a batch job to completion; delete it after success or timeout, keep it after failure.
 
-    A job still running at the timeout is deleted: otherwise the next run starts a second
-    driver on the same tables (it happened while Garage was full and writes hung).
+    A job still running at the timeout is deleted, driver included: otherwise the next run
+    starts a second driver on the same tables (it happened while Garage was full and writes hung).
     """
     api = spark_api()
-    name = create_spark_app(api, script)
+    name = create_spark_app(api, script, executor)
     deadline = datetime.now() + timeout
     phase = None
     while datetime.now() < deadline:
@@ -148,6 +163,7 @@ def run_spark_job(script, timeout=TIMEOUT):
                                f"(logs-*, cluster: {name}), kept for inspection")
         time.sleep(15)
     api.delete_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL, name)
+    delete_driver(name)
     raise TimeoutError(f"SparkApplication {name} not finished after {timeout}; deleted it, "
                        f"driver log in OpenSearch (logs-*, cluster: {name})")
 
@@ -208,7 +224,10 @@ with DAG(
     PythonOperator(
         task_id="silver",
         python_callable=run_spark_job,
-        op_kwargs={"script": "silver"},
+        # The generator writes ~2,700 inverter records/s: one executor (1 core) processed
+        # 3M rows in 20-30 minutes, fell behind and was OOMKilled; silver never caught up.
+        op_kwargs={"script": "silver",
+                   "executor": {"replicas": 3, "config": {"resources": {"memory": {"limit": "4Gi"}}}}},
         **lineage(SILVER),
     )
 
