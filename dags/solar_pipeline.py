@@ -102,7 +102,8 @@ def spark_api():
 def create_spark_app(api, script, executor=None):
     """Create a minimal SparkApplication for jobs/<script>.py from the template; return its name.
 
-    `executor` is merged over the template's executor settings (e.g. more replicas)."""
+    `executor` is merged over the template's executor settings; replicas work, resources don't
+    (the template's win)."""
     # Unique per start; Kubernetes names are lowercase, at most 63 characters. Not derived from
     # the logical date: in Airflow 3 manually triggered runs have none.
     name = f"solar-{script}-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
@@ -226,8 +227,8 @@ with DAG(
         python_callable=run_spark_job,
         # The generator writes ~2,700 inverter records/s: one executor (1 core) processed
         # 3M rows in 20-30 minutes, fell behind and was OOMKilled; silver never caught up.
-        op_kwargs={"script": "silver",
-                   "executor": {"replicas": 3, "config": {"resources": {"memory": {"limit": "4Gi"}}}}},
+        # Only replicas can be set here: the template's resources win over the application's.
+        op_kwargs={"script": "silver", "executor": {"replicas": 3}},
         **lineage(SILVER),
     )
 

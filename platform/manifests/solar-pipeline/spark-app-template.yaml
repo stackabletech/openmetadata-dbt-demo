@@ -102,8 +102,11 @@ spec:
         cpu:
           min: 500m
           max: "1"
+        # 2Gi left ~380Mi besides the heap (the operator sets no memory overhead): silver's
+        # executors were OOMKilled by the kernel. Here, not per job: the template's resources
+        # win over the application's.
         memory:
-          limit: 2Gi
+          limit: 4Gi
       volumeMounts:
         - name: jobs
           mountPath: /stackable/spark/jobs
