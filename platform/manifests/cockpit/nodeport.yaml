@@ -1,6 +1,6 @@
 ---
 # External access to Cockpit, matching the demo's NodePort convention
-# (30080 ArgoCD, 30088 landing, 30585 OpenMetadata, 30900 Keycloak). HTTPS: the port leads to
+# (30080 ArgoCD, 30585 OpenMetadata, 30900 Keycloak). HTTPS: the port leads to
 # the TLS proxy in front of Cockpit (tls-proxy.yaml).
 apiVersion: v1
 kind: Service

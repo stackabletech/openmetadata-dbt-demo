@@ -273,39 +273,6 @@ data:
       role                    = data.keycloak_role.view_users.name
     }
 
-    resource "keycloak_openid_client" "demo_landing" {
-      realm_id              = keycloak_realm.stackable_demo.id
-      client_id             = "demo-landing"
-      name                  = "Demo Landing Page"
-      enabled               = true
-      access_type           = "CONFIDENTIAL"
-      client_secret         = "demo-landing-secret"
-      standard_flow_enabled = true
-      valid_redirect_uris   = ["*"]
-      valid_post_logout_redirect_uris = ["*"]
-      web_origins           = ["+"]
-    }
-
-    resource "keycloak_openid_client_default_scopes" "demo_landing_scopes" {
-      realm_id  = keycloak_realm.stackable_demo.id
-      client_id = keycloak_openid_client.demo_landing.id
-      default_scopes = [
-        "profile",
-        "email",
-        "roles",
-        "web-origins",
-      ]
-    }
-
-    resource "keycloak_openid_audience_protocol_mapper" "demo_landing_audience" {
-      realm_id                 = keycloak_realm.stackable_demo.id
-      client_id                = keycloak_openid_client.demo_landing.id
-      name                     = "demo-landing-audience"
-      included_client_audience = "demo-landing"
-      add_to_id_token          = true
-      add_to_access_token      = true
-    }
-
     resource "keycloak_openid_client" "argocd" {
       realm_id              = keycloak_realm.stackable_demo.id
       client_id             = "argocd"

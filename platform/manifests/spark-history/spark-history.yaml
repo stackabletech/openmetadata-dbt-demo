@@ -7,7 +7,7 @@
 #
 # The History Server has no authentication of its own. It listens on localhost only
 # (SPARK_LOCAL_IP) and an oauth2-proxy sidecar in front of it logs users in through Keycloak
-# (client spark-history, configure-spark-history-oidc.yaml), like the demo landing page.
+# (client spark-history, configure-spark-history-oidc.yaml).
 # UI: http://<node-ip>:30188/ (Service spark-history-ui).
 apiVersion: secrets.stackable.tech/v1alpha1
 kind: SecretClass
@@ -86,7 +86,7 @@ spec:
               - --skip-provider-button=true
               - --scope=openid profile email roles
               - --cookie-secure=false
-              # Cookies are not separated by port; don't clash with the landing page's.
+              # Cookies are not separated by port; don't clash with other oauth2-proxies'.
               - --cookie-name=_spark_history_oauth2
               - --redirect-url=http://$(NODE_IP):30188/oauth2/callback
               - --oidc-issuer-url=$(OIDC_ISSUER_URL)

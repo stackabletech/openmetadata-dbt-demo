@@ -15,9 +15,7 @@ options:
       argocdServerAdminPasswordMtime: "2025-01-01T00:00:00Z"
     cm:
       # Disable the local admin/adminadmin login so the only login
-      # affordance is "Sign in with Keycloak". Combined with the
-      # demo-landing link pointing to /auth/login, users in the happy
-      # path never see ArgoCD's login UI.
+      # affordance is "Sign in with Keycloak".
       admin.enabled: "false"
       # `url` (https://<node-ip>:30080) is not set here: it depends on the node IP,
       # and argocd-server does not resolve $<secret>:<key> references in `url`.

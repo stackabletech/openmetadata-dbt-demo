@@ -50,7 +50,6 @@ custom|Lakekeeper|http://${node_ip}:$(nodeport platform lakekeeper)/ui|false
 custom|Keycloak|http://${node_ip}:$(nodeport platform keycloak-nodeport)|false
 custom|ArgoCD|http://${node_ip}:$(nodeport deployment argocd-server-nodeport)|false
 custom|Forgejo|http://${node_ip}:$(nodeport deployment forgejo-http-nodeport)|false
-custom|Demo landing page|http://${node_ip}:$(nodeport deployment demo-landing)|false
 EOF
 )
 
