@@ -208,6 +208,11 @@ with DAG(
         task_id="dims",
         python_callable=run_spark_job,
         op_kwargs={"script": "dims"},
+        # On a fresh cluster the first run can come before the generator's master data is in
+        # Kafka; the job then fails (no table yet) and is retried for up to an hour instead of
+        # waiting for the next hourly run, while silver fails for want of the tables.
+        retries=12,
+        retry_delay=timedelta(minutes=5),
         **lineage(DIMS),
     )
 

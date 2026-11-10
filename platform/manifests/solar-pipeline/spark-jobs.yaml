@@ -109,7 +109,8 @@ data:
     The generator publishes its active sites, the weather station grid and the Kreise (code, name,
     shape) to solar-sites, solar-weather_stations and solar-landkreise at startup and every 24 h.
     This job reads the topics completely, keeps the latest record per ID and replaces the tables
-    atomically. An empty topic (e.g. after retention) leaves the table untouched.
+    atomically. An empty topic (e.g. after retention) leaves the table untouched; if there is no
+    table yet (fresh cluster, master data not in Kafka yet), the job fails and Airflow retries it.
 
     Regions are keyed by the Kreis code (kreis_ags), never by name: MaStR names a city and the
     Landkreis around it the same. A site's code is taken from its latest record that has one
@@ -174,6 +175,9 @@ data:
     def replace(spark, df, table, comment):
         count = df.count()
         if count == 0:
+            # Silver can't run without the table, so don't report success before it exists.
+            if not spark.catalog.tableExists(f"{SCHEMA}.{table}"):
+                raise RuntimeError(f"No records for {table} and no table yet")
             log(spark, "solar_dims").warn(f"No records for {table}, table left unchanged")
             return
         (df.writeTo(f"{SCHEMA}.{table}").using("iceberg")
