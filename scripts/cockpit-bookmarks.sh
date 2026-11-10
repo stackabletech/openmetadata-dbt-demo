@@ -18,7 +18,7 @@
 # type "allow pasting" once before it accepts pasted code.
 #
 # Existing bookmarks and editor tabs are kept; the ones this script created before
-# (same name / label) are replaced, so it can be rerun after a redeploy. Cockpit keeps
+# (same category and name / same label) are replaced, so it can be rerun after a redeploy. Cockpit keeps
 # at most 8 editor tabs; the demo tabs come first and the oldest others are dropped.
 set -euo pipefail
 
@@ -34,22 +34,35 @@ s3_key=$(kubectl -n platform get secret cockpit-demo-s3 -o jsonpath='{.data.acce
 s3_secret=$(kubectl -n platform get secret cockpit-demo-s3 -o jsonpath='{.data.secretAccessKey}' 2>/dev/null | base64 -d || true)
 [ -n "$s3_key" ] || echo "No Secret platform/cockpit-demo-s3: the snippet adds no storage connection" >&2
 
-# productId | name | url | pinned (shown in the sidebar)
+grafana="http://${node_ip}:$(nodeport platform prometheus-grafana)"
+
+# Cockpit has no bookmark categories; the environment field stands in for one (shown as a chip
+# on each card). The dashboard keeps the order, so the list is sorted by category.
+# environment | productId | name | url | pinned (shown in the sidebar)
 bookmarks=$(cat <<EOF
-trino|Trino|https://${node_ip}:$(nodeport platform trino-coordinator)/ui/|true
-superset|Superset|https://${node_ip}:$(nodeport platform simple-superset-node)|true
-airflow|Airflow|http://${node_ip}:$(nodeport platform airflow-webserver)|true
-nifi|NiFi|https://${node_ip}:$(nodeport platform nifi-node)/nifi/|true
-spark|Spark History Server|http://${node_ip}:30188|false
-custom|OpenMetadata|http://${node_ip}:$(nodeport platform openmetadata-nodeport)|true
-custom|Grafana|http://${node_ip}:$(nodeport platform prometheus-grafana)|true
-custom|Entropy Data|http://${node_ip}:$(nodeport platform entropy-data-nodeport)/myorga|true
-hdfs|HDFS NameNode|http://${node_ip}:$(nodeport platform listener-simple-hdfs-namenode-default-0)|false
-opensearch|OpenSearch Dashboards|http://${node_ip}:$(nodeport platform opensearch-dashboards-nodeport)|false
-custom|Lakekeeper|http://${node_ip}:$(nodeport platform lakekeeper)/ui|false
-custom|Keycloak|http://${node_ip}:$(nodeport platform keycloak-nodeport)|false
-custom|ArgoCD|http://${node_ip}:$(nodeport deployment argocd-server-nodeport)|false
-custom|Forgejo|http://${node_ip}:$(nodeport deployment forgejo-http-nodeport)|false
+Tools|trino|Trino|https://${node_ip}:$(nodeport platform trino-ui-nodeport)/ui/|true
+Tools|superset|Superset|https://${node_ip}:$(nodeport platform simple-superset-node)|true
+Tools|airflow|Airflow|http://${node_ip}:$(nodeport platform airflow-webserver)|true
+Tools|nifi|NiFi|https://${node_ip}:$(nodeport platform nifi-node)/nifi/|true
+Tools|custom|OpenMetadata|http://${node_ip}:$(nodeport platform openmetadata-nodeport)|true
+Tools|custom|Entropy Data|http://${node_ip}:$(nodeport platform entropy-data-nodeport)/myorga|true
+Tools|custom|Lakekeeper|http://${node_ip}:$(nodeport platform lakekeeper)/ui|true
+Tools|spark|Spark History Server|http://${node_ip}:$(nodeport platform spark-history-ui)|false
+Tools|hdfs|HDFS NameNode|http://${node_ip}:$(nodeport platform listener-simple-hdfs-namenode-default-0)|false
+Tools|opensearch|OpenSearch Dashboards|http://${node_ip}:$(nodeport platform opensearch-dashboards-nodeport)|false
+Monitoring|custom|Stackable Data Platform|${grafana}/d/sdp-overview|true
+Monitoring|trino|Trino metrics|${grafana}/d/-mVc4yO4k|false
+Monitoring|trino|Trino queries|${grafana}/d/trino-queries|false
+Monitoring|kafka|Kafka metrics|${grafana}/d/C_8qIX04k|false
+Monitoring|nifi|NiFi metrics|${grafana}/d/C_8qIX04l|false
+Monitoring|hdfs|HDFS metrics|${grafana}/d/qjZGZ3AVz|false
+Monitoring|custom|Stackable logs|${grafana}/d/stackable-logs|false
+Audit|trino|Trino decisions|${grafana}/d/opa-decisions|false
+Audit|nifi|NiFi decisions|${grafana}/d/nifi-authorization|false
+Audit|airflow|Airflow decisions|${grafana}/d/airflow-authorization|false
+Operations|custom|ArgoCD|https://${node_ip}:$(nodeport deployment argocd-server-nodeport)/auth/login|false
+Operations|custom|Forgejo|http://${node_ip}:$(nodeport deployment forgejo-http-nodeport)|false
+Operations|custom|Keycloak|http://${node_ip}:$(nodeport platform keycloak-nodeport)/admin/|false
 EOF
 )
 
@@ -92,12 +105,12 @@ if os.environ.get("S3_KEY"):
 now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 items = []
 for line in os.environ["BOOKMARKS"].strip().splitlines():
-    product_id, name, url, pinned = line.split("|")
+    environment, product_id, name, url, pinned = line.split("|")
     items.append({
         "id": str(uuid.uuid4()),
         "productId": product_id,
         "name": name,
-        "environment": "data2day",
+        "environment": environment,
         "url": url,
         "pinned": pinned == "true",
         "pinnedForEveryone": False,
@@ -131,10 +144,11 @@ print(f"""(async () => {{
   // Dashboard bookmarks.
   const KEY = 'dashboard_bookmarks';
   const demo = {json.dumps(items, indent=2)};
-  const names = new Set(demo.map((b) => b.name));
+  const ours = new Set(demo.map((b) => b.environment + '|' + b.name));
   let existing = [];
   try {{ existing = JSON.parse(localStorage.getItem(KEY) || '[]'); }} catch (e) {{}}
-  const kept = existing.filter((b) => !(b.environment === 'data2day' && names.has(b.name)));
+  // Replace this script's bookmarks, including those of older versions (environment data2day).
+  const kept = existing.filter((b) => !(ours.has(b.environment + '|' + b.name) || b.environment === 'data2day'));
   localStorage.setItem(KEY, JSON.stringify([...kept, ...demo]));
 
   // Trino editor tabs (Cockpit keeps at most 8).

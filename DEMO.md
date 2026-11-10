@@ -56,7 +56,8 @@ kubectl -n platform get cm oidc-endpoints -o jsonpath='{.data.node-ip}'
 
 - **Cockpit runs on HTTPS** (`https://<node-ip>:30300`) with a certificate of the demo CA: accept
   the browser warning once, like for Trino and NiFi.
-- **Bookmarks to all UIs and the demo queries** in Cockpit (dashboard bookmarks plus the
+- **Bookmarks to all UIs and the demo queries** in Cockpit (dashboard bookmarks in the
+  categories Tools, Monitoring, Audit and Operations, shown as the bookmark's environment, plus the
   editor tabs "Demo A: hardcoded masks" and "Demo B: owner + tag"), and an S3 connection to Garage
   for the storage browser (key `cockpit-demo`: read on `iceberg-warehouse`, read/write on
   `demo-files`; saved per Cockpit user, so run it once per user):
