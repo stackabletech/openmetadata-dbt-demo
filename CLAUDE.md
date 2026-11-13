@@ -22,7 +22,9 @@ infrastructure/                    # Bootstrap: deployed by stackablectl, sets u
 ├── cluster-apps.yaml              # App-of-apps: watches platform/applications/
 ├── forgejo.yaml                   # ArgoCD Application for Forgejo (Helm + manifests)
 ├── sealed-secrets.yaml            # ArgoCD Application for SealedSecrets (Helm + manifests)
+├── kyverno.yaml                   # ArgoCD Application for Kyverno (Helm + manifests): Spot toleration on all pods
 ├── forgejo-manifests/             # Supporting manifests for Forgejo (admin secret, configure job)
+├── kyverno-manifests/             # Kyverno ClusterPolicy adding the Azure Spot toleration
 └── sealed-secrets-manifests/      # SealedSecrets decryption key
 
 platform/                          # Everything ArgoCD manages after bootstrap
@@ -105,6 +107,7 @@ sources:
 | Namespace | Components |
 |---|---|
 | `deployment` | ArgoCD, SealedSecrets, Forgejo |
+| `kyverno` | Kyverno |
 | `stackable-operators` | Stackable operators |
 | `shared` | GarageFS, all PostgreSQL instances (airflow, hive, hive-iceberg, openmetadata, superset, entropy-data, sqlmesh) |
 | `platform` | Airflow, Trino, Hive, HDFS, ZooKeeper, Kafka, NiFi, OpenMetadata, Entropy Data, OpenSearch, Superset, Lakekeeper, Prometheus, Grafana, solar generator and ingest flow job, solar Spark jobs, Spark History Server, all init jobs |

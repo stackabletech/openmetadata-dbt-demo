@@ -1,0 +1,45 @@
+---
+# Kyverno, only here to add the Azure Spot toleration to every pod (see kyverno-manifests/).
+# Bootstrapped before the operators so their pods and everything after are admitted with it.
+# Harmless on clusters without Spot nodes: the toleration then matches nothing.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: deployment
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  sources:
+    - repoURL: "https://kyverno.github.io/kyverno/"
+      targetRevision: "3.10.0" # renovate: registryUrl=https://kyverno.github.io/kyverno/ datasource=helm depName=kyverno
+      chart: kyverno
+      helm:
+        releaseName: kyverno
+        valuesObject:
+          # Mutation on admission is all we need.
+          backgroundController:
+            enabled: false
+          cleanupController:
+            enabled: false
+          reportsController:
+            enabled: false
+          features:
+            admissionReports:
+              enabled: false
+    - repoURL: https://github.com/stackabletech/openmetadata-dbt-demo
+      # Bootstrap app (stackablectl substitutes repoRevision), like sealed-secrets.
+      targetRevision: {{ repoRevision }}
+      path: infrastructure/kyverno-manifests/
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      # The Kyverno CRDs are too large for client-side apply.
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true

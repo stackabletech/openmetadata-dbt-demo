@@ -29,15 +29,28 @@ variable "location" {
 }
 
 variable "node_count" {
-  description = "Number of nodes in the user pool"
+  description = "Number of nodes in the user pool (ignored when spot is true: then 1 regular node)"
   type        = number
   default     = 4
 }
 
+# Must have a local temp disk (the "d" in the name) of at least 128 GiB: the OS disk is ephemeral.
 variable "node_vm_size" {
   description = "VM size for user pool nodes"
   type        = string
-  default     = "Standard_D8ds_v5"
+  default     = "Standard_D8ads_v5"
+}
+
+variable "spot" {
+  description = "Run the workers as 1 regular node plus spot_node_count Azure Spot nodes (needs the Kyverno spot toleration policy)"
+  type        = bool
+  default     = false
+}
+
+variable "spot_node_count" {
+  description = "Number of Spot nodes when spot is true"
+  type        = number
+  default     = 3
 }
 
 variable "kubernetes_version" {
@@ -128,10 +141,6 @@ resource "azurerm_kubernetes_cluster" "this" {
     network_plugin = "azure"
   }
 
-  # Disable all monitoring
-  monitor_metrics {
-  }
-
   tags = {
     owner = var.owner
   }
@@ -167,8 +176,9 @@ resource "azurerm_kubernetes_cluster_node_pool" "user" {
   name                  = "userpool"
   kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
   vm_size               = var.node_vm_size
-  node_count            = var.node_count
+  node_count            = var.spot ? 1 : var.node_count
   os_disk_size_gb       = 128
+  os_disk_type          = "Ephemeral"
   vnet_subnet_id        = azurerm_subnet.aks.id
   max_pods              = 100
   node_public_ip_enabled = true
@@ -176,6 +186,29 @@ resource "azurerm_kubernetes_cluster_node_pool" "user" {
   upgrade_settings {
     max_surge = "10%"
   }
+}
+
+# Spot nodes have no public IP: discover-node-ip then picks the regular user pool node, so an
+# eviction never changes the demo's URLs. NodePorts are reachable through any node.
+# AKS taints Spot nodes; infrastructure/kyverno-manifests/ adds the matching toleration to all pods.
+# On eviction the node is deleted and the autoscaler replaces it once Spot capacity is available.
+resource "azurerm_kubernetes_cluster_node_pool" "spot" {
+  count                 = var.spot ? 1 : 0
+  name                  = "spotpool"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
+  vm_size               = var.node_vm_size
+  priority              = "Spot"
+  eviction_policy       = "Delete"
+  spot_max_price        = -1
+  node_taints           = ["kubernetes.azure.com/scalesetpriority=spot:NoSchedule"]
+  auto_scaling_enabled  = true
+  node_count            = var.spot_node_count
+  min_count             = var.spot_node_count
+  max_count             = var.spot_node_count
+  os_disk_size_gb       = 128
+  os_disk_type          = "Ephemeral"
+  vnet_subnet_id        = azurerm_subnet.aks.id
+  max_pods              = 100
 }
 
 output "resource_group_name" {

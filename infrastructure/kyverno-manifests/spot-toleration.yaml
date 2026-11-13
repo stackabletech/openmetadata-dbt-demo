@@ -1,0 +1,36 @@
+---
+# AKS taints Spot nodes (tofu: spot = true) with kubernetes.azure.com/scalesetpriority=spot:NoSchedule.
+# Tolerating it everywhere is simpler than patching ~35 Applications. Kyverno's own namespace and
+# kube-system are excluded by Kyverno's default resource filters, so those stay on regular nodes.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: tolerate-spot-nodes
+  annotations:
+    # The ClusterPolicy CRD comes with the Kyverno chart in the same sync.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  # If Kyverno is down, pods are still admitted, just without the toleration.
+  failurePolicy: Ignore
+  background: false
+  rules:
+    - name: tolerate-spot-taint
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              operations: [CREATE]
+      preconditions:
+        all:
+          - key: kubernetes.azure.com/scalesetpriority
+            operator: AnyNotIn
+            value: "{{ request.object.spec.tolerations[].key || `[]` }}"
+      mutate:
+        patchesJson6902: |-
+          - op: add
+            path: /spec/tolerations/-
+            value:
+              key: kubernetes.azure.com/scalesetpriority
+              operator: Equal
+              value: spot
+              effect: NoSchedule

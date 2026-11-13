@@ -52,9 +52,11 @@ cp tofu/terraform.tfvars.template tofu/terraform.tfvars
 | `subscription_id` | yes | — | Azure subscription ID |
 | `owner` | yes | — | Owner tag on the resource group and cluster |
 | `location` | no | `westeurope` | Azure region |
-| `node_count` | no | `3` | Number of nodes in the user pool |
-| `node_vm_size` | no | `Standard_D8ds_v5` | VM size for user pool nodes |
-| `kubernetes_version` | no | `1.33` | Kubernetes version |
+| `node_count` | no | `4` | Number of nodes in the user pool (ignored with `spot`) |
+| `node_vm_size` | no | `Standard_D8ads_v5` | VM size for user pool nodes; needs a local temp disk of at least 128 GiB (ephemeral OS disk) |
+| `spot` | no | `false` | 1 regular node plus `spot_node_count` Azure Spot nodes instead of `node_count` regular ones |
+| `spot_node_count` | no | `3` | Number of Spot nodes when `spot` is set |
+| `kubernetes_version` | no | `1.35` | Kubernetes version |
 
 2. Provision the cluster (each cluster gets its own state file `tofu/<name>.tfstate`):
 
@@ -70,6 +72,8 @@ just kubeconfig                   # interactive selection from managed clusters
 ```
 
 The infrastructure creates a resource group, VNet, subnet, NSG (with all inbound traffic allowed), and an AKS cluster with a system node pool and a configurable user node pool with public IPs.
+
+With `spot = true` (e.g. `tofu apply -var spot=true ...`) the workers cost roughly a quarter, but Azure can evict a Spot node at any time (30 s notice), which restarts the pods on it, stateful ones included. Only the regular node gets a public IP, so the demo URLs survive evictions. AKS taints Spot nodes; Kyverno (`infrastructure/kyverno.yaml`) adds the toleration to every pod. Spot vCPUs have their own quota in the subscription.
 
 ### Deploy the Platform
 
